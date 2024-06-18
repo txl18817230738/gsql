@@ -1,0 +1,9 @@
+CREATE QUERY NTP_EMS_delete() FOR GRAPH gsql_EMS{
+
+  A15 = {TopoND.*};
+
+  delete s from A15:s;
+
+
+
+}

@@ -1,0 +1,440 @@
+CREATE QUERY dispatcher_powerflow_substation_inputpara(string companyID="113715890758877224", bool return_all=true) FOR GRAPH gsql_EMS syntax v2 {
+  TYPEDEF TUPLE <STRING sub_name, STRING sub_id, double volt, int count_unit, double total_gen, int count_load, double total_load, int count_trans, double total_trans_rate, int total_trans, bool hasLoad, bool hasUnit, bool hasTrans> row;
+    
+
+  OrAccum<bool> @hasLoad;
+  OrAccum<bool> @hasTrans;
+  OrAccum<bool> @hasUnit;
+  SumAccum<int> @island;
+  OrAccum<bool> @subunderload;
+	SetAccum<string> @@Comp_ID;
+  HeapAccum<row>(50, sub_name DESC) @@result_part;
+  HeapAccum<row>(100000, sub_name DESC) @@result;
+  
+  SumAccum<INT> @count_unit;
+  SumAccum<DOUBLE> @total_gen;
+  SumAccum<INT> @count_load;
+  SumAccum<DOUBLE> @total_load;
+  SumAccum<INT> @count_trans;
+  SumAccum<DOUBLE> @total_trans;
+  SumAccum<DOUBLE> @total_trans_rate;
+  //SumAccum<string> @subtype;
+  
+  SumAccum<INT> @@count_all;
+  
+  SumAccum<INT> @@count_unit;
+  SumAccum<INT> @@count_load;
+  SumAccum<INT> @@count_trans;
+  
+  SumAccum<INT> @@count_500;
+  SumAccum<INT> @@count_500_unit;
+  SumAccum<INT> @@count_500_load;
+  SumAccum<INT> @@count_500_trans;
+  
+  SumAccum<INT> @@count_220;
+  SumAccum<INT> @@count_220_unit;
+  SumAccum<INT> @@count_220_load;
+  SumAccum<INT> @@count_220_trans;
+  
+  SumAccum<INT> @@count_110;
+  SumAccum<INT> @@count_110_unit;
+  SumAccum<INT> @@count_110_load;
+  SumAccum<INT> @@count_110_trans;
+  
+  SumAccum<INT> @@count_35;
+  SumAccum<INT> @@count_35_unit;
+  SumAccum<INT> @@count_35_load;
+  SumAccum<INT> @@count_35_trans;
+  
+  SumAccum<INT> @@count_10;
+  SumAccum<INT> @@count_10_unit;
+  SumAccum<INT> @@count_10_load;
+  SumAccum<INT> @@count_10_trans;
+  
+  SumAccum<INT> @@count_other;
+  SumAccum<INT> @@count_other_unit;
+  SumAccum<INT> @@count_other_load;
+  SumAccum<INT> @@count_other_trans;
+
+  
+  SumAccum<INT> @count_500_unit;
+  SumAccum<INT> @count_500_load;
+  SumAccum<INT> @count_500_trans;
+  
+  SumAccum<INT> @count_220_unit;
+  SumAccum<INT> @count_220_load;
+  SumAccum<INT> @count_220_trans;
+  
+  SumAccum<INT> @count_110_unit;
+  SumAccum<INT> @count_110_load;
+  SumAccum<INT> @count_110_trans;
+  
+  SumAccum<INT> @count_35_unit;
+  SumAccum<INT> @count_35_load;
+  SumAccum<INT> @count_35_trans;
+  
+  SumAccum<INT> @count_10_unit;
+  SumAccum<INT> @count_10_load;
+  SumAccum<INT> @count_10_trans;
+  
+  SumAccum<INT> @count_other_unit;
+  SumAccum<INT> @count_other_load;
+  SumAccum<INT> @count_other_trans;
+  
+  
+	
+	T0 = {TopoND.*};
+  sub = {Substation.*};
+	comp = {gridcom.*};
+  loadSet = {l_oad.*};
+  
+   Tload = select s from loadSet:s -(connected_Load_CN:e1)-:t1-(connected_Bus_CN:e2)-:t2 
+                ACCUM 
+                    s.@subunderload += true;
+   start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)-:t where s.id in @@Comp_ID;
+  sub = select s from sub:s -(topoid_subid:e)-:t where t.island ==1;
+  
+  
+  //先统计发电
+   T_1 = select b from sub:s-(connected_Sub_Unit>:e2) - unit:b -(topo_unit:e3)-TopoND:c
+        where c.island == 1 and (s.subtype=="火电厂" or s.subtype=="水电厂" or s.subtype=="储能站" or s.subtype=="风电场" or s.subtype=="核电厂" or s.subtype=="抽蓄厂")
+        ACCUM
+            s.@count_unit +=1,
+            s.@hasUnit += true,
+            s.@island = c.island,
+            IF b.P_pf > 0 THEN  
+                s.@total_gen += b.P_pf
+            ELSE
+                s.@total_load += abs(b.P_pf)
+            END;
+  //再统计负荷
+   T_2 = select b from sub:s-(connected_Sub_Load>:e1) - l_oad:b -(topo_load:e2)-TopoND:c
+        where c.island == 1 
+        ACCUM
+            if(s.@hasUnit==false and b.@subunderload==false) then 
+                  s.@count_load +=1,
+                  s.@hasLoad = true,
+                  s.@island = c.island,
+                  //s.@subtype ="load",
+                  IF b.P_pf > 0 THEN
+                    s.@total_load += b.P_pf 
+                  ELSE
+                    s.@total_gen += abs(b.P_pf)
+                  END
+            end;
+  //最后统计变电
+   T_3 = select s from sub:s-((connected_Sub_Trans_three>|connected_Sub_Trans_two>):e2) - :b -((topo_Tx_Three|topo_Tx_Two):e3)-TopoND:c 
+        where c.island == 1 and b.WindingType=="WindingType.primary" //and (s.subtype=="变电站" or s.subtype=="换流站" or s.subtype=="虚拟连接站")
+        ACCUM
+          if(s.@hasLoad==false and s.@hasUnit==false) then 
+            s.@count_trans +=1,
+            s.@island = c.island,
+            s.@hasTrans =true,
+            s.@total_trans +=abs(b.P_pf),
+            s.@total_trans_rate += abs(b.ratedMVA)
+          end;
+  //剩余都算做变电
+  T_4 = select s from sub:s 
+          accum 
+            if(s.@hasLoad==false and s.@hasUnit==false and s.@hasTrans==false) then 
+                s.@hasTrans += true 
+            end;
+  /**
+  
+  // 统计负荷
+    T_1 = select b from sub:s-(connected_Sub_Load>:e1) - l_oad:b -(topo_load:e2)-TopoND:c
+        where c.island == 1 
+        ACCUM
+            s.@count_load +=1,
+            s.@hasLoad = true,
+            s.@island = c.island,
+            //s.@subtype ="load",
+            IF b.P_pf > 0 THEN
+                s.@total_load += b.P_pf 
+            ELSE
+                s.@total_gen += abs(b.P_pf)
+            END;
+    // 统计发电
+    T_2 = select b from sub:s-(connected_Sub_Unit>:e2) - unit:b -(topo_unit:e3)-TopoND:c
+        where c.island == 1 and (s.subtype=="火电厂" or s.subtype=="水电厂" or s.subtype=="储能站" or s.subtype=="风电场" or s.subtype=="核电厂" or s.subtype=="抽蓄厂")
+        ACCUM
+            s.@count_unit +=1,
+            s.@hasUnit = true,
+            s.@island = c.island,
+            IF b.P_pf > 0 THEN  
+                s.@total_gen += b.P_pf
+            ELSE
+                s.@total_load += abs(b.P_pf)
+            END;
+     
+   //统计变压器
+     T_3 = select s from sub:s-((connected_Sub_Trans_three>|connected_Sub_Trans_two>):e2) - :b -((topo_Tx_Three|topo_Tx_Two):e3)-TopoND:c 
+        where c.island == 1 and b.WindingType=="WindingType.primary" and (s.subtype=="变电站" or s.subtype=="换流站" or s.subtype=="虚拟连接站")
+        ACCUM
+            s.@count_trans +=1,
+            s.@island = c.island,
+            s.@hasTrans =true,
+            s.@total_trans +=abs(b.P_pf),
+            s.@total_trans_rate += abs(b.ratedMVA);
+    **/
+  
+  //print sub.size();
+   T_sub = select s from sub:s 
+        accum 
+            @@result +=row(s.name,s.strid,s.volt,s.@count_unit,s.@total_gen,s.@count_load,s.@total_load,s.@count_trans,s.@total_trans_rate,s.@total_trans,s.@hasLoad,s.@hasUnit,s.@hasTrans),
+            @@result_part +=row(s.name,s.strid,s.volt,s.@count_unit,s.@total_gen,s.@count_load,s.@total_load,s.@count_trans,s.@total_trans_rate,s.@total_trans,s.@hasLoad,s.@hasUnit,s.@hasTrans),
+           @@count_all += 1,
+				   double volt = s.volt,
+           if volt >= 500 then
+                  if(s.@hasLoad==true) then
+                        @@count_500 += 1,
+                        @@count_500_load +=1,
+                        @@count_load+=1 
+                  end,
+                  if(s.@hasUnit == true) then
+                        @@count_500 += 1,
+                        @@count_500_unit+=1,
+                        @@count_unit +=1
+                  end,
+                  if(s.@hasTrans == true) then
+                        @@count_500 += 1,
+                        @@count_500_trans +=1,
+                        @@count_trans +=1
+                  end 
+                  /**
+                  if (s.subtype=="变电站" or s.subtype=="换流站" or s.subtype=="虚拟连接站") and s.@hasTrans==true then
+                    @@count_500_trans +=1,
+                    @@count_trans +=1
+                  else if (s.subtype=="火电厂" or s.subtype=="水电厂" or s.subtype=="储能站" or s.subtype=="风电场" or s.subtype=="核电厂" or s.subtype=="抽蓄厂") and s.@hasUnit==true then
+                    @@count_500_unit+=1,
+                    @@count_unit +=1
+                  else 
+                    if s.@hasLoad == true then 
+                    @@count_500_unit +=1,
+                    @@count_load+=1 
+                    else 
+                      @@count_500_trans +=1,
+                      @@count_trans +=1 
+                    end
+                  //end        
+                  **/
+                
+                else if volt >= 220 then
+                  if(s.@hasLoad==true) then
+                        @@count_220+=1,
+                        @@count_220_load +=1,
+                        @@count_load+=1 
+                  end,
+                  if(s.@hasUnit == true) then
+                        @@count_220+=1,
+                        @@count_220_unit+=1,
+                        @@count_unit +=1
+                  end,
+                  if(s.@hasTrans == true) then
+                         @@count_220+=1,
+                        @@count_220_trans +=1,
+                        @@count_trans +=1
+                  end
+                  /**  
+                  if (s.subtype=="变电站" or s.subtype=="换流站" or s.subtype=="虚拟连接站") and s.@hasTrans==true then
+                    @@count_220_trans +=1,
+                    @@count_trans +=1
+                  else if (s.subtype=="火电厂" or s.subtype=="水电厂" or s.subtype=="储能站" or s.subtype=="风电场" or s.subtype=="核电厂" or s.subtype=="抽蓄厂") and s.@hasUnit==true then
+                    @@count_220_unit+=1,
+                    @@count_unit +=1
+                  else 
+                    if s.@hasLoad == true then 
+                    @@count_220_unit +=1,
+                    @@count_load+=1 
+                    else 
+                      @@count_220_trans +=1,
+                      @@count_trans +=1 
+                    end
+                  //end
+                  **/
+                  
+                else if volt >= 110 then
+                  if(s.@hasLoad==true) then
+                         @@count_110+=1,
+                        @@count_110_load +=1,
+                        @@count_load+=1 
+                  end,
+                  if(s.@hasUnit == true) then
+                         @@count_110+=1,
+                        @@count_110_unit+=1,
+                        @@count_unit +=1
+                  end,
+                  if(s.@hasTrans == true) then
+                         @@count_110+=1,
+                        @@count_110_trans +=1,
+                        @@count_trans +=1
+                  end 
+                  /**
+                  if (s.subtype=="变电站" or s.subtype=="换流站" or s.subtype=="虚拟连接站") and s.@hasTrans==true then
+                    @@count_110_trans +=1,
+                    @@count_trans +=1
+                  else if (s.subtype=="火电厂" or s.subtype=="水电厂" or s.subtype=="储能站" or s.subtype=="风电场" or s.subtype=="核电厂" or s.subtype=="抽蓄厂") and s.@hasUnit==true then
+                    @@count_110_unit+=1,
+                    @@count_unit +=1
+                  else 
+                    if s.@hasLoad == true then 
+                    @@count_110_unit +=1,
+                    @@count_load+=1 
+                    else 
+                      @@count_110_trans +=1,
+                      @@count_trans +=1 
+                    end
+                  //end
+                  **/
+                  
+                else if volt >= 34.5 then
+                  if(s.@hasLoad==true) then
+                        @@count_35+=1,
+                        @@count_35_load +=1,
+                        @@count_load+=1 
+                  end,
+                  if(s.@hasUnit == true) then
+                        @@count_35+=1,
+                        @@count_35_unit+=1,
+                        @@count_unit +=1
+                  end,
+                  if(s.@hasTrans == true) then
+                        @@count_35+=1,
+                        @@count_35_trans +=1,
+                        @@count_trans +=1
+                  end 
+                  /**
+                  if (s.subtype=="变电站" or s.subtype=="换流站" or s.subtype=="虚拟连接站") and s.@hasTrans==true then
+                    @@count_35_trans +=1,
+                    @@count_trans +=1
+                  else if (s.subtype=="火电厂" or s.subtype=="水电厂" or s.subtype=="储能站" or s.subtype=="风电场" or s.subtype=="核电厂" or s.subtype=="抽蓄厂") and s.@hasUnit==true then
+                    @@count_35_unit+=1,
+                    @@count_unit +=1
+                  else 
+                    if s.@hasLoad == true then 
+                    @@count_35_unit +=1,
+                    @@count_load+=1 
+                    else 
+                      @@count_35_trans +=1,
+                      @@count_trans +=1 
+                    end
+                  //end
+                  **/
+  
+                else if volt >= 10 then
+                  if(s.@hasLoad==true) then
+                        @@count_10+=1,
+                        @@count_10_load +=1,
+                        @@count_load+=1 
+                  end,
+                  if(s.@hasUnit == true) then
+                        @@count_10+=1,
+                        @@count_10_unit+=1,
+                        @@count_unit +=1
+                  end,
+                  if(s.@hasTrans == true) then
+                       @@count_10+=1,
+                        @@count_10_trans +=1,
+                        @@count_trans +=1
+                  end
+                  /**
+                  if (s.subtype=="变电站" or s.subtype=="换流站" or s.subtype=="虚拟连接站") and s.@hasTrans==true then
+                    @@count_10_trans +=1,
+                    @@count_trans +=1
+                  else if (s.subtype=="火电厂" or s.subtype=="水电厂" or s.subtype=="储能站" or s.subtype=="风电场" or s.subtype=="核电厂" or s.subtype=="抽蓄厂") and s.@hasUnit==true then
+                    @@count_10_unit+=1,
+                    @@count_unit +=1
+                  else 
+                    if s.@hasLoad == true then 
+                    @@count_10_unit +=1,
+                    @@count_load+=1 
+                    else 
+                      @@count_10_trans +=1,
+                      @@count_trans +=1 
+                    end
+                  //end
+                  **/
+                  
+                else
+                  if(s.@hasLoad==true) then
+                        @@count_other+=1,
+                        @@count_other_load +=1,
+                        @@count_load+=1 
+                  end,
+                  if(s.@hasUnit == true) then
+                        @@count_other+=1,
+                        @@count_other_unit+=1,
+                        @@count_unit +=1
+                  end,
+                  if(s.@hasTrans == true) then
+                        @@count_other+=1,
+                        @@count_other_trans +=1,
+                        @@count_trans +=1
+                  end 
+                  /**
+                  if (s.subtype=="变电站" or s.subtype=="换流站" or s.subtype=="虚拟连接站") and s.@hasTrans==true then
+                    @@count_other_trans +=1,
+                    @@count_trans +=1
+                  else if (s.subtype=="火电厂" or s.subtype=="水电厂" or s.subtype=="储能站" or s.subtype=="风电场" or s.subtype=="核电厂" or s.subtype=="抽蓄厂") and s.@hasUnit==true then
+                    @@count_other_unit+=1,
+                    @@count_unit +=1
+                  else 
+                    if s.@hasLoad == true then 
+                    @@count_other_unit +=1,
+                    @@count_load+=1 
+                    else 
+                      @@count_other_trans +=1,
+                      @@count_trans +=1 
+                    end
+                    **/
+                  end;
+if return_all then
+    print @@result;
+  else
+    print @@result_part;
+  end;
+
+	print @@count_all;
+  
+  print @@count_unit;
+  print @@count_load;
+  print @@count_trans;
+  
+  print @@count_500;
+  print @@count_500_unit;
+  print @@count_500_load;
+  print @@count_500_trans;
+  
+  print @@count_220;
+  print @@count_220_unit;
+  print @@count_220_load;
+  print @@count_220_trans;
+  
+  print @@count_110;
+  print @@count_110_unit;
+  print @@count_110_load;
+  print @@count_110_trans;
+  
+  print @@count_35;
+  print @@count_35_unit;
+  print @@count_35_load;
+  print @@count_35_trans;
+  
+  print @@count_10;
+  print @@count_10_unit;
+  print @@count_10_load;
+  print @@count_10_trans;
+  
+  print @@count_other;
+  print @@count_other_unit;
+  print @@count_other_load;
+  print @@count_other_trans;
+  
+ 
+}

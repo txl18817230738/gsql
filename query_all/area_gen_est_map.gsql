@@ -1,0 +1,18 @@
+CREATE QUERY area_gen_est_map() FOR GRAPH gsql_EMS { 
+  TYPEDEF TUPLE<string area_name, double fire_p, double water_p, double wind_p, double solar_p, double storage_p, double nuclear_p, double other_p> info;
+  
+	HeapAccum<info>(500, area_name DESC) @@result_all;
+	comp = {gridcom.*};
+ 
+  start_comp = select s from comp:s where s.parent_id =="";
+  
+  area_comp = select t from start_comp:s -(gridcom_gridcom:e)->:t where t.id !=s.parent_id;
+  
+  area_map = select s from area_comp:s 
+                ACCUM 
+                  @@result_all += info(s.name,s.fire_p,s.water_p,s.wind_p,s.solar_p,s.storage_p,s.nuclear_p,s.otherpower_p);
+ 
+  
+              
+  print @@result_all;
+}

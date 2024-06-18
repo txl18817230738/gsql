@@ -1,0 +1,21 @@
+'''
+use ems_v1 match (s:CN)<-[e:(connected_Breaker_CN|connected_Disconnector_CN)]-(t) where (contains(t.name,'甘孜.东关站') and contains(t.name,'0'))
+or (contains(t.name,'雅安.永兴站') and contains(t.name,'0'))
+or (contains(t.name,'西昌.城东站') and contains(t.name,'0'))
+or (contains(t.name,'广元.匡山水泥站') and contains(t.name,'0'))
+or (contains(t.name,'西昌.乐寨站') and contains(t.name,'912'))
+or (contains(t.name,'西昌.乐寨站') and contains(t.name,'312'))
+or (contains(t.name,'巴中.上两站') and contains(t.name,'0'))
+or (contains(t.name,'阿坝.安曲站') and contains(t.name,'0'))
+or (contains(t.name,'阿坝.马塘站') and contains(t.name,'0'))
+or (contains(t.name,'阿坝.川主寺站') and contains(t.name,'0'))
+or (contains(t.name,'西昌.德昌凤凰厂') and contains(t.name,'0'))
+or (contains(t.name,'遂宁.红江厂') and contains(t.name,'0'))
+or (contains(t.name,'攀枝花.布德光伏厂') and contains(t.name,'0'))
+or (contains(t.name,'四川.狮子坪厂') and contains(t.name,'0'))
+or (contains(t.name,'天全.两层岩电厂') and contains(t.name,'0'))
+or (contains(t.name,'四川.跑马坪厂') and contains(t.name,'0'))
+or (contains(t.name,'德阳.信义玻璃自备') and contains(t.name,'0'))
+set
+t.point = 0
+'''

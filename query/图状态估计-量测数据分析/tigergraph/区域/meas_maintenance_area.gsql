@@ -1,0 +1,65 @@
+CREATE QUERY meas_maintenance_area(/* Parameters here */) FOR GRAPH gsql_EMS { 
+ TYPEDEF TUPLE <string areaname, float aclinedotPCoverage, float aclineQCoverage, float unitPCoverage, float unitQCoverage, float loadPCoverage, float loadQCoverage, float trans2PCoverage, float trans2QCoverage, float trans3PCoverage, float trans3QCoverage, float cpQCoverage, float busPCoverage, float totalCoverage> info;
+ 
+  HeapAccum<info>(1000,areaname DESC) @@areainfo;
+  SumAccum<string> @area_name;
+  
+  comp = {gridcom_stat.*};
+  
+  comp = select s from comp:s -(gridcom_gridcom_stat:e) -:t 
+            ACCUM 
+                s.@area_name = t.name;
+  
+  T0 = select s from comp:s where s.id !="113715890758877224"
+            ACCUM 
+               double measNum = s.count_AClinedotP + s.count_AClinedotQ + s.count_unitP + s.count_unitQ + s.count_loadP + s.count_loadQ + s.count_twoportP + s.count_twoportQ + s.count_threeportP + s.count_threeportQ + s.count_CPQ + s.count_busV,
+               double count_all = s.count_acline*2 + s.count_unit*2 - s.count_unit_SVG + s.count_load*2 + s.count_trans2*2 + s.count_trans3*2 + s.count_CP + s.count_bus_section,
+               double mes_coverage =0,
+               double aclinePCoverage =0,
+               double aclineQCoverage =0,
+               double unitPCoverage =0,
+               double unitQCoverage =0,
+               double loadPCoverage =0,
+               double loadQCoverage =0,
+               double twoportPCoverage =0,
+               double twoportQCoverage =0,
+               double threeportPCoverage =0,
+               double threeportQCoverage =0,
+               double CPQCoverage =0,
+               double busVCoverage =0,
+              // if (count_all != 0) then
+                // mes_coverage = measNum /count_all
+              // end,
+	       if(s.count_sub !=0) THEN
+                 mes_coverage = s.count_sub_meas/s.count_sub 
+               end,
+               if(s.count_acline !=0) THEN
+                 aclinePCoverage = s.count_AClinedotP/s.count_acline,
+                 aclineQCoverage = s.count_AClinedotQ/s.count_acline
+               end,
+               if(s.count_unit !=0) then
+                 unitPCoverage = s.count_unitP / s.count_unit,
+                 unitQCoverage = s.count_unitQ / s.count_unit
+               end,
+               if(s.count_load !=0) THEN
+                 loadPCoverage = s.count_loadP / s.count_load,
+                 loadQCoverage = s.count_loadQ / s.count_load
+               end,
+               if(s.count_trans2 !=0) THEN
+                 twoportPCoverage = s.count_twoportP / s.count_trans2,
+                 twoportQCoverage =  s.count_twoportQ / s.count_trans2
+               end,
+               if(s.count_trans3 !=0) THEN
+                 threeportPCoverage = s.count_threeportP / s.count_trans3,
+                 threeportQCoverage = s.count_threeportQ / s.count_trans3
+               end,
+               if(s.count_CP !=0) THEN
+                 CPQCoverage = s.count_CPQ / s.count_CP
+               end,
+               if(s.count_bus_section !=0) THEN
+                 busVCoverage = s.count_busV / s.count_bus_section
+               end,
+               @@areainfo += info(s.@area_name, aclinePCoverage, aclineQCoverage, unitPCoverage, unitQCoverage, loadPCoverage, loadQCoverage, twoportPCoverage,  twoportQCoverage, threeportPCoverage, threeportQCoverage, CPQCoverage, busVCoverage, mes_coverage);
+ PRINT @@areainfo;
+ PRINT @@areainfo.size();
+}

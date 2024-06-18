@@ -1,0 +1,46 @@
+CREATE QUERY dashboard_sub_equip(/* Parameters here */) FOR GRAPH gsql_EMS { 
+	/* Write query logic here */ 
+	SumAccum<INT> @@aclineend;
+	SumAccum<INT> @@bus;
+	SumAccum<INT> @@twoporttrans;
+	SumAccum<INT> @@threeporttrans;
+	SumAccum<INT> @@generator;
+	SumAccum<INT> @@load;
+	SumAccum<INT> @@CS;
+	SumAccum<INT> @@CP;
+
+	aclineendSet = {ACline_dot.*};
+	busSet = {BUS.*};
+	unitSet = {unit.*};
+	twoporttransSet = {two_port_transformer.*};
+	threeporttransSet = {three_port_transformer.*};
+	CSSet = {C_S.*};
+	CPSet = {C_P.*};
+	l_oadSet = {l_oad.*};
+	
+	CSSet = SELECT d FROM CSSet:d ACCUM
+						@@CS += 1;
+	CPSet = SELECT d FROM CPSet:d ACCUM
+						@@CP += 1;
+	l_oadSet = SELECT d FROM l_oadSet:d ACCUM
+						@@load += 1;
+	threeporttransSet = SELECT d FROM threeporttransSet:d ACCUM
+						@@threeporttrans += 1;
+	twoporttransSet = SELECT d FROM twoporttransSet:d ACCUM
+						@@twoporttrans += 1;
+	busSet = SELECT d FROM busSet:d ACCUM
+						@@bus += 1;
+	unitSet = SELECT d FROM unitSet:d ACCUM
+						@@generator += 1;
+	aclineendSet = SELECT d FROM aclineendSet:d ACCUM
+						@@aclineend += 1;
+
+	print @@aclineend;
+	print @@bus;
+	print @@twoporttrans;
+	print @@threeporttrans;
+	print @@generator;
+	print @@load;
+	print @@CS;
+	print @@CP;
+}

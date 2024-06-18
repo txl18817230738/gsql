@@ -1,0 +1,37 @@
+se_all_info_transVio
+'''
+use ems_v1 match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:topoid_subid]->(t:`TopoND`)-[e:topo_connect]-> (td:`TopoND`)  filter where startid.id = "113715890758877224" and t.island = 1 and td.island = 1 and e.reverse = 1
+let
+pi = 3.1415926535898;
+minValue = case when length(e.R) - 1 >= 0 then length(e.R) - 1 else 0,
+let
+tap_ratio = case when e.R.size() <> 0  then abs(e.transformer_final_turns_ratio) else 0.0 end,
+tap_ratio_square = case when e.R.size() <> 0 then abs((e.transformer_final_turns_ratio)*(e.transformer_final_turns_ratio)) else 0.0 end
+
+let
+P_TLPF = case when e.R.size() <> 0 and e.transformer_final_turns_ratio = 0 then t.PF_Vm * td.PF_Vm * sin((t.PF_Va - td.PF_Va)*PI/180)* e.B + (t.PF_Vm*t.PF_Vm - t.PF_Vm*td.PF_Vm*cos((t.PF_Va - td.PF_Va)*PI/180)) * e.G when e.R.size() <> 0 and e.transformer_final_turns_ratio > 0 then t.PF_Vm * t.PF_Vm * e.G - t.PF_Vm * td.PF_Vm * ((e.G*tap_ratio)*cos((t.PF_Va - td.PF_Va)*PI/180) + (-e.B*tap_ratio)*sin((t.PF_Va - td.PF_Va)*PI/180)) else t.PF_Vm * t.PF_Vm * e.G * tap_ratio_square - t.PF_Vm * td.PF_Vm * ((e.G*tap_ratio)*cos((t.PF_Va - td.PF_Va)*PI/180) + (-e.B*tap_ratio)*sin((t.PF_Va - td.PF_Va)*PI/180)) end,
+Q_TLPF = case when e.R.size() <> 0 and e.transformer_final_turns_ratio = 0 then - t.PF_Vm * t.PF_Vm * (-e.B + 0.5*e.hB) - t.PF_Vm * td.PF_Vm * (e.G*sin((t.PF_Va - td.PF_Va)*PI/180) - (-e.B)*cos((t.PF_Va - td.PF_Va)*PI/180)) when e.R.size() <> 0 and e.transformer_final_turns_ratio > 0 then - t.PF_Vm * t.PF_Vm * (-e.B + 0.5*e.hB)  - t.PF_Vm * td.PF_Vm * ((e.G*tap_ratio)*sin((t.PF_Va - td.PF_Va)*PI/180) - (-e.B*tap_ratio)*cos((t.PF_Va - td.PF_Va)*PI/180)) else - t.PF_Vm * t.PF_Vm * (-e.B * tap_ratio_square + 0.5*e.hB) - t.PF_Vm * td.PF_Vm * ((e.G*tap_ratio)*sin((t.PF_Va - td.PF_Va)*@@PI/180) - (-e.B*tap_ratio)*cos((t.PF_Va - td.PF_Va)*@@PI/180))
+
+let
+tmpCI = case when sqrt(P_TLPF*P_TLPF + Q_TLPF*Q_TLPF) >= e.line_Q1 and sqrt(P_TLPF*P_TLPF + Q_TLPF*Q_TLPF) < e.line_Q2 then 1 when sqrt(P_TLPF*P_TLPF + Q_TLPF*Q_TLPF) >= e.line_Q2 and sqrt(P_TLPF*P_TLPF + Q_TLPF*Q_TLPF) < e.line_Q3 then 2 when sqrt(P_TLPF*P_TLPF + Q_TLPF*Q_TLPF) >= e.line_Q3 then 3 else 0 end
+
+let
+MVA=sqrt(P_TLPF*P_TLPF+Q_TLPF*Q_TLPF)
+let
+vio_type = case when MVA>e.line_Q1 and MVA<e.line_Q2 and e.line_Q1 > 0.01 then "1级越限" when MVA>=e.line_Q2 and MVA<e.line_Q3 and e.line_Q2 > 0.01 then "2级越限" when MVA>=e.line_Q3 and e.line_Q3 > 0.01 then "3级越限" else "无" end,
+
+difference = case when MVA>e.line_Q1 and MVA<e.line_Q2 and e.line_Q1 > 0.01 then MVA*100-floor(e.line_Q1*100) when MVA>=e.line_Q2 and MVA<e.line_Q3 and e.line_Q2 > 0.01 then MVA*100-floor(e.line_Q2*100) when MVA>=e.line_Q3 and e.line_Q3 > 0.01 then MVA*100-floor(e.line_Q3*100) else 0.0 end,
+
+let
+rating = case when MVA>e.line_Q1 and MVA<e.line_Q2 and e.line_Q1 > 0.01 then difference*100/floor(e.line_Q1*100) when MVA>=e.line_Q2 and MVA<e.line_Q3 and e.line_Q2 > 0.01 then difference*100/floor(e.line_Q2*100) when MVA>=e.line_Q3 and e.line_Q3 > 0.01 then difference*100/floor(e.line_Q3*100) else 0.0 end,
+
+Line_trans = case when e.flag = 0 then "线路" else "变压器" end,
+value_length = range(0, minValue)
+for i in value_length
+	MVAmax1 = floor(e.line_Q1*100/length(e.R)),
+	MVAmax2 = floor(e.line_Q2*100/length(e.R)), 
+	MVAmax3 = floor(e.line_Q3*100/length(e.R)),
+	MVA_ = MVA*100/length(e.R),
+	differencetrans = difference/length(e.R),
+
+'''

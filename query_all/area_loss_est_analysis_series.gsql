@@ -1,0 +1,24 @@
+CREATE QUERY area_loss_est_analysis_series(string timestamp, string companyID) FOR GRAPH gsql_EMS { 
+  ListAccum<carbon_hist_info> @@total_loss_list;
+  SumAccum<double> @@last_total_loss;
+  SetAccum<string> @@Comp_ID;
+ 
+  comp = {gridcom.*};
+  area = select s from comp:s where s.id == companyID;
+
+  loss_set = select t from area:s-(comp_history_total_loss:e) - :t
+    ACCUM
+      FOREACH x in t.today DO
+        IF isOneDay(timestamp, x.t) THEN
+            @@total_loss_list+=x
+        END
+      END;
+  
+  int last_loss_num = @@total_loss_list.size()-1;
+  @@last_total_loss = @@total_loss_list.get(last_loss_num).v;
+ 
+  print @@total_loss_list;
+ 
+  print area[area.name,area.total_loss] where area.id == companyID;
+  print @@last_total_loss; 
+}

@@ -1,0 +1,252 @@
+CREATE QUERY overview_system_operation(string companyID="113715890758877224") FOR GRAPH gsql_EMS { 
+  
+  SetAccum<string> @@Comp_ID;
+  SumAccum<double> @@total_gen;
+  SumAccum<double> @@total_load;
+  
+  SumAccum<double> @@water_total_p;
+  SumAccum<double> @@water_total_p_rate;
+  SumAccum<double> @@fire_total_p;
+  SumAccum<double> @@fire_total_p_rate;
+  SumAccum<double> @@wind_total_p;
+  SumAccum<double> @@wind_total_p_rate;
+  SumAccum<double> @@load_total_p;
+  SumAccum<double> @@load_total_p_rate;
+  SumAccum<double> @@other_total_p;
+  SumAccum<double> @@other_total_p_rate;
+  SumAccum<double> @@nuclear_total_p;
+  SumAccum<double> @@nuclear_total_p_rate;
+  SumAccum<double> @@storage_total_p;
+  SumAccum<double> @@storage_total_p_rate;
+  SumAccum<double> @@distributed_total_p;
+  SumAccum<double> @@distributed_total_p_rate;
+  
+  SumAccum<double> @@total_p_500;
+  SumAccum<double> @@total_p_rate_500;
+  SumAccum<double> @@total_p_220;
+  SumAccum<double> @@total_p_rate_220;
+  SumAccum<double> @@total_p_110;
+  SumAccum<double> @@total_p_rate_110;
+  SumAccum<double> @@total_p_35;
+  SumAccum<double> @@total_p_rate_35;
+  SumAccum<double> @@total_p_10;
+  SumAccum<double> @@total_p_rate_10;
+  
+
+  SumAccum<double> @@total_exchange;
+  SumAccum<double> @@total_loss;
+  MaxAccum<double> @@distribution_p_max;
+  
+  
+  SumAccum<INT> @@total_acline;
+  SumAccum<INT> @@total_acline_20;
+  SumAccum<INT> @@total_acline_20_80;
+  SumAccum<INT> @@total_acline_80_100;
+  SumAccum<INT> @@total_acline_100;
+  
+  SumAccum<INT> @@total_bus;
+  SumAccum<INT> @@total_bus_normal;
+  SumAccum<INT> @@total_bus_lower;
+  SumAccum<INT> @@total_bus_higher;
+  
+
+  
+  sub = {Substation.*};
+  comp = {gridcom.*};
+
+  start_comp = select s from comp:s where s.id == companyID 
+    accum 
+      @@Comp_ID+= s.id,
+      //@@total_exchange += (s.input_p - s.output_p),
+      @@nuclear_total_p += s.nuclear_p,
+      // @@distributed_total_p = s.distributed_p,
+      @@storage_total_p += s.storage_p,
+      @@total_gen += s.total_gen_meas,
+      @@total_loss += s.total_loss,
+      @@total_load += s.total_load_meas,
+      @@water_total_p += s.water_p,
+      @@fire_total_p += s.fire_p,
+      @@wind_total_p += s.wind_p,
+      @@load_total_p += s.solar_p,
+      @@other_total_p += s.otherpower_p,
+      @@nuclear_total_p += s.nuclear_p,
+      @@storage_total_p += s.storage_p,
+      @@distributed_total_p += s.distributed_p;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID; 
+  sub_set = select t from comp:s-(connected_grid_sub:e)-:t where s.id in @@Comp_ID and t.subtype=="换流站";
+  
+  switch_unit_mease_set = select s from sub_set:s -(connected_Sub_Unit:e)-:t where t.Pimeas>0
+              ACCUM
+                  @@total_exchange += t.Pimeas;
+  
+  equips = SELECT t FROM sub:s - ((connected_Sub_Unit|connected_Sub_Bus|connected_Sub_Aclinedot):e) ->:t;
+  
+  T_bus = SELECT t FROM equips:s - (topo_bus:e) - TopoND:t
+          WHERE t.island == 1;
+  T_bus = SELECT s FROM T_bus:s - (topo_connect:e) - TopoND:t
+          where s.island == 1 and t.island == 1
+          post-accum
+          @@total_bus+=1,
+          if (s.PF_Vm >= s.up_V) then @@total_bus_higher+=1
+          else if (s.PF_Vm <= s.lo_V) then @@total_bus_lower+=1
+          else @@total_bus_normal+=1
+          end;
+  
+  
+  T_unit = SELECT s FROM equips:s - (topo_unit:e) - TopoND:t
+           WHERE t.island == 1 and s.Gentype != "虚拟机组" and s.Gentype != "交换机组"
+           ACCUM 
+           if (s.Gentype=="风电机组") then
+               @@wind_total_p_rate += abs(s.P_rate)
+           else if s.Gentype=="火电机组" then
+               @@fire_total_p_rate += abs(s.P_rate)
+           else if s.Gentype=="光伏机组" then
+               @@load_total_p_rate += abs(s.P_rate)
+           else if s.Gentype=="水电机组" then
+               @@water_total_p_rate += abs(s.P_rate)
+           else if s.Gentype=="核电机组" then
+               @@nuclear_total_p_rate += abs(s.P_rate)
+           else if s.Gentype=="抽蓄机组" then
+               @@storage_total_p_rate += abs(s.P_rate)
+          /**
+           else if s.Gentype=="分布式机组" then
+               @@distributed_total_p_rate += abs(s.P_rate)
+          **/
+           else
+               @@other_total_p_rate += abs(s.P_rate)
+           end;
+  
+  T_aclinedot = SELECT t FROM equips:s - (topo_aclinedot:e) - TopoND:t
+                WHERE t.island == 1;
+  T_aclinedot = select s 
+    from T_aclinedot:s -(topo_connect:e)->TopoND:t
+    WHERE s.island == 1 and t.island == 1
+    accum
+    double tap_ratio = abs(e.transformer_final_turns_ratio),
+    double tap_ratio_square = abs((e.transformer_final_turns_ratio)*(e.transformer_final_turns_ratio)),            
+    case when (e.transformer_final_turns_ratio == 0) then
+        e.P_TLPF = s.SE_Vm * s.SE_Vm * e.G - s.SE_Vm * t.SE_Vm * (e.G*cos(s.SE_Va - t.SE_Va) + (-e.B)*sin(s.SE_Va - t.SE_Va)),
+        e.Q_TLPF = - s.SE_Vm * s.SE_Vm * (-e.B) - s.SE_Vm * t.SE_Vm * (e.G*sin(s.SE_Va - t.SE_Va) - (-e.B)*cos(s.SE_Va - t.SE_Va))
+    when (e.transformer_final_turns_ratio > 0) then
+        e.P_TLPF = s.SE_Vm * s.SE_Vm * e.G - s.SE_Vm * t.SE_Vm * ((e.G*tap_ratio)*cos(s.SE_Va - t.SE_Va) + (-e.B*tap_ratio)*sin(s.SE_Va - t.SE_Va)),
+        e.Q_TLPF = - s.SE_Vm * s.SE_Vm * (-e.B) - s.SE_Vm * t.SE_Vm * ((e.G*tap_ratio)*sin(s.SE_Va - t.SE_Va) - (-e.B*tap_ratio)*cos(s.SE_Va - t.SE_Va))
+    else
+        e.P_TLPF = s.SE_Vm * s.SE_Vm * e.G * tap_ratio_square - s.SE_Vm * t.SE_Vm * ((e.G*tap_ratio)*cos(s.SE_Va - t.SE_Va) + (-e.B*tap_ratio)*sin(s.SE_Va - t.SE_Va)),
+        e.Q_TLPF = - s.SE_Vm * s.SE_Vm * (-e.B * tap_ratio_square) - s.SE_Vm * t.SE_Vm * ((e.G*tap_ratio)*sin(s.SE_Va - t.SE_Va) - (-e.B*tap_ratio)*cos(s.SE_Va - t.SE_Va))
+    end;    
+  T_aclinedot = SELECT s   
+         FROM T_aclinedot:s-(topo_connect:e)->TopoND:t
+         where s.island == 1 and t.island == 1
+         ACCUM
+         double p_rate = e.line_Q1,
+         if (e.R.size() > 0) then
+            p_rate = e.line_Q1*100/e.R.size()
+         end,   
+         if abs(p_rate) == 999900 then
+            p_rate = 0
+         end,      
+         FOREACH i in range [0, e.X.size()-1] DO        
+            IF e.device_type =="AC传输线" THEN
+                double meas_p = e.M_P_TLPF_list.get(i)*100,
+                double meas_q = e.M_Q_TLPF_list.get(i)*100,
+                double total_meas = sqrt(meas_p*meas_p+meas_q*meas_q),
+                double meas_overload = 0,
+                if abs(p_rate) >= 0.5 then
+                  meas_overload = abs(total_meas*100/p_rate)
+                end,
+                @@total_acline+=1,
+                if meas_overload >= 0 and meas_overload<=20 then
+                  @@total_acline_20+=1
+                else if meas_overload > 20 and meas_overload<=80 then
+                  @@total_acline_20_80+=1
+                else if meas_overload > 80 and meas_overload<=100 then
+                  @@total_acline_80_100+=1
+                else if meas_overload > 100 then
+                  @@total_acline_100+=1
+                end
+            END
+        END;
+        
+  sub = select s from sub:s -((connected_Sub_Trans_two|connected_Sub_Trans_three):e) ->:t where t.type_name=="WindingType.primary"
+        ACCUM
+          IF s.subtype=="变电站" then
+            if s.volt >= 500 then
+                    @@total_p_rate_500 += abs(t.S),
+                    @@total_p_500 += sqrt(t.P*t.P + t.Q*t.Q)
+                else if s.volt == 220 or s.volt == 230 then
+                    @@total_p_rate_220 += abs(t.S),
+                    @@total_p_220 += sqrt(t.P*t.P + t.Q*t.Q)
+                else if s.volt == 110 or s.volt == 115 then
+                    @@total_p_rate_110 += abs(t.S),
+                    @@total_p_110 += sqrt(t.P*t.P + t.Q*t.Q)
+                else if s.volt == 35 then
+                    @@total_p_rate_35 += abs(t.S),
+                    @@total_p_35 += sqrt(t.P*t.P + t.Q*t.Q)
+                else if s.volt == 10 then
+                    @@total_p_rate_10 += abs(t.S),
+                    @@total_p_10 += sqrt(t.P*t.P + t.Q*t.Q)
+                end
+            end
+          END;
+  
+  T_distribution = select t from comp:s -(com_history_load_p_meas:e) -:t 
+                    ACCUM
+                        FOREACH x in t.today DO
+                            @@distribution_p_max += abs(x.v)
+                        END;
+  
+  @@distributed_total_p_rate = 1.3*@@distribution_p_max;        
+ 
+  print @@total_load;
+  print @@total_gen;
+  
+  print @@water_total_p;
+  print @@water_total_p_rate;
+  print @@fire_total_p;
+  print @@fire_total_p_rate;
+  print @@wind_total_p;
+  print @@wind_total_p_rate;
+  print @@load_total_p;
+  print @@load_total_p_rate;
+  print @@other_total_p;
+  print @@other_total_p_rate;
+  print @@nuclear_total_p;
+  print @@nuclear_total_p_rate;
+  print @@storage_total_p;
+  print @@storage_total_p_rate;
+  print @@distributed_total_p;
+  print @@distributed_total_p_rate;
+  
+  
+  print @@total_p_500;
+  print @@total_p_rate_500;
+  print @@total_p_220;
+  print @@total_p_rate_220;
+  print @@total_p_110;
+  print @@total_p_rate_110;
+  print @@total_p_35;
+  print @@total_p_rate_35;
+  print @@total_p_10;
+  print @@total_p_rate_10;
+  
+     
+  print @@total_exchange;
+  print @@total_loss;
+  
+  print @@total_acline;
+  print @@total_acline_20;
+  print @@total_acline_20_80;
+  print @@total_acline_80_100;
+  print @@total_acline_100;
+  
+  print @@total_bus;
+  print @@total_bus_normal;
+  print @@total_bus_lower;
+  print @@total_bus_higher;
+ 
+}

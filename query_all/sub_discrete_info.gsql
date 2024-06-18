@@ -1,0 +1,57 @@
+CREATE QUERY sub_discrete_info (string subID) FOR GRAPH gsql_EMS syntax v2{
+
+  TYPEDEF TUPLE<id string, volt string, status int, statusM int, status_previous int, previous_time string, flag int, flagM int, strid string, strName string, devName string, off uint, f_usable uint, i_node string, j_node string, type_name string, updateFlag int> discrete_get;
+  HeapAccum<discrete_get>(10000000, id ASC) @@discrete;
+  SumAccum<INT> @@count_all;
+  SumAccum<INT> @@count_Breaker;
+  SumAccum<INT> @@count_Disconnector;
+  SumAccum<INT> @INode;
+  SumAccum<INT> @JNode;
+  SumAccum<string> @volt;
+
+  discreteSet = {discrete.*};
+  
+  discreteSet = SELECT s FROM discreteSet:s-((discrete_dis|discrete_breaker):e1)-(Disconnector|Breaker):t-((connected_Disconnector_CN|connected_Breaker_CN):e2)-CN:p
+                accum 
+                s.@volt = convertToString(t.volt),
+                s.@INode = t.I_nd,
+                s.@JNode = t.J_nd;
+                //case when s.flag == str_to_int("I") then
+                //    s.@INode = p.CN_id
+                //when s.flag == str_to_int("J") then
+                //    s.@JNode = p.CN_id
+                //end;
+  discreteSet = SELECT s FROM discreteSet:s - (discrete_sub:e) -:t
+                where s.id != "" and t.strid == subID
+                ACCUM
+                @@count_all+=1,
+                if s.type_name == "Breaker" then
+                  @@discrete += discrete_get(s.id, s.@volt, s.status, s.statusM, s.status_previous, s.previous_time, s.flag, s.flagM, s.strid, t.name, s.devName, s.off, s.f_usable, convertToString(s.@INode), convertToString(s.@JNode), "开关", s.updateFlag),
+                  @@count_Breaker+=1
+                else if s.type_name == "Disconnector" then
+                  @@discrete += discrete_get(s.id, s.@volt, s.status, s.statusM, s.status_previous, s.previous_time, s.flag, s.flagM, s.strid, t.name, s.devName, s.off, s.f_usable, convertToString(s.@INode), convertToString(s.@JNode), "刀闸", s.updateFlag),
+                  @@count_Disconnector+=1
+                end;
+
+
+  PRINT @@discrete;
+  PRINT @@count_all;
+  PRINT @@count_Breaker;
+  PRINT @@count_Disconnector;
+  
+  substation = {Substation.*};
+  substation = select s from substation:s where s.strid == subID;
+  print substation;
+  
+  pg = SELECT t FROM substation:s - (powergrid_substation:e) - powergrid:t;
+  print pg;
+  
+  company = SELECT t FROM substation:s - (connected_grid_sub:e) - gridcom:t;
+  print company;
+  
+  maint = SELECT t FROM substation:s - (connected_maintorg_sub:e) - maintorg:t;
+  print maint;
+
+  dccompany = SELECT t FROM substation:s - (connected_dcc_sub:e) - dcc:t;
+  print dccompany;
+}

@@ -1,0 +1,19 @@
+CREATE QUERY area_loss_est_analysis_map() FOR GRAPH gsql_EMS { 
+   
+  TYPEDEF TUPLE<string area_name, double loss_p> info;
+  
+	HeapAccum<info>(500, area_name DESC) @@result_all;
+	comp = {gridcom.*};
+ 
+  start_comp = select s from comp:s where s.parent_id =="";
+  
+  area_comp = select t from start_comp:s -(gridcom_gridcom:e)->:t where t.id !=s.parent_id;
+  
+  area_map = select s from area_comp:s 
+                ACCUM 
+                  @@result_all += info(s.name,s.total_loss);
+ 
+  
+              
+  print @@result_all;
+}

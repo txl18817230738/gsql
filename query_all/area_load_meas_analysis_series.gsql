@@ -1,0 +1,117 @@
+CREATE QUERY area_load_meas_analysis_series(string timestamp, string companyID) FOR GRAPH gsql_EMS syntax v2{ 
+  ListAccum<carbon_hist_info> @@list_500;
+  ListAccum<carbon_hist_info> @@list_220;
+  ListAccum<carbon_hist_info> @@list_110;
+  ListAccum<carbon_hist_info> @@list_35;
+  ListAccum<carbon_hist_info> @@list_10;
+  ListAccum<carbon_hist_info> @@list_other;
+  
+  SetAccum<string> @@Comp_ID;
+  
+  double bar_500;
+  double bar_220;
+  double bar_110;
+  double bar_35;
+  double bar_10;
+  double bar_other;
+  
+
+  comp = {gridcom.*};
+ 
+  area = select s from comp:s where s.id == companyID;
+
+  //500kv量测的时序曲线数值
+  set_500 = select s from area:s -(com_history_500_load_meas:e)-:t
+            accum
+              FOREACH x IN t.today DO 
+                IF isOneDay(timestamp, x.t) THEN 
+                    @@list_500 +=x 
+                END
+              END;
+  //220kv量测的时序曲线数值
+  set_220 = select s from area:s -(com_history_220_load_meas:e)-:t
+            accum
+              FOREACH x IN t.today DO 
+                IF isOneDay(timestamp, x.t) THEN 
+                    @@list_220 +=x 
+                END
+              END;
+          
+  //110kv量测的时序曲线数值
+  set_110 = select s from area:s -(com_history_110_load_meas:e)-:t
+            accum
+              FOREACH x IN t.today DO 
+                IF isOneDay(timestamp, x.t) THEN 
+                    @@list_110 +=x 
+                END
+              END;
+  //35kv量测的时序曲线数值
+  set_35 = select s from area:s -(com_history_35_load_meas:e)-:t
+            accum
+              FOREACH x IN t.today DO 
+                IF isOneDay(timestamp, x.t) THEN 
+                    @@list_35 +=x 
+                END
+              END;
+  
+  //10kv量测的时序曲线数值
+  set_10 = select s from area:s -(com_history_10_load_meas:e)-:t
+            accum
+              FOREACH x IN t.today DO 
+                IF isOneDay(timestamp, x.t) THEN 
+                    @@list_10 +=x 
+                END
+              END;
+  
+  //其他电压等级量测的时序曲线数值
+  set_other = select s from area:s -(com_history_other_load_meas:e)-:t
+            accum
+              FOREACH x IN t.today DO 
+                IF isOneDay(timestamp, x.t) THEN 
+                    @@list_other +=x 
+                END
+              END;
+  
+  int current500Index = @@list_500.size();
+  int current220Index = @@list_220.size();
+  int current110Index = @@list_110.size();
+  int current35Index = @@list_35.size();
+  int current10Index = @@list_10.size();
+  int currrentOtherIndex = @@list_other.size();
+  
+  if(current500Index >0) THEN
+     bar_500 = @@list_500.get(current500Index-1).v;
+  end;
+  if(current220Index >0) THEN
+     bar_220 = @@list_220.get(current500Index-1).v;
+  end;
+  if(current110Index >0) THEN
+     bar_110 = @@list_110.get(current500Index-1).v;
+  end;
+  if(current35Index >0) THEN
+     bar_35 = @@list_35.get(current500Index-1).v;
+  end;
+  if(current10Index >0) THEN
+     bar_10 = @@list_10.get(current500Index-1).v;
+  end;
+  if(currrentOtherIndex >0) THEN
+     bar_other = @@list_other.get(current500Index-1).v;
+  end;
+  
+  print @@list_500;
+  print @@list_220;
+  print @@list_110;
+  print @@list_35;
+  print @@list_10;
+  print @@list_other;
+  
+  
+  print bar_500;
+  print bar_220;
+  print bar_110;
+  print bar_35;
+  print bar_10;
+  print bar_other;
+  
+  print area[area.name];
+}

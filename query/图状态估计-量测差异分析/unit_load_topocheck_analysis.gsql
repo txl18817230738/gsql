@@ -1,0 +1,163 @@
+CREATE QUERY unit_load_topocheck_analysis(string companyID="113715890758877224", bool return_all=true) FOR GRAPH gsql_EMS{
+TYPEDEF TUPLE<mRID int, name string, devtype string, Substation string, sub_id string, volt double, Pimeas double, Qimeas double, topocase string> device;
+
+  SumAccum<INT> @@count_all;
+  SumAccum<int> @@counter = 0;
+  SumAccum<string> @devtype;
+  SumAccum<string> @topocase;
+  ListAccum<device> @@result_all;
+  HeapAccum<device>(10000000, volt DESC, Substation DESC, devtype DESC) @@device_all;
+  HeapAccum<device>(50, volt DESC, Substation DESC, devtype DESC) @@device_part;
+  SetAccum<string> @@Comp_ID;
+  SumAccum<string> @sub_id;
+  SumAccum<string> @sub_name;
+  FILE file1 ("/home/tigergraph/ems-query/query_gsql_EMS/output/topocheck.csv");
+
+  Tbus = {BUS.*};
+  Tsub = {Substation.*};
+  Taclinedot = {ACline_dot.*};
+  Tunit = {unit.*};
+  Tload = {l_oad.*};
+
+  SumAccum<INT> @@count_unit;
+  SumAccum<INT> @@count_load;
+
+  SumAccum<INT> @@count_500;
+  SumAccum<INT> @@count_500_unit;
+  SumAccum<INT> @@count_500_load;
+
+  SumAccum<INT> @@count_220;
+  SumAccum<INT> @@count_220_unit;
+  SumAccum<INT> @@count_220_load;
+
+  SumAccum<INT> @@count_110;
+  SumAccum<INT> @@count_110_unit;
+  SumAccum<INT> @@count_110_load;
+
+  SumAccum<INT> @@count_35;
+  SumAccum<INT> @@count_35_unit;
+  SumAccum<INT> @@count_35_load;
+
+  SumAccum<INT> @@count_10;
+  SumAccum<INT> @@count_10_unit;
+  SumAccum<INT> @@count_10_load;
+
+  SumAccum<INT> @@count_other;
+  SumAccum<INT> @@count_other_unit;
+  SumAccum<INT> @@count_other_load;
+
+  comp = {gridcom.*};
+
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID;
+
+  Tsub_unit = SELECT t FROM sub:s - (connected_Sub_Unit:e) -:t
+                accum
+                t.@sub_name = s.name,
+                t.@sub_id = s.strid;
+
+  Tsub_load = SELECT t FROM sub:s - (connected_Sub_Load:e) -:t
+                accum
+                t.@sub_name = s.name,
+                t.@sub_id = s.strid;
+
+  Tunit1 = select s from Tsub_unit:s - (topo_unit:e) -:t
+        where s.Pimeas > 1 and t.island == 0 
+        post-accum
+        s.@devtype = "机组",
+        s.@topocase = "连接断开",
+        @@device_all += device(s.id, s.name, s.@devtype, s.@sub_name, s.@sub_id,  s.volt, s.Pimeas, s.Qimeas, s.@topocase),
+        @@device_part += device(s.id, s.name, s.@devtype, s.@sub_name, s.@sub_id,  s.volt, s.Pimeas, s.Qimeas, s.@topocase),
+        @@count_all += 1,
+        @@count_unit += 1,
+        if s.volt >= 500 then
+            @@count_500 += 1,
+            @@count_500_unit += 1
+        else if s.volt >= 220 then
+            @@count_220 += 1,
+            @@count_220_unit += 1
+        else if s.volt >= 110 then
+            @@count_110 += 1,
+            @@count_110_unit += 1
+        else if s.volt >= 34.5 then
+            @@count_35 += 1,
+            @@count_35_unit += 1
+        else if s.volt >= 10 then
+            @@count_10 += 1,
+            @@count_10_unit += 1
+        else 
+            @@count_other += 1,
+            @@count_other_unit += 1
+        end;
+        
+ 
+  Tload1 = select s from Tsub_load:s - (topo_load:e) -:t
+        where s.Pimeas > 1 and t.island == 0
+        post-accum
+        s.@devtype = "负荷",
+        s.@topocase = "连接断开",
+        @@device_all += device(s.id, s.name, s.@devtype, s.@sub_name, s.@sub_id, s.volt, s.Pimeas, s.Qimeas, s.@topocase),
+        @@device_part += device(s.id, s.name, s.@devtype, s.@sub_name, s.@sub_id, s.volt, s.Pimeas, s.Qimeas, s.@topocase),
+        @@count_all += 1,
+        @@count_load += 1,
+        if s.volt >= 500 then
+            @@count_500 += 1,
+            @@count_500_load += 1
+        else if s.volt >= 220 then
+            @@count_220 += 1,
+            @@count_220_load += 1
+        else if s.volt >= 110 then
+            @@count_110 += 1,
+            @@count_110_load += 1
+        else if s.volt >= 34.5 then
+            @@count_35 += 1,
+            @@count_35_load += 1
+        else if s.volt >= 10 then
+            @@count_10 += 1,
+            @@count_10_load += 1
+        else
+            @@count_other += 1,
+            @@count_other_load += 1
+        end;
+
+  if return_all then
+    print @@device_all;
+  else
+    print @@device_part;
+  end;
+
+  print @@count_unit;
+  print @@count_load;
+ 
+  print @@count_500;
+  print @@count_500_unit;
+  print @@count_500_load;
+
+  print @@count_220;
+  print @@count_220_unit;
+  print @@count_220_load;
+
+  print @@count_110;
+  print @@count_110_unit;
+  print @@count_110_load;
+
+  print @@count_35;
+  print @@count_35_unit;
+  print @@count_35_load;
+
+  print @@count_10;
+  print @@count_10_unit;
+  print @@count_10_load;
+
+  print @@count_other;
+  print @@count_other_unit;
+  print @@count_other_load;
+
+  print @@count_all;
+
+}

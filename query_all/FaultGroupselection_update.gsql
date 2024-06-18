@@ -1,0 +1,156 @@
+CREATE QUERY FaultGroupselection_update() FOR GRAPH gsql_EMS{
+
+  SumAccum<string> @faultname;
+  SumAccum<string> @faulttype;
+  SumAccum<string> @linename;
+  SumAccum<double> @SI = 0;
+  SumAccum<int> @decesion_flag = 1;
+  SumAccum<int> @fastscreen_flag = 0;
+  SumAccum<int> @detailedanalysis_flag = 0;
+  SumAccum<int> @FaultGroup_select_flag = 0;
+  SumAccum<int> @unittopo_flag = 0;
+        MapAccum<int, int>@@acline_decision_map;
+        MapAccum<int, int>@@twoport_decision_map;
+        MapAccum<int, int>@@threeport_decision_map;
+        MapAccum<int, int>@@acline_detailed_map;
+        MapAccum<int, int>@@twoport_detailed_map;
+        MapAccum<int, int>@@threeport_detailed_map;
+  ListAccum<edge> @@edgeList;
+
+  Tfault = {Fault.*};
+  Tunit = {unit.*};
+  Tacline = {ACline_dot.*};
+  Ttwoport = {two_port_transformer.*};
+  Tthreeport = {three_port_transformer.*};
+  Tbus = {BUS.*};
+  Tsub = {Substation.*};
+  T0 = {TopoND.*};  
+  
+//FaultGroup
+
+  faultSet = select s from Tfault:s-(faultgroup_fault)-:t
+        accum
+        if (t.screen_flag == 1 or t.analysis_flag == 1) then
+            s.@FaultGroup_select_flag = 1
+        else 
+            s.@FaultGroup_select_flag = 0
+        end
+        post-accum
+            s.FaultGroup_select_flag = s.@FaultGroup_select_flag;
+
+//Generate N-1 faults selection flag 
+  aclineSet = select s from Tacline:s-(fault_aclinedot_select:e)-:t 
+        accum
+        if (t.@FaultGroup_select_flag == 1) then
+            if (t.decesion_flag == 1) then
+                s.@decesion_flag = t.fastscreen_flag
+            else
+                s.@decesion_flag = 0
+            end,
+            s.@detailedanalysis_flag = t.detailedanalysis_flag
+        else
+            s.@decesion_flag = 0,
+            s.@detailedanalysis_flag = 0
+        end;
+
+
+  twoportSet = select s from Ttwoport:s-(fault_twoport_select:e) -> :t
+        accum
+        if (t.@FaultGroup_select_flag == 1) then
+            if (t.decesion_flag == 1) then
+                s.@decesion_flag = t.fastscreen_flag
+            else
+                s.@decesion_flag = 0
+            end,
+            s.@detailedanalysis_flag = t.detailedanalysis_flag
+        else
+            s.@decesion_flag = 0,
+            s.@detailedanalysis_flag = 0
+        end;
+
+  threeportSet = select s from Tthreeport:s-(fault_threeport_select:e)-:t
+        accum
+        if (t.@FaultGroup_select_flag == 1) then
+            if (t.decesion_flag == 1) then
+                s.@decesion_flag = t.fastscreen_flag
+            else
+                s.@decesion_flag = 0
+            end,
+            s.@detailedanalysis_flag = t.detailedanalysis_flag
+        else
+            s.@decesion_flag = 0,
+            s.@detailedanalysis_flag = 0
+        end;
+
+  unitSet = select s from Tunit:s-(fault_unit_select:e)-:t
+        accum
+        if (t.@FaultGroup_select_flag == 1) then
+            if (t.decesion_flag == 1) then
+                s.@decesion_flag = t.fastscreen_flag
+            else
+                s.@decesion_flag = 0
+            end,
+            s.@detailedanalysis_flag = t.detailedanalysis_flag
+        else
+            s.@decesion_flag = 0,
+            s.@detailedanalysis_flag = 0
+        end;
+
+// update fault decision and detailed analysis flag
+
+   aclineSet = select s from aclineSet:s -(aclinedot_aclinedot:e) - :t
+     accum
+       int id = e.id,
+       @@acline_decision_map += (id -> s.@decesion_flag),
+       @@acline_decision_map += (-id -> s.@decesion_flag),
+       @@acline_detailed_map += (id -> s.@detailedanalysis_flag),
+       @@acline_detailed_map += (-id -> s.@detailedanalysis_flag);
+
+   twoportSet = select s from Ttwoport:s
+      accum
+      @@twoport_decision_map += (s.id -> s.@decesion_flag),
+      @@twoport_detailed_map += (s.id -> s.@detailedanalysis_flag);
+
+   threeportSet = select s from threeportSet:s
+      accum
+      @@threeport_decision_map += (s.id -> s.@decesion_flag),
+      @@threeport_detailed_map += (s.id -> s.@detailedanalysis_flag);
+
+// update Decision and Analysis_decision
+               T0 = select v
+                    from T0:v-(topo_connect:e)->TopoND:t
+                        where (v.island == 1 and t.island == 1 and e.reverse == 1 )  // 04.01.2019 added
+                    accum
+                        e.CA_bridge = -1;   // reset
+
+
+            T0 = select v
+                    from T0:v-(topo_connect:e)->TopoND:t
+                    where (v.island == 1 and t.island == 1 and e.reverse == 1 ) // [YT] test for parallel trans_line & optimization
+                    accum
+                        int line_volt = 0,
+                        int threeTrans_volt = 0,
+                        case when (e.device_type == "AC传输线") then
+                            line_volt = TransferLineVolt(e.volt),
+                                e.CA_bridge = 0,
+                                e.Decision = GetMapValuesFromList(@@acline_decision_map, e.key_list),
+                                e.Analysis_decision = GetMapValuesFromList(@@acline_detailed_map, e.key_list)
+                        when ( e.device_type == "双绕组变压器") then
+                                e.CA_bridge = 0,
+                                e.Decision = GetMapValuesFromList(@@twoport_decision_map, e.key_list),
+                                e.Analysis_decision = GetMapValuesFromList(@@twoport_detailed_map, e.key_list)
+                        when ( e.device_type == "三绕组变压器" and (FindSubstring(e.edge_name.get(0),"高压端") == 1 or FindSubstring(e.edge_name.get(0),"-高") == 1)) then
+                            threeTrans_volt = TransferThreePortVolt(e.volt),
+                                e.CA_bridge = 0,
+                                e.Decision = GetMapValuesFromList(@@threeport_decision_map, e.key_list),
+                                e.Analysis_decision = GetMapValuesFromList(@@threeport_detailed_map, e.key_list)
+                        end;
+
+ Tfault_complex = select s from Tfault:s
+         where s.faulttype == "复杂故障" and s.groupname == "复杂故障"
+         accum
+             if s.faultdevtype.get(0) == "AClinedot" then
+               insert into fault_aclinedot_select values(s.id, s.devid.get(0)),
+               insert into connected_Sub_Fault values(s.faultdevSubid.get(0), s.id, s.id)
+             end;       
+}

@@ -1,0 +1,102 @@
+CREATE QUERY unit_CIME_part (string companyID="113715890758877224", double volt=0) FOR GRAPH gsql_EMS{
+
+  TYPEDEF TUPLE<id string, Substation string, sub_id string, name string, devname string, volt double, off uint, Pimeas double, Qimeas double, nd string, base_value double, island int> unit_get;
+  HeapAccum<unit_get>(50, id DESC, name DESC, Substation DESC, volt DESC)  @@unit_part;
+  HeapAccum<unit_get>(50, id DESC, name DESC, Substation DESC, volt DESC)  @@vunit_part;
+
+  SumAccum<INT> @@count_all = 0;
+  SumAccum<INT> @@vcount_all = 0;
+  SumAccum<STRING> @subid;
+  SetAccum<string> @@Comp_ID;
+  SumAccum<int> @island;
+  MapAccum<INT,INT> @@islandMap;
+
+  comp = {gridcom.*};
+  sub = {Substation.*};
+
+  if(companyID!="") then
+    start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+    WHILE(start_comp.size()>0) DO
+      start_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+    END;
+    sub = select t from comp:s-(connected_grid_sub:e)-:t where s.id in @@Comp_ID;
+  end;
+
+  F6 = SELECT t
+       FROM sub:s - (connected_Sub_Unit:e) ->:t
+       accum t.@subid = s.strid;
+
+  subs = select s from F6:s - (topo_unit:e) - TopoND:t
+      accum
+        @@islandMap+=(s.id->t.island);
+
+  G1 = select s from F6:s
+       accum s.@island = @@islandMap.get(s.id)
+       POST-ACCUM
+       if(volt ==500) then
+          if (s.volt >= 500) then       
+            IF (s.id > 200000000000000000) THEN
+             @@vcount_all += 1,
+             @@vunit_part += unit_get(convertToString(s.id), s.Substation, s.@subid, s.name, s.Gentype, s.volt, s.off, s.Pimeas, s.Qimeas, convertToString(s.nd), s.base_value, s.@island)
+            ELSE
+             @@count_all += 1,
+             @@unit_part += unit_get(convertToString(s.id), s.Substation, s.@subid, s.name, s.Gentype, s.volt, s.off, s.Pimeas, s.Qimeas, convertToString(s.nd), s.base_value, s.@island)
+            END
+          end
+        else if (volt ==220) then 
+          if (s.volt >= 220 and s.volt < 500) then       
+            IF (s.id > 200000000000000000) THEN
+             @@vcount_all += 1,
+             @@vunit_part += unit_get(convertToString(s.id), s.Substation, s.@subid, s.name, s.Gentype, s.volt, s.off, s.Pimeas, s.Qimeas, convertToString(s.nd), s.base_value, s.@island)
+            ELSE
+             @@count_all += 1,
+             @@unit_part += unit_get(convertToString(s.id), s.Substation, s.@subid, s.name, s.Gentype, s.volt, s.off, s.Pimeas, s.Qimeas, convertToString(s.nd), s.base_value, s.@island)
+            END
+          end
+        else if(volt==110) then 
+          if (s.volt >= 110 and s.volt < 220) then       
+            IF (s.id > 200000000000000000) THEN
+             @@vcount_all += 1,
+             @@vunit_part += unit_get(convertToString(s.id), s.Substation, s.@subid, s.name, s.Gentype, s.volt, s.off, s.Pimeas, s.Qimeas, convertToString(s.nd), s.base_value, s.@island)
+            ELSE
+             @@count_all += 1,
+             @@unit_part += unit_get(convertToString(s.id), s.Substation, s.@subid, s.name, s.Gentype, s.volt, s.off, s.Pimeas, s.Qimeas, convertToString(s.nd), s.base_value, s.@island)
+            END
+          end
+        else if(volt==35) then 
+          if (s.volt >= 34.5 and s.volt < 110) then       
+            IF (s.id > 200000000000000000) THEN
+             @@vcount_all += 1,
+             @@vunit_part += unit_get(convertToString(s.id), s.Substation, s.@subid, s.name, s.Gentype, s.volt, s.off, s.Pimeas, s.Qimeas, convertToString(s.nd), s.base_value, s.@island)
+            ELSE
+             @@count_all += 1,
+             @@unit_part += unit_get(convertToString(s.id), s.Substation, s.@subid, s.name, s.Gentype, s.volt, s.off, s.Pimeas, s.Qimeas, convertToString(s.nd), s.base_value, s.@island)
+            END
+          end
+        else if(volt ==10) then 
+          if (s.volt >= 10 and s.volt < 34.5) then       
+            IF (s.id > 200000000000000000) THEN
+             @@vcount_all += 1,
+             @@vunit_part += unit_get(convertToString(s.id), s.Substation, s.@subid, s.name, s.Gentype, s.volt, s.off, s.Pimeas, s.Qimeas, convertToString(s.nd), s.base_value, s.@island)
+            ELSE
+             @@count_all += 1,
+             @@unit_part += unit_get(convertToString(s.id), s.Substation, s.@subid, s.name, s.Gentype, s.volt, s.off, s.Pimeas, s.Qimeas, convertToString(s.nd), s.base_value, s.@island)
+            END
+          end
+        else 
+          IF (s.id > 200000000000000000) THEN
+           @@vcount_all += 1,
+           @@vunit_part += unit_get(convertToString(s.id), s.Substation, s.@subid, s.name, s.Gentype, s.volt, s.off, s.Pimeas, s.Qimeas, convertToString(s.nd), s.base_value, s.@island)
+          ELSE
+           @@count_all += 1,
+           @@unit_part += unit_get(convertToString(s.id), s.Substation, s.@subid, s.name, s.Gentype, s.volt, s.off, s.Pimeas, s.Qimeas, convertToString(s.nd), s.base_value, s.@island)
+          END
+        end;
+
+  
+  print @@unit_part;
+  print @@count_all;
+  print @@vunit_part;
+  print @@vcount_all;
+}

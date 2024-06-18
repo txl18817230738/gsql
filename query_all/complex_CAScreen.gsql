@@ -1,0 +1,205 @@
+create query complex_CAScreen()
+for graph gsql_EMS {
+  TYPEDEF TUPLE < string name, string faulttype, string faultgroup, double volt, string sub_name, string sub_id, double SI> row;
+  SumAccum<int> @@id = 0;
+  ListAccum<int> @@edgeDecision;
+  SumAccum<string> @subid;
+  HeapAccum<row>(1000000, SI DESC, name DESC) @@result;
+
+  SumAccum<INT> @@count_all;
+  SumAccum<INT> @@count_SI0;
+  SumAccum<INT> @@count_SI02;
+  SumAccum<INT> @@count_SI25;
+  SumAccum<INT> @@count_SI5;
+
+  SumAccum<INT> @@count_500;
+  SumAccum<INT> @@count_500_SI0;
+  SumAccum<INT> @@count_500_SI02;
+  SumAccum<INT> @@count_500_SI25;
+  SumAccum<INT> @@count_500_SI5;
+
+  SumAccum<INT> @@count_220;
+  SumAccum<INT> @@count_220_SI0;
+  SumAccum<INT> @@count_220_SI02;
+  SumAccum<INT> @@count_220_SI25;
+  SumAccum<INT> @@count_220_SI5;
+
+  SumAccum<INT> @@count_110;
+  SumAccum<INT> @@count_110_SI0;
+  SumAccum<INT> @@count_110_SI02;
+  SumAccum<INT> @@count_110_SI25;
+  SumAccum<INT> @@count_110_SI5;
+
+  SumAccum<INT> @@count_35;
+  SumAccum<INT> @@count_35_SI0;
+  SumAccum<INT> @@count_35_SI02;
+  SumAccum<INT> @@count_35_SI25;
+  SumAccum<INT> @@count_35_SI5;
+
+  SumAccum<INT> @@count_10;
+  SumAccum<INT> @@count_10_SI0;
+  SumAccum<INT> @@count_10_SI02;
+  SumAccum<INT> @@count_10_SI25;
+  SumAccum<INT> @@count_10_SI5;
+
+  SumAccum<INT> @@count_other;
+  SumAccum<INT> @@count_other_SI0;
+  SumAccum<INT> @@count_other_SI02;
+  SumAccum<INT> @@count_other_SI25;
+  SumAccum<INT> @@count_other_SI5;
+
+  SumAccum<string> @sub_name;
+  SumAccum<string> @sub_id;
+	
+	T0 = {TopoND.*};
+        Tfault = {Fault.*};
+
+    //Tfault_complex = select s from Tfault:s-(fault_aclinedot_select:e)-:t
+     //       where s.faulttype == "复杂故障"
+  Tfaultset = select s from Tfault:s -(faultgroup_fault)-:t
+		  ACCUM
+                  double line_volt = s.volt.get(0), 
+                //if (s.decesion_flag ==  1 and s.fastscreen_flag == 1) then
+      if(s.faultdevtype.size()!=1) then 
+ 		  @@result+= row(s.name, s.faulttype, s.groupname, s.volt.get(0), s.faultdevSub.get(0), convertToString(s.faultdevSubid.get(0)), s.SI),
+	          @@count_all += 1,	
+                if line_volt >= 500 then
+                  @@count_500 += 1,
+                  if s.SI == 0 then
+                     @@count_500_SI0 += 1,
+                     @@count_SI0 += 1
+                  else if s.SI > 0 and s.SI <=2 then
+                     @@count_500_SI02 += 1,
+                     @@count_SI02 += 1
+                  else if s.SI > 2 and s.SI <= 5 then
+                     @@count_500_SI25 += 1,
+                     @@count_SI25 += 1
+                  else if s.SI > 5 then
+                     @@count_500_SI5 += 1,
+                     @@count_SI5 += 1
+                  end
+                else if line_volt >= 220 then
+                  @@count_220 += 1,
+                  if s.SI == 0 then
+                     @@count_220_SI0 += 1,
+                     @@count_SI0 += 1
+                  else if s.SI > 0 and s.SI <=2 then
+                     @@count_220_SI02 += 1,
+                     @@count_SI02 += 1
+                  else if s.SI > 2 and s.SI <= 5 then
+                     @@count_220_SI25 += 1,
+                     @@count_SI25 += 1
+                  else if s.SI > 5 then
+                     @@count_220_SI5 += 1,
+                     @@count_SI5 += 1
+                  end
+                else if line_volt >= 110 then
+                  @@count_110 += 1,
+                  if s.SI  == 0 then
+                     @@count_110_SI0 += 1,
+                     @@count_SI0 += 1
+                  else if s.SI > 0 and s.SI <=2 then
+                     @@count_110_SI02 += 1,
+                     @@count_SI02 += 1
+                  else if s.SI > 2 and s.SI <= 5 then
+                     @@count_110_SI25 += 1,
+                     @@count_SI25 += 1
+                  else if s.SI > 5 then
+                     @@count_110_SI5 += 1,
+                     @@count_SI5 += 1
+                  end
+                else if line_volt >= 34 then
+                  @@count_35 += 1,
+                  if s.SI == 0 then
+                     @@count_35_SI0 += 1,
+                     @@count_SI0 += 1
+                  else if s.SI > 0 and s.SI <=2 then
+                     @@count_35_SI02 += 1,
+                     @@count_SI02 += 1
+                  else if s.SI > 2 and s.SI <= 5 then
+                     @@count_35_SI25 += 1,
+                     @@count_SI25 += 1
+                  else if s.SI > 5 then
+                     @@count_35_SI5 += 1,
+                     @@count_SI5 += 1
+                  end
+                else if line_volt >= 10 then
+                  @@count_10 += 1,
+                  if s.SI == 0 then
+                     @@count_10_SI0 += 1,
+                     @@count_SI0 += 1
+                  else if s.SI > 0 and s.SI <=2 then
+                     @@count_10_SI02 += 1,
+                     @@count_SI02 += 1
+                  else if s.SI > 2 and s.SI <= 5 then
+                     @@count_10_SI25 += 1,
+                     @@count_SI25 += 1
+                  else if s.SI > 5 then
+                     @@count_10_SI5 += 1,
+                     @@count_SI5 += 1
+                  end
+                else
+                  @@count_other += 1,
+                  if s.SI == 0 then
+                     @@count_other_SI0 += 1,
+                     @@count_SI0 += 1
+                  else if s.SI > 0 and s.SI <=2 then
+                     @@count_other_SI02 += 1,
+                     @@count_SI02 += 1
+                  else if s.SI > 2 and s.SI <= 5 then
+                     @@count_other_SI25 += 1,
+                     @@count_SI25 += 1
+                  else if s.SI > 5 then
+                     @@count_other_SI5 += 1,
+                     @@count_SI5 += 1
+                  end
+                end
+              end;
+
+  
+
+  print @@result;
+
+  print @@count_all;
+  print @@count_SI0;
+  print @@count_SI02;
+  print @@count_SI25;
+  print @@count_SI5;
+
+  print @@count_500;
+  print @@count_500_SI0;
+  print @@count_500_SI02;
+  print @@count_500_SI25;
+  print @@count_500_SI5;
+
+  print @@count_220;
+  print @@count_220_SI0;
+  print @@count_220_SI02;
+  print @@count_220_SI25;
+  print @@count_220_SI5;
+
+  print @@count_110;
+  print @@count_110_SI0;
+  print @@count_110_SI02;
+  print @@count_110_SI25;
+  print @@count_110_SI5;
+
+  print @@count_35;
+  print @@count_35_SI0;
+  print @@count_35_SI02;
+  print @@count_35_SI25;
+  print @@count_35_SI5;
+
+  print @@count_10;
+  print @@count_10_SI0;
+  print @@count_10_SI02;
+  print @@count_10_SI25;
+  print @@count_10_SI5;
+
+  print @@count_other;
+  print @@count_other_SI0;
+  print @@count_other_SI02;
+  print @@count_other_SI25;
+  print @@count_other_SI5;	 
+
+}

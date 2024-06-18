@@ -1,0 +1,30 @@
+CREATE QUERY UnitFault_display() FOR GRAPH gsql_EMS{
+ typedef tuple<string faultid, string devtype, string devname, double volt, string sub_name, string sub_id, int vio_count> unitfault;
+
+ HeapAccum<unitfault>(1000000, faultid asc) @@fault_result;
+ SumAccum<string> @sub_name;
+ SumAccum<string> @sub_id;
+
+  Tfault = {Fault.*};
+  Tfaultgroup = {FaultGroup.*};
+  Tunit = {unit.*};
+  Tacline = {ACline_dot.*};
+  Ttwoport = {two_port_transformer.*};
+  Tthreeport = {three_port_transformer.*};
+  Tbus = {BUS.*};
+  Tsub = {Substation.*};
+  
+  Tunit = select s from Tunit:s-(connected_Unit_Sub:e)-:t
+        accum
+            s.@sub_name = t.name,
+            s.@sub_id = t.strid;
+  
+  complexfaultSet = select s from Tfault:s-(fault_unit_select:e)-:t
+            where s.groupname == "机组N-1故障组"
+        accum
+            if (s.decesion_flag ==  1 and s.detailedanalysis_flag == 1) then
+                @@fault_result += unitfault(convertToString(s.id), "机组", t.name, t.volt, t.@sub_name, t.@sub_id, s.linevio)
+            end;
+
+  print @@fault_result;
+}

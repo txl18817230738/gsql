@@ -1,0 +1,815 @@
+CREATE QUERY NTP_EMS_insert() FOR GRAPH gsql_EMS syntax v2{
+  // ListAccum<edge>@@edge_list;
+  MaxAccum<int> @topoID =0 ;
+  SumAccum<int> @iid =0;
+  SumAccum<int> @jid =0;
+  MaxAccum<int>@toid = 0;
+
+  SumAccum<int>@@counter = 0;
+  SumAccum<int>@@oldcounter = 1;
+  SumAccum<int>@@cncounter = 0;
+
+
+  SumAccum<double> @aclinecount = 0;
+  SumAccum<STRING> @latitude;
+  SumAccum<STRING> @longitude;
+  
+
+  MaxAccum<DOUBLE> @vm =0;
+  MaxAccum<DOUBLE> @va =0;
+  MaxAccum<DOUBLE> @mvm =0;
+  MaxAccum<DOUBLE> @mva =0;
+  MaxAccum<DOUBLE> @base_kv =0;
+  MaxAccum<DOUBLE> @desired_volt =0;
+
+  SumAccum<double> @genp;
+  SumAccum<double> @genq;
+  SumAccum<double> @mgenp;
+  SumAccum<double> @mgenq;
+  SumAccum<double> @qup;
+  SumAccum<double> @qlower;
+
+  SumAccum<double> @ldp;
+  SumAccum<double> @ldq;
+  SumAccum<double> @mloadp;
+  SumAccum<double> @mloadq;
+ 
+  SumAccum<double> @mcp;
+  SumAccum<double> @p;
+  SumAccum<double> @q;
+  MaxAccum<double> @v_rate;
+
+  SumAccum<STRING> @name;
+
+  AvgAccum @@upv;
+  AvgAccum @@lov;
+
+  AvgAccum @@rivp;
+  AvgAccum @@rivq;
+  
+  MaxAccum<double> @@maxgenp = 0;
+  
+  SumAccum<STRING> @edge_name;
+  SumAccum<STRING> @area = "putian";
+  
+  SumAccum<STRING> @edge_name_trans;
+  SumAccum<DOUBLE> @R_trans;
+  SumAccum<DOUBLE> @X_trans;
+  SumAccum<DOUBLE> @tapL_trans;
+  SumAccum<DOUBLE> @tapH_trans;
+  SumAccum<DOUBLE> @tapC_trans;
+  SumAccum<DOUBLE> @t_trans;
+  
+  SumAccum<DOUBLE> @sum_M_Pi_TLPF = 0;
+  SumAccum<DOUBLE> @sum_M_Qi_TLPF = 0;
+  SumAccum<DOUBLE> @sum_M_Pj_TLPF = 0;
+  SumAccum<DOUBLE> @sum_M_Qj_TLPF = 0;
+  
+  MaxAccum<INT> @BDID; 
+  SumAccum<int> @breaker_point;
+  SumAccum<int> @dis_point;
+//******************set CP***************************
+  ListAccum<double> @@emptyList;
+  SumAccum<double> @Qimeas = 0;
+  SumAccum<double> @bus_Q_meas = 0;
+  SumAccum<int> @lineNo = 0;
+  ListAccum<string> @tpnd_name;
+  ListAccum<double> @tpnd_Q_meas;
+ // MapAccum<string, double> @tpnd_Q_meas;
+ // MapAccum<string, string> @TPND_aclinedot;
+  SetAccum<int> @topoID1;
+  ListAccum<int> @topoID2;
+  ListAccum<edge> @@edgeList;
+  ListAccum<edge> @@topoAclineDotEdge1;
+  ListAccum<edge> @@topoAclineDotEdge2;
+  ListAccum<edge> @@topoConnectEdge1;
+  ListAccum<edge> @@topoConnectEdge2;
+// *****************************************************************************************
+//  trans = {two_port_transformer.*};
+//  print trans;
+//  print trans.size();
+  A11 = {Substation.*};
+//  A15 = {TopoND.*};
+//  A16 = {CN.*};
+  T_neutral_point = {neutral_point.*};
+ 
+  //delete s from A15:s;
+//  print A15.size();
+
+//update break and disconnector status
+  discreteSet = {discrete.*};
+/*
+  breaker_Set = SELECT t
+            FROM discreteSet:s - (discrete_breaker:e) - :t
+            accum
+            if s.flagM == 1 then t.@breaker_point = s.statusM
+            else t.@breaker_point = s.status
+            end
+            post-accum
+            t.point = t.@breaker_point,
+            IF t.name == "鲁西变电站.开关4" or t.name == "等值机变电站.开关12" or t.name == "等值机变电站.开关11" or t.name == "等值机变电站.开关2" or t.name == "卧龙等值机变电站.开关1" or t.name == "平果铝变电站.2012开关" or t.name == "钦州.小董站.103" or t.name == "北海.苏屋站.1主变变低10kV901开关(4级)" or t.name == "北海.苏屋站.2主变变低10kV902A开关(4级)" or t.name == "北海.苏屋站.2主变变低10kV902B开关(4级)" or t.id == 114560316276211946 or t.id == 114560316276211950 THEN  
+                t.point = 1
+            END,
+            IF t.name == "安龙等值机.开关23" or t.name == "安龙等值机.开关24" or t.name == "天生桥二厂.304开关" or t.name == "壮坡变电站.110" or t.name == "飞虎变电站.113" or t.name == "振林变电站.112" THEN
+                t.point = 0
+            END;
+
+
+  dis_Set = SELECT t
+            FROM discreteSet:s - (discrete_dis:e) - :t
+            accum
+            if s.flagM == 1 then t.@dis_point = s.statusM
+            else t.@dis_point = s.status
+            end
+            post-accum
+            t.point = t.@dis_point,
+            IF t.name == "桂林变电站.51026刀闸" or t.name == "桂林变电站.52026刀闸" or t.name == "挡村变电站.2232刀闸" or t.name == ">平>果铝变电站.20512刀闸" or t.name == "洛东电厂.3851刀闸" or t.name == "天生桥二厂.212刀闸" or t.name == "天生桥二厂.232刀闸" or t.name == "天生桥二厂.242刀闸" or t.name == "天生桥二厂.252刀闸" or t.name == "平果变电站.P51016刀闸" or t.name == "平果变电站.P52016刀闸" or t.name == "迅风风电场.3011手车上" or t.name == "迅风风电场.3011手车下" or t.name == "迅风风电场.301手车下" or t.name == "迅风风电场.3021手车上" or t.name == "迅风风电场.3021手车下" or t.name == "迅风风电场.302手车下" or t.name == "迅风风电场.3031手车下" or t.name == "平果铝变电站.20042刀闸" or t.name == "聚龙变电站.20233刀闸" or t.name == "南宁.110kV同乐站.1主变变低901手车工作位置1" or t.name == "南宁.110kV同乐站.10kV同邕线9122手车工作位置1" or t.name == "南宁.110kV同乐站.10kV同园甲906手车工作位置1" or t.name == "南宁.110kV同乐站.10kV同万线918手车工作位置1" or t.name == "南宁.110kV同乐站.10kV同川甲线907手车工作位置1" or t.name == "南宁.110kV同乐站.10kV同光线910手车工作位置1" or t.name == "南宁.110kV同乐站.10kV同和线915手车工作位置1" or t.name == "南宁.110kV同乐站.10kV同璞线908手车工作位置1" or t.name == "南宁.110kV同乐站.10kV同碧线917手车工作位置1" or t.name == "南宁.110kV同乐站.10kV同医线916手车工作位置1" or t.name == "南宁.110kV同乐站.10kV同川乙线919手车工作位置1" or t.name == "南宁.110kV同乐站.10kV同园乙线920手车工作位置1" or t.name == "南宁.110kV丹入站.1主变10kV侧901开关小车1" or t.name == "南宁.110kV丹入站.1主变35kV侧301开关小车1" or t.name == "北海.苏屋站.1主变变高1011刀闸(4级)" or t.name == "北海.苏屋站.1主变变低10kV901小车工作位置(4级)" or t.name == "北海.苏屋站.2主变1021刀闸(4级)" or t.name == "北海.苏屋站.2主变变低10kV902B小车工作位置(4级)" or t.name == "钦州.福山站.1053" THEN
+                t.point = 1
+            END;
+*/
+log(true, "timepoint_NTP_insert_start");
+
+  //Select substation when unit/load/bus off is 0  
+  // NEED double check if there is a case that substation does not have bus, load and unit????
+  select_sub = SELECT s
+               FROM A11:s - ((connected_Sub_Bus>|connected_Sub_Load>|connected_Sub_Unit>|connected_Sub_Trans_two>|connected_Sub_Aclinedot>|connected_Sub_Trans_three>|connected_Sub_Compensator_P>):e) -:t
+               WHERE t.off == 0;
+        PRINT select_sub.size();
+ 
+  CN_opensub = SELECT t
+               FROM select_sub:s-(cn_subid:e)-:t;
+
+       PRINT CN_opensub.size();
+  
+  // Delete component while its off is 1, component includes bus, load, unit, transformer, and compensator
+  
+  // [Chen Yuan] --------------------------------------------------------------
+         _miscellaneous(ANY) = SELECT t
+             FROM select_sub:s - ((connected_Sub_Bus>|connected_Sub_Load>|connected_Sub_Unit>|connected_Sub_Trans_two>|connected_Sub_Aclinedot>|connected_Sub_Trans_three>|connected_Sub_Compensator_P>|connected_Sub_Compensator_S>):e) -:t
+// Modified newly add the edge of "connected_Sub_Compensator_S" Jiangpeng Dai 2018-09-27  for Compensator_S(CS)
+                   WHERE t.off == 0;
+         PRINT _miscellaneous.size();
+
+  // select CN which is connected to the element in the set of _miscellaneous into CN_total set         
+  CN_total(ANY) = SELECT t
+                  FROM _miscellaneous:s-((connected_Bus_CN|connected_Load_CN|connected_Unit_CN|CN_tx_two|aclinedot_cn|CN_tx_three|connected_Compensator_P_CN|connected_Compensator_S_CN):e)-:t
+                        ACCUM
+                  s.@topoID += s.nd,
+                        t.@topoID += s.nd;
+  PRINT CN_total.size();     
+  CN_set(ANY) = CN_opensub;      
+         
+
+  // need to improve the logic in the following days
+  WHILE @@oldcounter != @@counter DO
+
+   @@oldcounter = @@counter;
+   // visit circuit breaker and disconnector from CN
+//   CN_set = SELECT t
+//            FROM CN_set:a-(CN_CN:e)->:t
+//            WHERE (e.point == 1) AND (a.@topoID > t.@topoID)
+//            ACCUM
+//            @@counter += 1,
+//            t.@topoID += a.@topoID;
+
+  // visit CN from circuit breaker and disconnector
+  BDset = SELECT t FROM CN_set:s-((connected_Breaker_CN|connected_Disconnector_CN):e)-:t ACCUM t.@BDID += s.@topoID;
+ 
+  CN_set = SELECT t FROM BDset:s-((connected_Breaker_CN|connected_Disconnector_CN):e)-:t where s.@BDID > t.@topoID and s.point == 1 ACCUM @@counter += 1, t.@topoID += s.@BDID;
+  
+  END;
+  
+//  CN_set = SELECT p FROM CN_set:a-((connected_Breaker_CN|connected_Disconnector_CN):e1)-:t-((connected_Disconnector_CN|connected_Breaker_CN):e2)-CN:p
+//           WHERE a.@topoID > p.@topoID and t.point == 1
+//     ACCUM
+//    @@counter += 1,
+//     p.@topoID += a.@topoID;
+//  END;
+
+log(true, "timepoint_NTP_insert_end");
+
+print BDset.size();
+print CN_set.size();
+
+/*
+  Build_tp(ANY) = SELECT t
+            FROM CN_total: s- ((connected_Bus_CN | connected_Load_CN | connected_Unit_CN | CN_tx_two | aclinedot_cn| CN_tx_three | connected_Compensator_P_CN):e) ->:t
+            ACCUM
+                  CASE 
+                    WHEN (t.@topoID == s.@topoID) THEN INSERT INTO TopoND VALUES(s.@topoID,s.@topoID,_,_,t.name,_,_,_,_,_,_,_,_,_,_,t.volt,t.base_value,_,1.1,0.9,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,0,0,_,_,_,_,_,_,_,_,_,_,_,0,_,0.0,_,0.0,1,1,_,_,_) //[Jingjin] add outdegree
+                  WHEN (t.@topoID != s.@topoID) THEN t.@topoID = s.@topoID  // assign CN ID to bus/load/unit/transformer/compensator since most of them are not assigned before
+          END
+        POST-ACCUM                  //Modified
+          t.topoID = t.@topoID;    //Modified by Jiangpeng Dai 2018-09-27
+*/
+  Build_tp(ANY) = SELECT t
+                  FROM CN_total: s- ((connected_Bus_CN | connected_Load_CN | CN_tx_two | aclinedot_cn| CN_tx_three | connected_Compensator_P_CN):e) -:t
+                  ACCUM
+                  log(true, "checkTopoND", t.name, t.id, t.@topoID, s.CN_id, s.@topoID),
+                  CASE
+                    WHEN (t.@topoID == s.@topoID) THEN INSERT INTO TopoND VALUES(s.@topoID,s.@topoID,_,_,t.name,_,_,_,_,_,_,_,_,_,_,t.volt,t.base_value,_,1.1,0.9,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,0,0,_,_,_,_,_,_,_,_,_,_,_,0,_,0.0,_,0.0,1,1,_,_,_) //[Jingjin] add outdegree
+                    WHEN (t.@topoID != s.@topoID) THEN t.@topoID = s.@topoID  // assign CN ID to bus/load/unit/transformer/compensator since most of them are not assigned before
+                                        END
+                                POST-ACCUM                  //Modified
+                                        t.topoID = t.@topoID;    //Modified by Jiangpeng Dai 2018-09-27
+
+  Build_tp_unit(ANY) = SELECT t
+                  FROM CN_total: s- (connected_Unit_CN:e) -:t
+                  ACCUM
+                  CASE
+                    WHEN (t.@topoID == s.@topoID) THEN INSERT INTO TopoND VALUES(s.@topoID,s.@topoID,_,_,t.name,_,_,_,_,_,_,_,_,_,_,t.volt,t.base_value,_,1.1,0.9,_,_,_,_,t.Q_max/100,t.Q_min/100,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,0,0,_,_,_,_,_,_,_,_,_,_,_,0,_,0.0,_,0.0,1,1,_,_,_) //[Jingjin] add outdegree
+                    WHEN (t.@topoID != s.@topoID) THEN t.@topoID = s.@topoID  // assign CN ID to bus/load/unit/transformer/compensator since most of them are not assigned before
+                                        END
+                                POST-ACCUM                  //Modified
+                                        t.topoID = t.@topoID;    //Modified by Jiangpeng Dai 2018-09-27
+
+
+  total_toponodes = SELECT t
+        FROM T_neutral_point:t
+                    WHERE t.I_off + t.K_off + t.J_off <= 1
+        POST-ACCUM
+        INSERT INTO TopoND values(t.middle_point, t.middle_point,_,_,t.name,_,_,_,_,_,_,_,_,_,_,1,1,_,1.1,0.9,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,10000,100,_,_,_,_,_,_,_,_,_,_,_,0,_,0.0,_,0.0,1,1,_,_,_),  // [Chen Yuan] add neutral point sub info to neutral point related TopoND 
+      INSERT INTO topo_neutral VALUES(t.middle_point, t.middle_point);
+          // [Jingjin] add outdegree
+      
+
+//[debug]
+// check_node2 = {TopoND.*};
+// print check_node2.size();
+// print check_node2;
+ 
+
+// [Chen Yuan] The following five blocks can be merged into one, will be done by 6/29/2018
+
+///////////////Build edges for topoid_subid//////////////////////
+  topo_sub = SELECT t
+             FROM CN_total: s-(cn_subid:e)-:t
+////////     WHERE s.@topoID != 0             /////Modified by Jiangpeng Dai 2018-09-27
+             WHERE s.@topoID != 0 and s.@topoID == s.CN_id
+             ACCUM
+             INSERT INTO topoid_subid VALUES(s.@topoID, t.id);
+
+///////////////Build edges for stvl_topo//////////////////////
+  topo_stvl = SELECT t
+             FROM CN_total: s-(stvl_cn:e)-:t
+             WHERE s.@topoID != 0 and s.@topoID == s.CN_id
+             ACCUM
+             INSERT INTO stvl_topo VALUES(t.ST_VL,s.@topoID);
+  
+  check_node3 = {TopoND.*};
+ // print check_node3;
+  print check_node3.size();
+/////////////Build edges for topoid_unit, load, bus, compensatorP//////////////////////////
+  topo_component_node = SELECT t
+//                        FROM CN_total: s -((connected_Unit_CN|connected_Load_CN|connected_Bus_CN|connected_Compensator_P_CN|CN_tx_two|CN_tx_three):e) ->:t 
+                        FROM CN_total: s -((connected_Unit_CN|connected_Load_CN|connected_Bus_CN|connected_Compensator_P_CN|CN_tx_two|CN_tx_three|aclinedot_cn):e) -:t  ///////   Newly Added the edge of "aclinedot_cn"  2019/07/26  by Jiangpeng Dai //////////////////
+
+            WHERE s.@topoID != 0
+                        ACCUM
+                        CASE 
+                          WHEN t.typename == "Unit" THEN 
+                            INSERT INTO topo_unit VALUES(s.@topoID, t.id)
+                          WHEN t.typename == "Load" THEN
+                            INSERT INTO topo_load VALUES(s.@topoID, t.id)
+                          WHEN t.typename == "Bus" THEN
+                            INSERT INTO topo_bus VALUES(s.@topoID, t.id)
+                          WHEN t.typename == "Compensator_P" THEN
+                            INSERT INTO topo_compensatorP VALUES(s.@topoID, t.id)
+                          WHEN t.typename == "two_port_transformer" THEN
+                      INSERT INTO topo_Tx_Two VALUES(s.@topoID, t.id)
+                          WHEN t.typename == "three_port_transformer" THEN
+                            INSERT INTO topo_Tx_Three VALUES(s.@topoID, t.id)
+                          
+                          ///////   Newly Added  2019/07/26  by Jiangpeng Dai //////////////////
+                          WHEN t.typename == "AClinedot" THEN      // is "aclinedot" correct?
+                            INSERT INTO topo_aclinedot VALUES(s.@topoID, t.id)   // Need to add a edge called "topo_aclinedot"; 
+                          ///////   END   ////////////////////////
+                          END;
+
+////////////////////////////Insert for Compensator_S//////////////////////////
+  CS_opensub = SELECT t
+               FROM CN_opensub:s - (connected_Compensator_S_CN:e)-:t
+               WHERE t.off == 0        ////// Modified added by Jiangpeng Dai 2018-09-27
+               ACCUM
+               CASE
+                 WHEN s.CN_id == t.I_nd THEN t.@iid = s.@topoID
+                 WHEN s.CN_id == t.J_nd THEN t.@jid = s.@topoID
+               END;
+             
+               
+  insert_line_CS = SELECT s
+                   FROM CS_opensub: s
+          WHERE s.@iid != s.@jid AND s.@iid != 0 AND s.@jid != 0  //Modified added by Jiangpeng Dai 2018-09-27
+                   ACCUM
+                   INSERT INTO topo_connect VALUES(s.@iid, s.@jid, s.name, s.name, _, s.@iid, s.@jid, _, 0, s.cs_ZK, _, 200, 250, 300, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+          _,//G
+          1/s.cs_ZK,//B
+          1/s.cs_ZK,//BIJ
+          _, _, _, _, _,
+          _, _, _, 1, _, _, _, _, 0, 0, _, ToString(s.volt), "CS传输线", _, _,-1,_,_,1/s.cs_ZK,1/s.cs_ZK,_,_,_,200,250,300,_,_,0,0,_,_,_,_,_,_,_,_,_), // 1 means positive direction
+
+                   INSERT INTO topo_connect VALUES(s.@jid, s.@iid, s.name, s.name, _, s.@iid, s.@jid, _, 0, s.cs_ZK, _, 200, 250, 300, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+          _,//G
+          1/s.cs_ZK,//B
+          1/s.cs_ZK,//BIJ
+          _, _, _, _, _,
+          _, _, _, -1, _, _, _, _, 0, 0, _, ToString(s.volt), "CS传输线", _, _,-1,_,_,1/s.cs_ZK,1/s.cs_ZK,_,_,_,200,250,300,_,_,0,0,_,_,_,_,_,_,_,_,_) // -1 means negative direction
+                   POST-ACCUM
+                      s.itopoID = s.@iid,  //Modified
+                      s.jtopoID = s.@jid;  //Modified merged from follows by Jiangpeng Dai 2018-09-27
+
+//  update_cs = select s
+//              from CS_opensub:s
+//              POST-ACCUM
+//              s.itopoID = s.@iid,
+//              s.jtopoID = s.@jid;
+
+
+
+////////////////////////////Insert for Acline ID//////////////////////////////
+  Acline_opensub = SELECT t
+                   FROM CN_opensub:s - (aclinedot_cn:e)-:t
+                   WHERE t.off == 0;
+       //             ACCUM
+       //             CASE 
+       //               WHEN s.CN_id == t.I_nd THEN t.@iid = s.@topoID
+       //               WHEN s.CN_id == t.J_nd THEN t.@jid = s.@topoID
+       //             END;
+// deleted_acline = SELECT t
+//                  FROM CN_opensub:s - (connected_Acline_CN:e)->:t
+//                  WHERE s.@topoID == 0 OR t.@iid == t.@jid OR t.@iid == 0 OR t.@jid == 0 OR t.I_off == 1 OR t.J_off == 1;  ///////////CN is not in sub_cn 
+
+
+
+// new_acline = Acline_opensub MINUS deleted_acline;
+  G3 = SELECT s
+       FROM Acline_opensub: s -(aclinedot_aclinedot>:e)-:t
+       WHERE s.@topoID != 0 AND t.@topoID != 0
+       ACCUM
+             if (s.@topoID==45001058575200) then
+                log(true, "getTOPOID45001058575200ACline",s.@topoID, t.@topoID)
+             end,
+     // // [debug]
+     // if (s.id == 116812117113307341 || t.id == 116812117113307341 || e.id == 116530642136596577 || e.name == "甘孜.新东线") then
+    // log (true, "get the acline: ", s.id, t.id, e.id, e.name)
+     // end,
+     // // [debug]
+     
+       int id = e.id,
+     double ratio = e.line_R/e.line_X,
+       double normalLimit = sqrt(3)*e.volt*e.Ih/1000/100,
+       double emerLimit = 1.1*sqrt(3)*e.volt*e.Ih/1000/100,
+       double ldshdLimit = 1.2*sqrt(3)*e.volt*e.Ih/1000/100,
+     int non_reverse = 1,
+
+       if (normalLimit < 0.1) then 
+         //log(true, e.name, normalLimit, e.Ih),
+         normalLimit = 9999,
+         emerLimit = 9999,
+         ldshdLimit = 9999
+       end,
+
+     if (s.@topoID < t.@topoID) then
+    non_reverse = -1
+     end,
+     IF (e.line_R < 0) THEN
+            if (s.@topoID==45001058575200) then
+                log(true, "getTOPOID45001058575200AClineB-1",e.line_R / (e.line_R * e.line_R + e.line_X * e.line_X),e.line_X /(e.line_R *e.line_R + e.line_X * e.line_X))
+             end,
+       INSERT INTO topo_connect VALUES(s.@topoID, t.@topoID, e.name, e.name, _, s.@topoID, t.@topoID, 0, -e.line_R, e.line_X, e.line_B, normalLimit, emerLimit, ldshdLimit, 0, 0, _, _, 0, 0, 0, _, _, s.Pimeas/100, s.Qimeas/100, _, _, _, 0,
+-e.line_R / (e.line_R * e.line_R + e.line_X * e.line_X),//G 
+e.line_X / (e.line_R * e.line_R + e.line_X * e.line_X),//B
+1 / e.line_X,//BIJ
+_, s.@aclinecount, _, _, _, 
+_, _, _,non_reverse, _, _, _, _, 0, 0, _, ToString(e.volt), "AC传输线", _, _,-1,e.line_B,-e.line_R / (e.line_R * e.line_R + e.line_X * e.line_X),e.line_X / (e.line_R * e.line_R + e.line_X * e.line_X),1 / e.line_X,_,s.Pimeas/100,s.Qimeas/100,normalLimit, emerLimit, ldshdLimit,_,id,0,0,_,_,_,_,s.fault_rate,_,_,_,_), // 1 means positive direction
+       
+      INSERT INTO topo_connect VALUES(t.@topoID, s.@topoID, e.name, e.name, _, t.@topoID, s.@topoID, 0, -e.line_R, e.line_X, e.line_B, normalLimit, emerLimit, ldshdLimit, 0, 0, _, _, 0, 0, 0, _, _, t.Pimeas/100, t.Qimeas/100, _, _, _, 0, 
+-e.line_R / (e.line_R * e.line_R + e.line_X * e.line_X),//G 
+e.line_X / (e.line_R * e.line_R + e.line_X * e.line_X),//B
+1 / e.line_X,//BIJ
+_, s.@aclinecount, _, _, _, 
+_, _, _,-non_reverse, _, _, _, _, 0, 0, _, ToString(e.volt), "AC传输线", _, _,-1,e.line_B,-e.line_R / (e.line_R * e.line_R + e.line_X *e.line_X),e.line_X / (e.line_R * e.line_R + e.line_X * e.line_X),1 / e.line_X,_,t.Pimeas/100,t.Qimeas/100,normalLimit, emerLimit, ldshdLimit,_,-id,0,0,_,_,_,_,s.fault_rate,_,_,_,_) // -1 means reverse direction
+
+    ELSE
+      double line_R = 0.25 * e.line_X,
+      INSERT INTO topo_connect VALUES(s.@topoID, t.@topoID, e.name, e.name, _, s.@topoID, t.@topoID, 0, e.line_R, e.line_X, e.line_B, normalLimit, emerLimit, ldshdLimit, 0, 0, _, _, 0, 0, 0, _, _, s.Pimeas/100, s.Qimeas/100, _, _, _, 0,
+e.line_R / (e.line_R * e.line_R + e.line_X * e.line_X),//G 
+e.line_X / (e.line_R * e.line_R + e.line_X * e.line_X),//B
+1 / e.line_X,//BIJ
+_, s.@aclinecount, _, _, _, 
+_, _, _,non_reverse, _, _, _, _, 0, 0, _, ToString(e.volt), "AC传输线", _, _,-1,e.line_B,e.line_R / (e.line_R * e.line_R + e.line_X * e.line_X),e.line_X / (e.line_R * e.line_R + e.line_X * e.line_X),1 / e.line_X,_,s.Pimeas/100,s.Qimeas/100,normalLimit, emerLimit, ldshdLimit,_,id,0,0,_,_,_,_,s.fault_rate,_,_,_,_), // 1 means positive direction
+      
+      INSERT INTO topo_connect VALUES(t.@topoID, s.@topoID, e.name, e.name, _, t.@topoID, s.@topoID, 0, e.line_R, e.line_X, e.line_B, normalLimit, emerLimit, ldshdLimit, 0, 0, _, _, 0, 0, 0, _, _, t.Pimeas/100, t.Qimeas/100, _, _, _, 0, 
+e.line_R / (e.line_R * e.line_R + e.line_X * e.line_X),//G 
+e.line_X / (e.line_R * e.line_R + e.line_X * e.line_X),//B
+1 / e.line_X,//BIJ
+_, s.@aclinecount, _, _, _, 
+_, _, _,-non_reverse, _, _, _, _, 0, 0, _, ToString(e.volt), "AC传输线", _, _,-1,e.line_B,e.line_R / (e.line_R * e.line_R + e.line_X * e.line_X),e.line_X / (e.line_R * e.line_R + e.line_X * e.line_X),1 / e.line_X,_,t.Pimeas/100,t.Qimeas/100,normalLimit, emerLimit, ldshdLimit,_,-id,0,0,_,_,_,_,s.fault_rate,_,_,_,_) // -1 means reverse direction
+
+    END;
+
+
+
+// POST-ACCUM
+//             s.itopoID = s.@iid,  //Modified
+//             s.jtopoID = s.@jid;  //Modified merged from follows by Jiangpeng Dai 2018-09-27
+//  update_attribute = select s
+//                     from new_acline:s
+//                     POST-ACCUM
+//                     s.itopoID = s.@iid,
+//                     s.jtopoID = s.@jid;
+
+
+
+/////////////////////////Insert for two_port transformer ID//////////////////////
+   X1 = SELECT t
+        FROM CN_opensub:s - (CN_tx_two:e)-:t
+        WHERE t.off == 0;
+ 
+ 
+   X2 = SELECT s
+        FROM X1:s-(txI_txJ_transformerline>:e) -:t
+    //WHERE s.@topoID != 0 AND t.@topoID != 0 AND s.off == 0 AND t.off == 0
+        WHERE s.@topoID != 0 AND t.@topoID != 0 AND t.off == 0 //Modified by Jiangpeng Dai 2018-09-27
+        ACCUM
+    double ratio = s.Rstar/s.Xstar,
+        double tap_ratio = s.t/t.t,
+        if (tap_ratio < 1.0) then 
+           tap_ratio = 1
+        end,
+       double normalLimit = s.S/100,
+       double emerLimit = 1.1*normalLimit,
+       double ldshdLimit = 1.2*normalLimit,
+     int non_reverse = 1,
+       //log(true, normalLimit, s.name, s.S),
+       if (normalLimit < 0.1) then 
+         normalLimit = 9999,
+         emerLimit = 9999,
+         ldshdLimit = 9999
+       end,
+     if (s.@topoID < t.@topoID) then
+    non_reverse = -1
+     end,
+    IF (s.Rstar < 0) THEN
+      INSERT INTO topo_connect VALUES(s.@topoID, t.@topoID, s.name, s.name, _, 
+                       s.@topoID, t.@topoID, 1, -s.Rstar, s.Xstar, 0, normalLimit, emerLimit, ldshdLimit,_, _, tap_ratio, 0, s.itapL, s.itapH, s.itapC, 
+                       _,_,s.Pimeas/100,s.Qimeas/100,_,_,_,0,
+                       -s.Rstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),
+                       s.Xstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),
+                       1/s.Xstar,
+                       _, 1, _, _, _, 
+                       _, _, _,non_reverse,       //1 means positive direction
+                       _, _, _, _, 0, 0, _, ToString(s.volt) + "-" + ToString(t.volt), "双绕组变压器", _, _,-1,0,-s.Rstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),s.Xstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),1/s.Xstar,tap_ratio,s.Pimeas/100,s.Qimeas/100,normalLimit, emerLimit, ldshdLimit,_,s.id,0,0,_,_,_,_,s.fault_rate,_,_,_,_),
+       //log(true, "two_port", s.@topoID, t.@topoID),
+
+      INSERT INTO topo_connect VALUES(t.@topoID, s.@topoID, s.name, s.name, _,
+                                       t.@topoID, s.@topoID, 1, -s.Rstar, s.Xstar,0, normalLimit, emerLimit, ldshdLimit,_, _, -tap_ratio, 0, s.itapL, s.itapH, s.itapC,
+                                       _,_,t.Pimeas/100,t.Qimeas/100,_,_,_,0,
+                     -s.Rstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),
+                     s.Xstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),
+                     1/s.Xstar,                                          
+                                       _, 1, _, _, _, 
+                                       _, _, _,-non_reverse,      //-1 means reverse direction
+                                       _, _, _, _, 0, 0, _, ToString(t.volt) + "-" + ToString(s.volt), "双绕组变压器", _, _,-1,0,-s.Rstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),s.Xstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),1/s.Xstar,-tap_ratio,t.Pimeas/100,t.Qimeas/100,normalLimit, emerLimit, ldshdLimit,_,t.id,0,0,_,_,_,_,s.fault_rate,_,_,_,_)
+    
+    ELSE
+      double Rstar = 0.25*s.Xstar,
+      INSERT INTO topo_connect VALUES(s.@topoID, t.@topoID, s.name, s.name, _, 
+                     s.@topoID, t.@topoID, 1, s.Rstar, s.Xstar, 0, normalLimit, emerLimit, ldshdLimit, _, _, tap_ratio, 0, s.itapL, s.itapH, s.itapC, 
+                     _,_,s.Pimeas/100,s.Qimeas/100,_,_,_,0,
+                     s.Rstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),
+                     s.Xstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),
+                     1/s.Xstar,
+                     _, 1, _, _, _, 
+                     _, _, _,non_reverse,       //1 means positive direction
+                     _, _, _, _, 0, 0, _, ToString(s.volt) + "-" + ToString(t.volt), "双绕组变压器", _, _,-1,0, s.Rstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),s.Xstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),1/s.Xstar,tap_ratio,s.Pimeas/100,s.Qimeas/100,normalLimit, emerLimit, ldshdLimit,_,s.id,0,0,_,_,_,_,s.fault_rate,_,_,_,_),
+     //log(true, "two_port", s.@topoID, t.@topoID),
+
+      INSERT INTO topo_connect VALUES(t.@topoID, s.@topoID, s.name, s.name, _,
+                                       t.@topoID, s.@topoID, 1, s.Rstar, s.Xstar,0, normalLimit, emerLimit, ldshdLimit, _, _, -tap_ratio, 0, s.itapL, s.itapH, s.itapC,
+                                       _,_,t.Pimeas/100,t.Qimeas/100,_,_,_,0,
+                     s.Rstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),
+                     s.Xstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),
+                     1/s.Xstar,                                          
+                                       _, 1, _, _, _, 
+                                       _, _, _,-non_reverse,      //-1 means reverse direction
+                                       _, _, _, _, 0, 0, _, ToString(t.volt) + "-" + ToString(s.volt), "双绕组变压器", _, _,-1,0,s.Rstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),s.Xstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),1/s.Xstar,-tap_ratio,t.Pimeas/100,t.Qimeas/100,normalLimit, emerLimit, ldshdLimit,_,t.id,0,0,_,_,_,_,s.fault_rate,_,_,_,_)
+    END;
+       
+
+
+////////////////////////Insert for three_port transformer ID//////////////////////
+   Y1 = SELECT t
+        FROM CN_opensub:s-(CN_tx_three:e) -:t
+        WHERE t.off == 0;
+
+
+   Y2 = SELECT t
+        FROM Y1:s-(neutral_three:e)-:t 
+        //WHERE t.I_off + t.K_off + t.J_off <= 1
+        WHERE s.@topoID != 0 AND (t.I_off + t.K_off + t.J_off <= 1)  //Modified added  by Jiangpeng Dai 2018-08-27
+        ACCUM
+    double ratio = s.Rstar/s.Xstar,
+        double tap_ratio_three = s.t,
+        if (tap_ratio_three < 1.0) then 
+           tap_ratio_three = 1
+        end,
+       double normalLimit = s.S/100,
+       double emerLimit = 1.1*normalLimit,
+       double ldshdLimit = 1.2*normalLimit,
+       //log(true, s.name, normalLimit, s.S),
+       if (normalLimit < 0.1) then 
+         normalLimit = 9999,
+         emerLimit = 9999,
+         ldshdLimit = 9999
+       end,
+    IF (s.Rstar < 0) THEN
+      INSERT INTO topo_connect VALUES(s.@topoID, t.middle_point, s.name, s.name,_,  
+                      s.@topoID, t.middle_point, 1, -s.Rstar,s.Xstar, 0, normalLimit, emerLimit, ldshdLimit, _, _, tap_ratio_three, 0, s.itapL, s.itapH, s.itapC,
+                        _, _, s.Pimeas/100, s.Qimeas/100, _, _, _, 0,
+                      -s.Rstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),
+                      s.Xstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar), 
+                      1/s.Xstar,
+                      _, 1, _, _, _,  
+                      _, _, _,1,
+                      _, _, _, _, 0, 0, _, ToString(s.volt), "三绕组变压器", _, _,-1,0,-s.Rstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),s.Xstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),1/s.Xstar,tap_ratio_three,s.Pimeas/100,s.Qimeas/100,normalLimit, emerLimit, ldshdLimit,_,s.id,0,0,_,_,_,_,s.fault_rate,_,_,_,_),
+       //log(true, "three_port", s.@topoID, t.middle_point),
+
+
+       INSERT INTO topo_connect VALUES(t.middle_point, s.@topoID, s.name, s.name,_,
+                      t.middle_point,s.@topoID , 1, -s.Rstar, s.Xstar, 0, normalLimit, emerLimit, ldshdLimit, _, _, -tap_ratio_three, 0, s.itapL, s.itapH, s.itapC,
+                        _, _, _, _, _, _, _, 0,
+                      -s.Rstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),
+                      s.Xstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),
+                      1/s.Xstar,
+                      _, 1, _, _, _,
+                      _, _, _,-1,  //-1 means reverse direction
+                      _, _, _, _, 0, 0, _, ToString(s.volt), "三绕组变压器", _, _,-1,0,-s.Rstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),s.Xstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),1/s.Xstar,-tap_ratio_three,_,_,normalLimit, emerLimit, ldshdLimit,_,-s.id,0,0,_,_,_,_,s.fault_rate,_,_,_,_)
+    ELSE
+      double Rstar = 0.25*s.Xstar,
+      INSERT INTO topo_connect VALUES(s.@topoID, t.middle_point, s.name, s.name,_,  
+                      s.@topoID, t.middle_point, 1, s.Rstar, s.Xstar, 0, normalLimit, emerLimit, ldshdLimit,_, _, tap_ratio_three, 0, s.itapL, s.itapH, s.itapC,
+                        _, _, s.Pimeas/100, s.Qimeas/100, _, _, _, 0,
+                      s.Rstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),
+                      s.Xstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar), 
+                      1/s.Xstar,
+                      _, 1, _, _, _,  
+                      _, _, _,1,
+                      _, _, _, _, 0, 0, _, ToString(s.volt), "三绕组变压器", _, _,-1,0,s.Rstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),s.Xstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),1/s.Xstar,tap_ratio_three,s.Pimeas/100,s.Qimeas/100,normalLimit, emerLimit, ldshdLimit,_,s.id,0,0,_,_,_,_,s.fault_rate,_,_,_,_),
+       //log(true, "three_port", s.@topoID, t.middle_point),
+
+
+       INSERT INTO topo_connect VALUES(t.middle_point, s.@topoID, s.name, s.name,_,
+                      t.middle_point, s.@topoID, 1, s.Rstar, s.Xstar, 0, normalLimit, emerLimit, ldshdLimit, _, _, -tap_ratio_three, 0, s.itapL, s.itapH, s.itapC,
+                        _, _, _, _, _, _, _, 0,
+                      s.Rstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),
+                      s.Xstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),
+                      1/s.Xstar,
+                      _, 1, _, _, _,
+                      _, _, _,-1,  //-1 means reverse direction
+                      _, _, _, _, 0, 0, _, ToString(s.volt), "三绕组变压器", _, _,-1,0,s.Rstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),s.Xstar/(s.Rstar * s.Rstar + s.Xstar * s.Xstar),1/s.Xstar,-tap_ratio_three,_,_,normalLimit, emerLimit, ldshdLimit,_,-s.id,0,0,_,_,_,_,s.fault_rate,_,_,_,_)
+    END;
+
+
+//=======================================set Frm_To_Cp===================================
+    V_TPND = {TopoND.*}; 
+    V_CP1 = SELECT t
+            FROM V_TPND:s - (topo_compensatorP:e) - C_P:t;
+            //WHERE s.island == 1;// and t.topoID in (44999687348929, 44999693348909, 45001058670017, 139702401278127, 45001058700049);//(45001058683146, 139702401237808, 45001058596437);// 西南.普提站, 国调.月城站西南.洪沟站in (45001058670017, 139702401278127);// or (t.topoID == 45001058670017));//44999687348929;//t.name=="四川.茂县/500kV.茂谭一线电抗器";
+  
+ // print V_CP1;
+ //D or B connection 
+    V_CN1 = SELECT t
+       FROM V_CP1:s - (connected_Compensator_P_CN:e) - CN:t
+          accum
+            t.@Qimeas = s.Qimeas;
+  
+    V_BD = SELECT t
+             FROM V_CN1:s -((connected_Breaker_CN|connected_Disconnector_CN):e)-:t
+        accum t.@Qimeas = s.@Qimeas;         
+
+    V_CN2 = SELECT t
+       FROM V_BD:s -((connected_Breaker_CN|connected_Disconnector_CN):e) -:t
+        accum t.@Qimeas = s.@Qimeas;
+
+//D-D connection
+    V_D4 = SELECT t
+       FROM V_CN2:s -(connected_Disconnector_CN:e)-:t
+        accum t.@Qimeas = s.@Qimeas;
+
+    V_CN8 = SELECT t
+       FROM V_D4:s -(connected_Disconnector_CN:e)-:t
+        accum
+          log(true, "D4", s.name),
+          t.@Qimeas = s.@Qimeas;
+//
+    V_CN9 = V_CN2 UNION V_CN8;
+
+    V_ACLineDot1 = SELECT t
+       FROM V_CN9:s - (aclinedot_cn:e) - ACline_dot:t
+  accum t.@Qimeas = s.@Qimeas;
+
+    V_ACLineDot2 = SELECT t
+       FROM V_ACLineDot1:s - ((aclinedot_aclinedot>|aclinedot_aclinedot_reverse>):e) - ACline_dot:t
+       ACCUM
+           t.@Qimeas = s.@Qimeas,
+           t.@topoID1 += s.topoID,
+           @@edgeList += e;
+
+
+//D-B-D connection
+    V_D1 = SELECT t
+       FROM V_CN1:s -(connected_Disconnector_CN:e)-:t
+        accum t.@Qimeas = s.@Qimeas;
+
+    V_CN3 = SELECT t
+       FROM V_D1:s -(connected_Disconnector_CN:e)-:t
+        accum t.@Qimeas = s.@Qimeas;
+
+    V_B1 = SELECT t
+       FROM V_CN3:s -(connected_Breaker_CN:e)-:t
+        accum t.@Qimeas = s.@Qimeas;
+
+    V_CN4 = SELECT t
+       FROM V_B1:s -(connected_Breaker_CN:e)-:t
+        accum t.@Qimeas = s.@Qimeas;
+
+    V_D2 = SELECT t
+       FROM V_CN4:s -(connected_Disconnector_CN:e)-:t
+        accum t.@Qimeas = s.@Qimeas;
+
+    V_CN5 = SELECT t
+       FROM V_D2:s -(connected_Disconnector_CN:e)-:t
+        accum t.@Qimeas = s.@Qimeas;
+
+//B-D connection
+    V_B2 = SELECT t
+       FROM V_CN1:s -(connected_Breaker_CN:e)-:t
+        accum t.@Qimeas = s.@Qimeas;
+
+    V_CN6 = SELECT t
+       FROM V_B2:s -(connected_Breaker_CN:e)-:t
+        accum t.@Qimeas = s.@Qimeas;
+ 
+    V_D3 = SELECT t
+       FROM V_CN6:s -(connected_Disconnector_CN:e)-:t
+        accum t.@Qimeas = s.@Qimeas;
+   
+    V_CN7 = SELECT t
+       FROM V_D3:s -(connected_Disconnector_CN:e)-:t
+        accum t.@Qimeas = s.@Qimeas;
+
+
+//find BUS node from CN
+    V_Bus1 = SELECT t
+       FROM V_CN5:s -(connected_Bus_CN:e)- BUS:t
+        accum t.@Qimeas = s.@Qimeas;
+
+    V_Bus2 = SELECT t
+       FROM V_CN7:s -(connected_Bus_CN:e)- BUS:t
+        accum t.@Qimeas = s.@Qimeas;
+
+
+//find TopoND from BUS
+    V_TPND3 = SELECT t
+       FROM V_Bus1:s - (topo_bus:e) - TopoND:t
+       WHERE s.volt > 400
+        accum
+            log(true,"Bus1_CP", t.bus_name, t.desired_volts, s.name, s.volt, s.@Qimeas),
+            t.@bus_Q_meas += abs(s.@Qimeas/100);
+
+    V_TPND4 = SELECT t
+       FROM V_Bus2:s - (topo_bus:e) - TopoND:t
+       WHERE s.volt > 400
+        accum
+            log(true,"Bus2_CP", t.bus_name, t.desired_volts, s.name, s.volt, s.@Qimeas),
+            t.@bus_Q_meas += abs(s.@Qimeas/100);
+
+
+    V_TPND1 = SELECT t
+       FROM V_ACLineDot1:s - (topo_aclinedot:e) - TopoND:t
+        accum
+            t.@lineNo += 1;
+
+    V_TPND2 = SELECT t
+       FROM V_ACLineDot2:s - (topo_aclinedot:e) - TopoND:t
+        accum
+            t.@lineNo += 1;
+
+    V_TPND1 = SELECT t
+       FROM V_ACLineDot1:s - (topo_aclinedot:e) - TopoND:t
+        accum
+            t.@topoID1 += s.@topoID1,
+            IF (t.bus_name == "桂林变电站.2母线") THEN
+                 log(true,"CP_bus1", t.bus_name, s.name, s.@Qimeas)
+            END,
+            t.@tpnd_name += get_aclinename(s.name),
+            t.@tpnd_Q_meas += abs(s.@Qimeas/100),
+            @@topoAclineDotEdge1 += e
+        post-accum
+            IF (t.bus_name == "桂林变电站.2母线") THEN
+                 log(true,"CP_bus1", t.bus_name, t.@tpnd_name, t.@tpnd_Q_meas)
+            END;
+
+    V_TPND2 = SELECT t
+       FROM V_ACLineDot2:s - (topo_aclinedot:e) - TopoND:t
+        accum
+            IF (t.bus_name == "桂林变电站.2母线") THEN
+                 log(true,"CP_bus2", t.bus_name, s.name, s.@Qimeas)
+            END,
+            t.@topoID1 += s.@topoID1,
+            t.@tpnd_name += get_aclinename(s.name),
+            t.@tpnd_Q_meas += t.@bus_Q_meas/t.@lineNo,
+            @@topoAclineDotEdge2 += e
+        post-accum
+            IF (t.bus_name == "桂林变电站.2母线") THEN
+                 log(true,"CP_bus2", t.bus_name, t.@tpnd_name, t.@tpnd_Q_meas, t.@bus_Q_meas, t.@lineNo)
+            END;
+
+
+      UPDATE e
+              FROM V_TPND1:s - (topo_connect:e) -> (TopoND):t
+              SET e.from_CP_list = @@emptyList,
+                  e.to_CP_list = @@emptyList;
+              #where s.TOPOID == t.@topoID1;
+      UPDATE e
+              FROM V_TPND2:s - (topo_connect:e) -> (TopoND):t
+              SET e.from_CP_list = @@emptyList,
+                  e.to_CP_list = @@emptyList;
+              #where s.@topoID1 == t.TOPOID;
+  
+    V_TPND1ConnectedTPND2 = SELECT t
+              FROM V_TPND1:s - (topo_connect>:e) - (TopoND):t
+              //WHERE s.TOPOID == t.@topoID1
+              ACCUM
+                  IF (e.edge_name.contains("桂山甲线")) THEN
+                      log(true,"CP_from", e.edge_name, s.@tpnd_name, s.@tpnd_Q_meas, get_aclinename(e.edge_name.get(0)))
+                  END,
+                    FOREACH j in range [0, e.X.size()-1] DO
+                      FOREACH i in range [0, s.@tpnd_Q_meas.size()-1] DO
+                        IF (get_aclinename(e.edge_name.get(j)) == s.@tpnd_name.get(i) ) THEN
+                             IF (e.edge_name.contains("桂山甲线")) THEN
+                                  log(true,"CP_from2", e.edge_name, s.@tpnd_name, s.@tpnd_Q_meas, get_aclinename(e.edge_name.get(j)), s.@tpnd_name.get(i), s.@tpnd_Q_meas.get(i))
+                             END
+                        END
+                      END
+                  END,
+                      e.from_CP_list += get_CP_list(e.edge_name, s.@tpnd_name, s.@tpnd_Q_meas),
+                      IF (t.bus_name == "桂林变电站.2母线") THEN
+                        log(true, "CP_BusCP1", t.bus_name, e.edge_name, e.reverse, t.@tpnd_name, t.@tpnd_Q_meas)
+                      END,
+                      @@topoConnectEdge1 += e;
+  
+    V_TPND2ConnectedTPND1 = SELECT t
+              FROM V_TPND2:s - (topo_connect>:e) - (TopoND):t
+              //where s.@topoID1 == t.TOPOID
+              ACCUM 
+                  IF (e.edge_name.contains("桂山甲线")) THEN
+                      log(true,"CP_to", e.edge_name, t.@tpnd_name, t.@tpnd_Q_meas, get_aclinename(e.edge_name.get(0)))
+                  END,
+                    FOREACH j in range [0, e.X.size()-1] DO
+                      FOREACH i in range [0, t.@tpnd_Q_meas.size()-1] DO
+                        IF (get_aclinename(e.edge_name.get(j)) == t.@tpnd_name.get(i) ) THEN
+                             IF (e.edge_name.contains("桂山甲线")) THEN
+                                  log(true,"CP_to2", e.edge_name, t.@tpnd_name, t.@tpnd_Q_meas, get_aclinename(e.edge_name.get(j)), t.@tpnd_name.get(i), t.@tpnd_Q_meas.get(i))
+                             END
+                        END
+                      END
+                    END,
+                    IF (s.bus_name == "桂林变电站.2母线") THEN
+                      e.from_CP_list += get_CP_list(e.edge_name, s.@tpnd_name, s.@tpnd_Q_meas),
+                      log(true, "CP_BusCP2", s.bus_name, e.edge_name, e.reverse, s.@tpnd_name, s.@tpnd_Q_meas)
+                    END,
+                      e.to_CP_list += get_CP_list(e.edge_name, t.@tpnd_name, t.@tpnd_Q_meas),
+
+                      @@topoConnectEdge2 += e;
+  
+   V_TopoSet = SELECT s
+               FROM V_TPND:s - (topo_connect>:e) - (TopoND):t
+               ACCUM
+                  double from_CP = 0,
+                  double to_CP = 0,
+                  FOREACH i in range [0, e.from_CP_list.size()-1] DO
+                    from_CP = from_CP + e.from_CP_list.get(i)//,
+                    //log(true, "from_CP test", e.edge_name.get(i), e.from_CP_list.get(i), from_CP)
+                  END,
+                  e.from_CP = from_CP,
+                  FOREACH i in range [0, e.to_CP_list.size()-1] DO
+                    to_CP = to_CP + e.to_CP_list.get(i)//,
+                    //log(true, "from_CP test", e.edge_name.get(i), e.to_CP_list.get(i), to_CP)
+                  END,
+                  e.to_CP = to_CP;
+
+
+
+    T_test = SELECT s
+             FROM V_TPND:s - (topo_connect>:e) - TopoND:t
+                 ACCUM
+                 FOREACH i in range [0, e.X.size()-1] DO
+                        IF (e.edge_name.contains("桂山甲线")) THEN
+                           log(true,"CP_valuecheck", e.edge_name, e.reverse, e.edge_name.get(i), e.from_CP_list.get(i), e.to_CP_list.get(i), e.from_CP_list, e.to_CP_list, e.from_CP, e.to_CP)
+                        END
+                 END;
+//===============================================================================
+
+}

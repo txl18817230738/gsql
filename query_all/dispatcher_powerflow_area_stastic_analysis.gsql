@@ -1,0 +1,45 @@
+CREATE QUERY dispatcher_powerflow_area_stastic_analysis() FOR GRAPH gsql_EMS { 
+  TYPEDEF TUPLE<string area_name, double unit_pf, double input_power_pf, double load_pf, double output_power_pf, double loss_pf, double unit_se, double input_power_se, double load_se, double output_power_se, double loss_se> info;
+  HeapAccum<info>(100000, area_name DESC, loss_se DESC) @@result_all;
+  MapAccum<string, double> @area_statistic;
+  SumAccum<double> @area_gen_pf;
+  SumAccum<double> @area_load_pf;
+  SumAccum<double> @area_input_pf;
+  SumAccum<double> @area_output_pf;
+  SumAccum<double> @area_loss_pf;
+  
+  SumAccum<double> @area_gen_se;
+  SumAccum<double> @area_load_se;
+  SumAccum<double> @area_input_se;
+  SumAccum<double> @area_output_se;
+  SumAccum<double> @area_loss_se;
+  
+
+	sub = {Substation.*};
+	comp = {gridcom.*};
+ 
+  start_comp = select s from comp:s where s.parent_id =="";
+  
+  area_comp = select t from start_comp:s -(gridcom_gridcom:e)->:t where t.id !=s.parent_id;
+ 
+  
+  Result = select s from area_comp:s 
+            accum
+	    if s.id!="" then
+            	s.@area_statistic = dispatcher_powerflow_area_stastic_subquery_analysis(s.id)
+	    end
+	post-accum
+                s.@area_gen_pf = s.@area_statistic.get("area_gen_pf"),
+                s.@area_load_pf = s.@area_statistic.get("area_load_pf"),
+                s.@area_input_pf = s.@area_statistic.get("area_input_pf"),
+                s.@area_output_pf = s.@area_statistic.get("area_output_pf"),
+                s.@area_loss_pf = s.@area_statistic.get("area_loss_pf"),
+				
+				s.@area_gen_se = s.@area_statistic.get("area_gen_se"),
+                s.@area_load_se = s.@area_statistic.get("area_load_se"),
+                s.@area_input_se = s.@area_statistic.get("area_input_se"),
+                s.@area_output_se = s.@area_statistic.get("area_output_se"),
+                s.@area_loss_se = s.@area_statistic.get("area_loss_se"),
+                @@result_all += info(s.name,s.@area_gen_pf,s.@area_input_pf,s.@area_load_pf,s.@area_output_pf,s.@area_loss_pf,s.@area_gen_se,s.@area_input_se,s.@area_load_se,s.@area_output_se,s.@area_loss_se);
+  print @@result_all;
+}

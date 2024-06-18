@@ -1,0 +1,51 @@
+CREATE QUERY area_loss_cal_table(string companyID="113715890758877224",bool return_all=false) FOR GRAPH gsql_EMS syntax v2{ 
+ TYPEDEF TUPLE <area_name STRING, branch_name STRING, branch_type string, from_p DOUBLE, to_p DOUBLE> result;
+  SumAccum<STRING> @@area_name;
+  SetAccum<string> @@Comp_ID;
+  //ListAccum<result> @@result;
+  
+  HeapAccum<result>(10000000, area_name DESC, branch_name DESC) @@result_all;
+	HeapAccum<result>(50, area_name DESC, branch_name DESC) @@result_part;
+  
+  SumAccum<STRING> @edge_name;
+  SumAccum<STRING> @edge_type;
+  SumAccum<DOUBLE> @A_P;
+  SumAccum<DOUBLE> @B_P;
+
+  MapAccum<string, double> @@map;
+
+  comp = {gridcom.*};
+  sub = {Substation.*};
+  start_comp = select s from comp:s where s.id == companyID 
+                  accum 
+                    @@Comp_ID+= s.id,
+                    @@area_name +=s.name;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+  
+  substationSet = select t from comp:s-(connected_grid_sub:e)-:t where s.id in @@Comp_ID;
+  
+
+  //找到所有的topoND line_loss_cal
+  topoNDSet = SELECT t FROM substationSet:s - (topoid_subid:e)-:t;
+  
+  
+  T1 = SELECT a from topoNDSet:a - (topo_connect>:e) - :b WHERE e.reverse == 1 and a.island ==1 and b.island ==1
+            ACCUM
+              @@map +=(e.edge_name.get(0) -> e.P_TLPF*100);
+
+  T1 = SELECT a from topoNDSet:a - (topo_connect>:e) - :b WHERE e.reverse == -1 and a.island==1 and b.island ==1
+            ACCUM
+              @@result_all += result(@@area_name, e.edge_name.get(0), e.device_type, @@map.get(e.edge_name.get(0)), e.P_TLPF * 100),
+              @@result_part += result(@@area_name, e.edge_name.get(0), e.device_type, @@map.get(e.edge_name.get(0)), e.P_TLPF * 100);
+             
+
+ if return_all then
+    print @@result_all;
+  else
+    print @@result_part;
+  end;
+  
+}

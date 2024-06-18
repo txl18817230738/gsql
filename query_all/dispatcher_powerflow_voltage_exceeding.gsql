@@ -1,0 +1,184 @@
+CREATE QUERY dispatcher_powerflow_voltage_exceeding(bool return_all=true) FOR GRAPH gsql_EMS { 
+  TYPEDEF TUPLE <string bus_name, string sub_name, string sub_id, double Vmax,  double Vmin,  double cal_Vm, double difference, double per_rating, string vio_type, double volt> row;
+
+  SumAccum<int> @@count_all;
+	//SetAccum<row> @@voltageVio_List;
+  
+  HeapAccum<row>(10000000, bus_name DESC, sub_name DESC) @@result;
+	HeapAccum<row>(50, bus_name DESC, sub_name DESC) @@result_part;
+  
+	//SumAccum<int> @@id;
+	SumAccum<string> @vio_type;
+	SumAccum<double> @difference;
+	SumAccum<double> @per_rating;
+	SumAccum<double> @Vmin=0.9;
+	SumAccum<double> @Vmax=1.1;
+  SumAccum<string> @subid;
+  SumAccum<string> @sub_name;
+  
+  
+  SumAccum<INT> @@count_high_exceed;
+  SumAccum<INT> @@count_low_exceed;
+  
+  
+  SumAccum<INT> @@count_500;
+  SumAccum<INT> @@count_500_high_exceed;
+  SumAccum<INT> @@count_500_low_exceed;
+  
+  
+  SumAccum<INT> @@count_220;
+  SumAccum<INT> @@count_220_high_exceed;
+  SumAccum<INT> @@count_220_low_exceed;
+  
+  
+  SumAccum<INT> @@count_110;
+  SumAccum<INT> @@count_110_high_exceed;
+  SumAccum<INT> @@count_110_low_exceed;
+  
+  SumAccum<INT> @@count_35;
+  SumAccum<INT> @@count_35_high_exceed;
+  SumAccum<INT> @@count_35_low_exceed;
+  
+  SumAccum<INT> @@count_10;
+  SumAccum<INT> @@count_10_high_exceed;
+  SumAccum<INT> @@count_10_low_exceed;
+  
+  SumAccum<INT> @@count_other;
+  SumAccum<INT> @@count_other_high_exceed;
+  SumAccum<INT> @@count_other_low_exceed;
+	
+		
+	T0 = {TopoND.*};
+
+    Tsub = select s from T0:s-(topoid_subid:e)-:t
+         accum
+         s.@subid = t.strid,
+         s.@sub_name = t.name;
+
+    T1 = SELECT s
+	      FROM T0:s
+		  where s.island == 1 and s.bus_name !="" //(s.busType==0 OR s.busType==1) and 
+		  POST-ACCUM 
+		  
+	   case when (s.PF_Vm >= s.up_V) then
+			 s.@vio_type="高电压越限",
+			 s.@difference=s.PF_Vm-s.@Vmax,
+			 s.@per_rating=s.@difference/s.@Vmax*100
+		when (s.PF_Vm <= s.lo_V) then
+			 s.@vio_type="低电压越限",
+			 s.@difference=s.@Vmin-s.PF_Vm,
+			 s.@per_rating=s.@difference/s.@Vmin*100
+		else 
+			s.@vio_type="正常"
+		end,
+	    case when (s.@vio_type != "正常")  then
+		    @@result+= row(s.bus_name, s.Sub, s.@subid, s.@Vmax, s.@Vmin, s.PF_Vm, s.@difference, s.@per_rating, s.@vio_type,s.base_kV),
+        @@result_part+= row(s.bus_name, s.Sub, s.@subid, s.@Vmax, s.@Vmin, s.PF_Vm, s.@difference, s.@per_rating, s.@vio_type,s.base_kV),
+        @@count_all += 1,
+    double volt = s.base_kV,
+                  if volt >= 500 then
+                  @@count_500 += 1,
+                  if s.@vio_type=="高电压越限" then 
+                     @@count_500_high_exceed +=1,
+                     @@count_high_exceed +=1
+                  end,
+                  if s.@vio_type=="低电压越限" then 
+                     @@count_500_low_exceed +=1,
+                     @@count_low_exceed +=1
+                  end               
+                else if volt >= 220 then
+                  @@count_220+=1,
+                  if s.@vio_type=="高电压越限" then 
+                     @@count_220_high_exceed +=1,
+                      @@count_high_exceed +=1
+                  end,
+                  if s.@vio_type=="低电压越限" then 
+                     @@count_220_low_exceed +=1,
+                     @@count_low_exceed +=1
+                  end     
+                  
+                else if volt >= 110 then
+                  @@count_110+=1,
+                  if s.@vio_type=="高电压越限" then 
+                     @@count_110_high_exceed +=1,
+                      @@count_high_exceed +=1
+                  end,
+                  if s.@vio_type=="低电压越限" then 
+                     @@count_110_low_exceed +=1,
+                     @@count_low_exceed +=1
+                  end                
+                else if volt >= 34.5 then
+                  @@count_35+=1,
+                  if s.@vio_type=="高电压越限" then 
+                     @@count_35_high_exceed +=1,
+                     @@count_high_exceed +=1
+                  end,
+                  if s.@vio_type=="低电压越限" then 
+                     @@count_35_low_exceed +=1,
+                     @@count_low_exceed +=1
+                  end     
+  
+                else if volt >= 10 then
+                  @@count_10+=1,
+                   if s.@vio_type=="高电压越限" then 
+                     @@count_10_high_exceed +=1,
+                     @@count_high_exceed +=1
+                  end,
+                  if s.@vio_type=="低电压越限" then 
+                     @@count_10_low_exceed +=1,
+                     @@count_low_exceed +=1
+                  end
+                else
+                  @@count_other+=1,
+                   if s.@vio_type=="高电压越限" then 
+                     @@count_other_high_exceed +=1,
+                      @@count_high_exceed +=1
+                  end,
+                  if s.@vio_type=="低电压越限" then 
+                     @@count_other_low_exceed +=1,
+                     @@count_low_exceed +=1
+                  end
+                end
+		end;
+    
+		
+  if return_all then
+    print @@result;
+  else
+    print @@result_part;
+  end;
+  print @@count_all;
+  
+  print @@count_high_exceed;
+  print @@count_low_exceed;
+  
+  
+  print @@count_500;
+  print @@count_500_high_exceed;
+  print @@count_500_low_exceed;
+  
+  
+  print @@count_220;
+  print @@count_220_high_exceed;
+  print @@count_220_low_exceed;
+  
+  
+  print @@count_110;
+  print @@count_110_high_exceed;
+  print @@count_110_low_exceed;
+  
+  print @@count_35;
+  print @@count_35_high_exceed;
+  print @@count_35_low_exceed;
+  
+  print @@count_10;
+  print @@count_10_high_exceed;
+  print @@count_10_low_exceed;
+  
+  print @@count_other;
+  print @@count_other_high_exceed;
+  print @@count_other_low_exceed;
+  
+  
+
+}

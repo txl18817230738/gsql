@@ -1,0 +1,16 @@
+CREATE QUERY SearchSEcalTimeInfo() FOR GRAPH gsql_EMS { 
+  TYPEDEF TUPLE<int start_cycle, string cycle_start_cal, string event_start_cal, string period_time, string se_status, string se_starttime, string se_endtime, string se_cal_time, int se_iter, int count_island> info;
+  HeapAccum<info>(1000, se_iter ASC) @@info_all;
+  SumAccum<double> @@EMS_cycle;
+  statusSet = {status.*};
+  parameterSet = {parameters.*}; 
+
+  Tparameter = select s from parameterSet:s
+    post-accum
+      @@EMS_cycle += s.EMS_cycle/60000;  
+
+  T0 = select s from statusSet:s
+    POST-ACCUM
+      @@info_all +=info(@@EMS_cycle,"YES","NO",s.NTP_starttime,"收敛",s.se_starttime,s.se_endtime,s.se_time,s.se_iteration, 1);
+  print @@info_all;
+}

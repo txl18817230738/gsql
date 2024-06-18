@@ -1,0 +1,54 @@
+CREATE QUERY virtualbusInit() FOR GRAPH gsql_EMS{
+TYPEDEF TUPLE<mRID int, aliasName string, BaseVoltage string, MemberOf_Substation string, volt_name double, name string, Terminals string, MemberOf_EquipmentContainer string, node_1 int, terminal_1 string, taskId int> Vbus;
+
+  SumAccum<int> @@counter = 0;
+  SumAccum<int> @CN_id;
+  SumAccum<int> @Bus_id;
+  SumAccum<int> @unit_id;
+
+
+  FILE file1 ("/home/tigergraph/ems-query/query_gsql_EMS/output/VirtualBus.csv");
+
+  bus = {BUS.*};
+  sub = {Substation.*};
+  aclinedot = {ACline_dot.*};
+
+  DELETE t from aclinedot:s- (aclinedot_cn:e) -:t where s.Substation == "113997366406676573" or s.Substation == "113997366423453698" or s.Substation == "113997366255681601";
+  DELETE e from aclinedot:s - (aclinedot_cn:e) -:t where s.Substation == "113997366406676573" or s.Substation == "113997366423453698" or s.Substation == "113997366255681601";
+  DELETE s from bus:s where s.Substation == "113997366406676573" or s.Substation == "113997366423453698" or s.Substation == "113997366255681601";
+  DELETE e from bus:s - (connected_Bus_CN:e) -:t where s.Substation == "113997366406676573" or s.Substation == "113997366423453698" or s.Substation == "113997366255681601";
+
+  Taclinedot = select s from aclinedot:s
+       where s.Substation == "113997366406676573" or s.Substation == "113997366423453698" or s.Substation == "113997366255681601"
+       POST-ACCUM 
+          s.@CN_id = s.id + 300000000000000000,
+          s.@Bus_id = s.id + 200000000000000000,
+          s.@unit_id = s.id + 400000000000000000,
+          s.nd = s.@CN_id,
+          insert into CN values(s.@CN_id,_,s.@CN_id,s.volt,_,_,convertToString(s.@CN_id)),
+          insert into unit values(s.@unit_id,_,s.@unit_id,s.name + "虚拟机组",_,_,_,300,_,_,_, _,_,_,_,_,_,_,_,_,_,_,_,_,s.@CN_id,_,_,_,_,"Unit",s.volt,s.volt, s.@unit_id, convertToString(s.@unit_id), _, s.Substation, _, _, _,_, _,_, _,_,_, s.volt, _,_,_,_,_,_,"虚拟机组",_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_),
+          insert into BUS values(s.@Bus_id,_, s.@Bus_id, s.name + "母线",s.volt,_,_,_,_,_,_,_,s.@CN_id,_,_,_,_,_,_,"Bus",s.volt, s.@Bus_id, convertToString(s.@Bus_id),_,_,s.Substation,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_);
+
+
+  Taclinedot = select s from aclinedot:s
+       where s.Substation == "113997366406676573" or s.Substation == "113997366423453698" or s.Substation == "113997366255681601"
+       ACCUM
+          insert into sub_cn values(s.Substation, s.@CN_id),
+          insert into cn_subid values(s.@CN_id, s.Substation),
+          insert into connected_Bus_Sub values(s.@Bus_id, s.Substation, s.@Bus_id),
+          insert into connected_Sub_Bus values(s.Substation, s.@Bus_id, s.@Bus_id),
+          insert into aclinedot_cn values(s.id, s.@CN_id),
+          insert into connected_Bus_CN values(s.@Bus_id, s.@CN_id),
+          insert into connected_Unit_Sub values(s.@unit_id, s.Substation, s.@unit_id),
+          insert into connected_Sub_Unit values(s.Substation, s.@unit_id, s.@unit_id),
+          insert into connected_Unit_CN values(s.@unit_id, s.@CN_id);
+
+
+  Tbus = select t from sub:s - (connected_Sub_Bus:e) -:t where s.id == 113997366423453698 or s.id == 113997366255681601;
+  Tcn = select t from sub:s - (sub_cn:e) -:t where s.id == 113997366423453698 or s.id == 113997366255681601;
+
+
+ // print Taclinedot;
+ // print Tcn;
+ // print Tbus;
+}

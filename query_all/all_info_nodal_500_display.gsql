@@ -1,0 +1,48 @@
+CREATE QUERY all_info_nodal_500_display(/* Parameters here */) FOR GRAPH gsql_EMS syntax v2{ 
+  TypeDef tuple<vertex fromId, vertex toId, string edge_name, string area, string zone, string device_type, string volt, double Pimeas, double Qimeas> edgeTuple;
+  ListAccum<edgeTuple> @@edgeList;
+  SetAccum<INT> @topoid;
+  SumAccum<double> @total_gen;
+  SumAccum<double> @total_load;
+  OrAccum @has_nextlvl = FALSE;
+  StartSUB= {Substation.*};
+  
+  T_gen2 = select s from StartSUB:s-(connected_Sub_Unit>:e2) - unit:b - (topo_unit:e1)-TopoND:t where b.P > 0 and t.island == 1
+           ACCUM
+               s.@total_gen += abs(b.P);
+  
+  T_load = SELECT a FROM StartSUB:a -(connected_Sub_Load>:e)-l_oad:b -(topo_load:e1)-TopoND:t WHERE b.P > 0 and t.island == 1
+           ACCUM
+               a.@total_load += b.P;
+
+  T_load2 = select s from StartSUB:s -((connected_Sub_Aclinedot>|connected_Aclinedot_Sub>):e)-ACline_dot:t where t.P > 0 and s.volt >= 500 and s.subtype == "变电站"
+             ACCUM
+                s.@total_load += t.P;
+  
+  topoid = select t from StartSUB:s - (topoid_subid:e) - TopoND:t 
+  where t.Sub == s.name
+  ACCUM
+    IF s.volt >= 500 and t.base_kV >= 500 THEN
+       s.@topoid += t.TOPOID
+    ELSE IF abs(t.base_kV - s.volt)<= 25 THEN
+       s.@topoid += t.TOPOID
+    END;
+  
+  HAS_SUB = SELECT a FROM StartSUB:a where a.volt >= 500 and a.subtype == "变电站" 
+  ACCUM
+  IF a.strid == "113997366238904432" or a.strid == "113997366238904603" or a.strid == "113997366238904619" or a.strid == "113997366238904352" or a.strid == "113997366238904374"  or a.strid == "113997366238904412" or a.strid == "113997366238904440" or a.strid == "113997366238904616" THEN
+    a.@has_nextlvl += FALSE
+  ELSE
+    a.@has_nextlvl += TRUE
+  END;
+  
+  PRINT StartSUB[StartSUB.strid,StartSUB.volt,StartSUB.@topoid,StartSUB.name,StartSUB.pos_x,StartSUB.pos_y,StartSUB.x,StartSUB.y,StartSUB.subtype,round(StartSUB.@total_gen),round(StartSUB.@total_load),StartSUB.@has_nextlvl] WHERE StartSUB.volt >= 500;
+  
+  T0 = {TopoND.*};
+  T0 = SELECT s FROM T0:s where s.base_kV >= 220;
+  T1 = SELECT s from T0:s -(topo_connect>:e)-TopoND:t
+      WHERE (e.P_TLPF > 0 or (e.P_TLPF == 0 and e.reverse == 1)) and e.device_type=="AC传输线"
+      ACCUM
+        @@edgeList += edgeTuple(s,t, e.edge_name.get(0), e.area.get(0), e.zone.get(0), e.device_type, e.volt, (e.P_TLPF)*100, (e.Q_TLPF)*100);
+  print @@edgeList;
+}

@@ -1,0 +1,8 @@
+"""
+use ems match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:connected_Sub_Bus]->(t:`BUS`)<-[e:topo_bus]-(t2:TopoND) where startid.gridid = "113715890758877224"
+let
+ p0_q0 = case when t2.ZJP = 1 and t2.ZJQ = 1 then 1 else 0 end,
+ p1_q1 = case when t2.ZJP = 0 and t.ZJQ = 0 then 1 else 0 end,
+ p0 = case when t.ZJP = 1 and t.ZJQ = 0 then 1 else 0 end
+ return case when t.volt >= 500.0 then "500" when t.volt >= 220.0 and t.volt < 500.0 then "220" when t.volt >= 110.0 and t.volt < 220.0 then "110" when t.volt >= 35.0 and t.volt < 110.0 then "35" when t.volt >= 10.0 and t.volt < 35.0 then "10" else "other" end as voltLevel, count(*) as total, sum(p0_q0) as p0_q0_count, sum(p1_q1) as p1_q1_count, sum(p0) as p0_count group by voltLevel Next return voltLevel, total, p0_q0_count, p1_q1_count, p0_count
+ """

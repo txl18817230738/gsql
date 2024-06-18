@@ -1,0 +1,36 @@
+se_all_info_unit
+'''
+use ems_v1 
+match (p:parameters)
+let
+error_limit_P = case when p.error_limit_P is not NULL then p.error_limit_P else 0.0 end,
+error_limit_Q = case when p.error_limit_Q is not NULL then p.error_limit_Q else 0.0 end,
+error_p_baddata = case when p.backup1 is not NULL then p.backup1 else 0.0 end,
+error_q_baddata = case when p.backup2 is not NULL then p.backup2 else 0.0 end
+match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:connected_Sub_Unit]->(t:`unit`)<-(Meas_Unit)-(m:meas) filter where startid.id = "113715890758877224"
+let
+p_meas_flag = m.P_PseudoFlag,
+q_meas_flag = m.Q_PseudoFlag
+match (u:`unit`)<-[topo_unit]-(td:TopoND) where td.island = 1 and u.off = 0 and u.Gentype <> "虚拟机组" and u.Gentype <> "交换机组"
+let
+Pimeas = case when u.Pimeas is not NULL then u.Pimeas else 0.0 end,
+Qimeas = case when u.Qimeas is not NULL then u.Qimeas else 0.0 end,
+P = case when u.P is not NULL then u.P else 0.0 end,
+Q = case when u.Q is not NULL then u.Q else 0.0 end,
+Genload = case when u.Genload is not NULL then u.Genload else 0.0 end,
+P_rate = case when u.P_rate is not NULL then u.P_rate else 1.0 end
+let
+bus_name = td.bus_name,
+
+P_error_pct = case when abs(Pimeas) > 0.0 and P_rate >= 300.0 then abs(Pimeas - P - Genload)/P_rate*100 when abs(Pimeas) > 0.0 and P_rate < 300.0 then abs(Pimeas - P - Genload)/300*100 else 0.0 end,
+Q_error_pct = case when abs(Qimeas) > 0.0 and P_rate >= 300.0 then abs(Q - Qimeas)/P_rate*100 when abs(Qimeas) > 0.0 and P_rate < 300.0 then abs(Q - Qimeas)/300*100 else 0.0 end
+match (ut:`unit`) where ut.island = 1 and P_error_pct < error_p_baddata and Q_error_pct < error_q_baddata and abs(ut.Pimeas) > 0.0001 and abs(ut.Qimeas) > 0.0001
+let
+count_P_below_limit = case when p_meas_flag = 0 and P_error_pct <= error_limit_P then 1 else 0 end,
+count_P_above_limit = case when p_meas_flag = 0 and P_error_pct > error_limit_P then 1 else 0 end,
+count_Q_below_limit = case when q_meas_flag = 0 and Q_error_pct <= error_limit_Q then 1 else 0 end,
+count_Q_above_limit = case when q_meas_flag = 0 and Q_error_pct > error_limit_Q then 1 else 0 end,
+
+return case when ut.Gentype = "火电机组" then "火电" when ut.Gentype = "水电机组" then "水电"  when ut.Gentype = "风电机组" then "风电" when ut.Gentype = "光伏机组" then "光伏"  when ut.Gentype = "虚拟机组" then "虚拟" when ut.Gentype = "交换机组" then "交换" when ut.Gentype = "核电机组" then "核电" when ut.Gentype = "抽蓄机组" then "抽蓄" else "其他机组" end as unitType, count(*) as total,
+count(count_P_below_limit) as count_P_below_limit_total, count(count_P_above_limit) as count_P_above_limit_total, count(count_Q_below_limit) as count_Q_below_limit_total, count(count_Q_above_limit) as count_Q_above_limit_total
+'''

@@ -1,0 +1,8 @@
+'''
+use ems match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation) filter where startid.id = "113715890758877224"
+let
+coverageLess50 = case when s.total_coverage <= 0.5 then 1 else 0 end,
+coverageLess80 = case when s.total_coverage > 0.5 and s.total_coverage <= 0.8 then 1 else 0 end,
+coverageLarge80 = case when s.total_coverage > 0.8 then 1 else 0 end
+return case when s.volt >= 500.0 then "500" when s.volt >= 220.0 and s.volt < 500.0 then "220" when s.volt >= 110.0 and s.volt < 220.0 then "110" when s.volt >= 35.0 and s.volt < 110.0 then "35" when s.volt >= 10.0 and s.volt < 35.0 then "10" else "other" end as voltLevel, count(*) as total, sum(coverageLess50) as coverageLess50Count, sum(coverageLess80) as coverageLess80Count, sum(coverageLarge80) as coverageLarge80Count group by voltLevel Next return voltLevel, total,  coverageLess50Count, coverageLess80Count, coverageLarge80Count
+'''

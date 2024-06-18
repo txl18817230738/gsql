@@ -1,0 +1,113 @@
+create query CAPFtoSet_res(string device_type="")
+for graph gsql_EMS {
+	
+	TYPEDEF TUPLE < string edge_name, string edge_type, int edge_volt, int s_exId, int t_exId, string s_TOPOID, string t_TOPOID,  string tap_bus_name, string z_bus_name, double CSeverity, int CAset_UserSelection, int CA_bridge, string sub_name, int SI_order, string e_index, double s_base_kV, double t_base_kV> row;
+
+	SumAccum<int> @@id = 0;
+	ListAccum<int> @@edgeDecision;
+//	ListAccum<row> @@edgeList; 
+	HeapAccum<row>(1000000, edge_name DESC) @@edgeList;
+	int CAcounter = 0;
+	SumAccum<int> @@Decision_count = 0;	
+        SumAccum<int> @@Analysis_decision_count = 0;
+        SumAccum<int> @@ComplexFault_count = 0;
+        SumAccum<int> @@UnitFault_count = 0;
+    //print "line_id", "tap_bus", "z_bus", "R", "X", "B", "P", "Q", "I", "Line1_MVA", "Line2_MVA", "Line3_MVA";	
+	T0 = {TopoND.*};
+	T_paras = {parameters.*};
+        Tfault = {Fault.*};
+        Tunit = {unit.*};
+
+   paras =  SELECT s FROM T_paras:s
+            POST-ACCUM
+                CAcounter = s.ca_NumOfDetail,
+                if (s.ca_NumOfDetail < 0) then
+                    CAcounter = 50
+                end;
+
+    T1 = select v
+     from  T0:v-(topo_connect:e)->TopoND:t
+      where (e.reverse == 1) and (v.island == 1 and t.island == 1)  and (e.CA_bridge >= 0)
+     accum
+
+         foreach i in range[0, e.X.size()-1] do // i is the internal idx of ith line in the paralines
+            if (e.Decision.get(i) == 1) then
+		    @@Decision_count += 1
+            end,
+            if (e.Analysis_decision.get(i) == 1 and e.SI_order.get(i) > CAcounter ) then
+                    @@Analysis_decision_count += 1
+            end
+         end;
+//============count complex fault and unit fault========================
+    ComplexFault = select s from Tfault:s 
+         where s.faulttype == "复杂故障" and s.detailedanalysis_flag == 1
+         post-accum
+         @@ComplexFault_count += 1;
+
+    UnitFault = select s from Tfault:s
+         where s.groupname == "机组N-1故障组" and s.detailedanalysis_flag == 1
+         post-accum
+         @@UnitFault_count += 1;
+
+//======================================================================
+
+   paras =  SELECT s FROM T_paras:s
+            POST-ACCUM
+                CAcounter = s.ca_NumOfDetail - @@Analysis_decision_count - @@ComplexFault_count - @@UnitFault_count,
+                if (s.ca_NumOfDetail < @@Analysis_decision_count) then
+                    CAcounter = 0
+                end;
+
+    T1 = SELECT v
+	      FROM T0:v-(topo_connect:e)->TopoND:t
+		  where v.island == 1 and t.island == 1 and e.reverse == 1 and e.CA_bridge >= 0
+		  ACCUM 
+            int minValue = e.X.size() - 1,
+            IF (minValue < 0) THEN
+                minValue = 0
+            END,
+            FOREACH i in range[0, minValue] DO
+	          if (e.Analysis_decision.get(i) == 1) then
+                	int line_volt = 0,
+                        case when (e.device_type == "AC传输线") then
+                            line_volt = TransferLineVolt(e.volt)
+                        when ( e.device_type == "双绕组变压器") then
+                            if (v.base_kV >= t.base_kV ) then
+                               line_volt = v.base_kV
+                            else
+                               line_volt = t.base_kV
+                            end
+                	when ( e.device_type == "三绕组变压器" and (FindSubstring(e.edge_name.get(0),"高压端") == 1 or FindSubstring(e.edge_name.get(0),"-高") == 1)) then
+                            line_volt = TransferThreePortVolt(e.volt)
+                        end,
+			    	
+			 @@edgeList+= row(e.edge_name.get(i), e.device_type, line_volt, v.exId, t.exId, convertToString(v.TOPOID), convertToString(t.TOPOID), v.bus_name, t.bus_name, e.CSeverity.get(i), e.Analysis_decision.get(i), e.CA_bridge, v.Sub, e.SI_order.get(i), convertToString(e.key_list.get(i)), v.base_kV, t.base_kV)
+	         else if ((e.Analysis_decision.get(i) == 0 and e.Decision.get(i) == 1) and ((@@Decision_count >= CAcounter and e.SI_order.get(i) >= 1 and  e.SI_order.get(i) <= CAcounter) or (@@Decision_count < CAcounter))) then
+                        log(true, "check_SI_order", e.edge_name.get(i), e.Decision.get(i), e.SI_order.get(i)),
+			int line_volt = 0,
+                        case when (e.device_type == "AC传输线") then
+                            line_volt = TransferLineVolt(e.volt)
+                        when ( e.device_type == "双绕组变压器") then
+                            if (v.base_kV >= t.base_kV ) then
+                               line_volt = v.base_kV
+                            else
+                               line_volt = t.base_kV
+                            end
+                        when ( e.device_type == "三绕组变压器" and (FindSubstring(e.edge_name.get(0),"高压端") == 1 or FindSubstring(e.edge_name.get(0),"-高") == 1 )) then
+                            line_volt = TransferThreePortVolt(e.volt)
+                        end,
+			@@edgeList+= row(e.edge_name.get(i), e.device_type, line_volt, v.exId, t.exId, convertToString(v.TOPOID), convertToString(t.TOPOID), v.bus_name, t.bus_name, e.CSeverity.get(i), e.Decision.get(i), e.CA_bridge, v.Sub, e.SI_order.get(i), convertToString(e.key_list.get(i)), v.base_kV, t.base_kV)
+		end
+	 END;
+			
+	
+	foreach x in @@edgeList do
+		@@id += 1;
+                IF device_type=="" or device_type==x.edge_type THEN
+		  print x.edge_name, x.edge_type, x.edge_volt, x.s_exId, x.t_exId, x.s_TOPOID, x.t_TOPOID, x.tap_bus_name, x.z_bus_name, x.CSeverity, x.CAset_UserSelection, x.CA_bridge, x.sub_name, x.e_index, x.s_base_kV, x.t_base_kV;
+	        END;
+	end;
+
+      // print @@Decision_count, @@Analysis_decision_count, @@ComplexFault_count, @@UnitFault_count, CAcounter, @@id;
+		 
+}

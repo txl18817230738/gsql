@@ -1,0 +1,611 @@
+CREATE QUERY se_results_statistic(string companyID="113715890758877224", bool return_all=true) FOR GRAPH gsql_EMS { 
+  SetAccum<string> @@Comp_ID;
+  SumAccum<double> @@count_all;
+  SumAccum<double> @@count_AClinedot;
+  SumAccum<double> @@count_AClinedotP;
+  SumAccum<double> @@count_AClinedotQ;
+  SumAccum<double> @@count_unit;
+  SumAccum<double> @@count_unitP;
+  SumAccum<double> @@count_unitQ;
+  SumAccum<double> @@count_load;
+  SumAccum<double> @@count_loadP;
+  SumAccum<double> @@count_loadQ;
+  SumAccum<double> @@count_twoport;
+  SumAccum<double> @@count_twoportP;
+  SumAccum<double> @@count_twoportQ;  
+  SumAccum<double> @@count_threeport;
+  SumAccum<double> @@count_threeportP;
+  SumAccum<double> @@count_threeportQ;
+  SumAccum<double> @@count_CP;
+  SumAccum<double> @@count_bus;
+  SumAccum<double> @@se_OKNum_AClinedot;
+  SumAccum<double> @@se_OKNum_AClinedotP;
+  SumAccum<double> @@se_OKNum_AClinedotQ;
+  SumAccum<double> @@se_OKNum_unit;
+  SumAccum<double> @@se_OKNum_unitP;
+  SumAccum<double> @@se_OKNum_unitQ;
+  SumAccum<double> @@se_OKNum_load;
+  SumAccum<double> @@se_OKNum_loadP;
+  SumAccum<double> @@se_OKNum_loadQ;
+  SumAccum<double> @@se_OKNum_twoport;
+  SumAccum<double> @@se_OKNum_twoportP;
+  SumAccum<double> @@se_OKNum_twoportQ;
+  SumAccum<double> @@se_OKNum_threeport;
+  SumAccum<double> @@se_OKNum_threeportP;
+  SumAccum<double> @@se_OKNum_threeportQ;
+  SumAccum<double> @@se_OKNum_CP;
+  SumAccum<double> @@se_OKNum_bus;
+  SumAccum<double> @@total_load_p;
+  SumAccum<double> @@total_load_pest;
+  SumAccum<double> @@total_load_pest_positive;
+  SumAccum<double> @@total_load_pest_negtive;
+  SumAccum<double> @@total_unit_p;
+  SumAccum<double> @@total_unit_pest;
+  SumAccum<double> @@total_unit_pest_positive;
+  SumAccum<double> @@total_unit_pest_negtive;
+  SumAccum<double> @sub_unit_pest;
+  SumAccum<double> @sub_load_pest;
+  SumAccum<double> @@se_meas_OKNum;
+  SumAccum<double> @@seNum;
+  SumAccum<double> @Perror = 0;
+  SumAccum<double> @Qerror = 0;
+  SumAccum<double> @Verror = 0;
+  SumAccum<double> @@se_meas_yield;
+  SumAccum<double> @@se_yield_AClinedot;
+  SumAccum<double> @@se_yield_AClinedotP;
+  SumAccum<double> @@se_yield_AClinedotQ;
+  SumAccum<double> @@se_yield_unit;
+  SumAccum<double> @@se_yield_unitP;
+  SumAccum<double> @@se_yield_unitQ;
+  SumAccum<double> @@se_yield_load;
+  SumAccum<double> @@se_yield_loadP;
+  SumAccum<double> @@se_yield_loadQ;
+  SumAccum<double> @@se_yield_twoport;
+  SumAccum<double> @@se_yield_twoportP;
+  SumAccum<double> @@se_yield_twoportQ;
+  SumAccum<double> @@se_yield_threeport;
+  SumAccum<double> @@se_yield_threeportP;
+  SumAccum<double> @@se_yield_threeportQ;
+  SumAccum<double> @@se_yield_CP;
+  SumAccum<double> @@se_yield_bus;
+  SumAccum<double> @@se_yield_busV;
+  SumAccum<double> @@count_sub;
+  SumAccum<double> @@count_sub_cover;
+  SumAccum<double> @@error_limit_P;
+  SumAccum<double> @@error_limit_Q;
+  SumAccum<double> @@error_p_baddata;
+  SumAccum<double> @@error_q_baddata;
+  SumAccum<double> @@error_v_baddata;
+  SumAccum<double> @@error_limit_220above;
+  SumAccum<double> @@error_limit_220below;
+        SumAccum<double> @cal_P = 0;
+        SumAccum<double> @cal_Q = 0;
+        SumAccum<double> @sumG  = 0; // store for each node the total G on all of its edges
+        SumAccum<double> @sumB  = 0; //similar...
+  SumAccum<int> @@count_meas_error = 0;
+  SumAccum<int> @@count_discrete_error = 0;
+  SumAccum<int> @@count_island = 1;
+  SumAccum<int> @island;
+  SumAccum<double> @base_value;
+ 
+  SumAccum<int> @p_meas_flag;
+  SumAccum<int> @q_meas_flag;
+
+  sub = {Substation.*};
+  comp = {gridcom.*};
+  aclinedotSet = {ACline_dot.*};
+  busSet = {BUS.*};
+  unitSet = {unit.*};
+  loadSet = {l_oad.*};
+  twoportSet = {two_port_transformer.*};
+  threeportSet = {three_port_transformer.*};
+  CPSet = {C_P.*};
+  Tparameter = {parameters.*};
+  Vstatus = {status.*};
+  T0 = {TopoND.*};
+
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+//parameter setting
+  Tparameter = select s from Tparameter:s
+     post-accum
+     @@error_limit_P += s.error_limit_P,
+     @@error_limit_Q += s.error_limit_Q,
+     @@error_limit_220above += s.backup4,
+     @@error_limit_220below += s.backup5,
+     @@error_p_baddata += s.backup1,
+     @@error_q_baddata += s.backup2,
+     @@error_v_baddata += s.backup3;
+
+//print @@error_limit_P, @@error_limit_Q;
+
+// sub
+  Tsub = select t from comp:s-(connected_grid_sub:e)->:t
+        where s.id in @@Comp_ID;
+
+       Tsub_cover = select s from Tsub:s-(cn_subid:e)-:t
+              where s.outdegree("cn_subid") != 0;
+
+
+       @@count_sub = Tsub.size();
+       @@count_sub_cover = Tsub_cover.size();
+
+//get Pest and Qest for Gen and Load
+  T1 = SELECT s
+          from T0: s -(topo_connect:e)->TopoND:t
+          where s.island == 1 and t.island == 1
+          accum
+        double newG = 0,
+        double newB = 0,
+                double tap_ratio = abs(e.transformer_final_turns_ratio),
+                double tap_ratio_square = abs((e.transformer_final_turns_ratio)*(e.transformer_final_turns_ratio)),
+
+                case when e.transformer_final_turns_ratio == 0 then
+                        //compute contribution of each branch to the diagonal terms
+                    s.@sumG += e.G,
+            s.@sumB += -1*e.B + e.hB,
+                        s.@cal_P += s.SE_Vm*t.SE_Vm * (-1*e.G*cos(s.SE_Va-t.SE_Va) + e.B * sin((s.SE_Va-t.SE_Va))),
+                        s.@cal_Q += s.SE_Vm*t.SE_Vm * (-1*e.G*sin(s.SE_Va-t.SE_Va) - e.B * cos(s.SE_Va-t.SE_Va))
+                        //log(false, "e.B and e.G", s.exId, t.exId, e.G, e.B)
+
+                when e.transformer_final_turns_ratio > 0 then
+                        s.@sumG += e.G,
+            s.@sumB += -1*e.B + e.hB, // sqrt
+                        //double tap_ratio = e.transformer_final_turns_ratio/e.kcount,
+                        newG = e.G*abs(tap_ratio),
+                        newB = e.B*abs(tap_ratio),
+                        s.@cal_P += s.SE_Vm*t.SE_Vm * (-1*newG*cos(s.SE_Va-t.SE_Va) + newB * sin(s.SE_Va-t.SE_Va)),
+                        s.@cal_Q += s.SE_Vm*t.SE_Vm * (-1*newG*sin(s.SE_Va-t.SE_Va) - newB * cos(s.SE_Va-t.SE_Va))
+                else
+                        //compute contribution of each branch to the diagonal terms
+            s.@sumG += e.G*tap_ratio_square,
+            s.@sumB += -1*e.B*tap_ratio_square + e.hB,
+                        newG = e.G*abs(tap_ratio),
+                        newB = e.B*abs(tap_ratio),
+                        s.@cal_P += s.SE_Vm*t.SE_Vm * (-1*newG*cos(s.SE_Va-t.SE_Va) + newB * sin(s.SE_Va-t.SE_Va)),
+                        s.@cal_Q += s.SE_Vm*t.SE_Vm * (-1*newG*sin(s.SE_Va-t.SE_Va) - newB * cos(s.SE_Va-t.SE_Va))
+        end
+                post-accum
+                       s.@cal_P += s.SE_Vm*s.SE_Vm*s.@sumG,
+                       s.@cal_Q += (-1) * s.SE_Vm*s.SE_Vm*s.@sumB;
+                       
+ // bus
+   TBusSet = select t from Tsub:s - (connected_Sub_Bus:e) ->:t;
+  
+   TBusSet = select s from TBusSet:s -(Meas_Bus:e)-:t 
+         accum
+            s.@p_meas_flag = t.P_PseudoFlag,
+            s.@q_meas_flag = t.Q_PseudoFlag
+         post-accum
+         if (s.base_value > 0.001) then
+            if s.Pimeas/s.base_value >= 1.049 or (s.Pimeas-s.V)/s.base_value >= 0.035 then
+               if s.base_value == 500 then
+                  s.@base_value = 525
+               else if s.base_value == 220 then
+                  s.@base_value = 230
+               else if s.base_value == 110 then
+                  s.@base_value = 115
+               else if s.base_value == 35 then
+                  s.@base_value = 37.5
+               else if s.base_value == 10 then
+                  s.@base_value = 10.5
+               else
+                  s.@base_value = s.base_value
+               end
+            else
+               s.@base_value = s.base_value
+            end
+          end; 
+  
+  busSet = SELECT s FROM TBusSet:s - (topo_bus:e) - TopoND:t where t.island==1 and s.off==0
+              accum
+              s.@island = t.island,
+            if (s.base_value >= 500) then
+                s.@Verror = abs(s.Pimeas-s.V/s.base_value*s.@base_value)/600*100
+            else if (s.base_value >= 330 and s.base_value < 500) then
+                s.@Verror = abs(s.Pimeas-s.V/s.base_value*s.@base_value)/396*100
+            else if (s.base_value >= 220 and s.base_value < 330) then
+                s.@Verror = abs(s.Pimeas-s.V/s.base_value*s.@base_value)/264*100
+            else if (s.base_value >= 110 and s.base_value < 220) then
+                s.@Verror = abs(s.Pimeas-s.V/s.base_value*s.@base_value)/132*100
+            else if (s.base_value >= 66 and s.base_value < 110) then
+                s.@Verror = abs(s.Pimeas-s.V/s.base_value*s.@base_value)/79.2*100
+            else 
+                s.@Verror = abs(s.Pimeas-s.V/s.base_value*s.@base_value)/42*100
+            end;
+
+   TBus = SELECT s FROM busSet:s  where s.@island == 1 and s.off ==0 and s.@Verror < @@error_v_baddata and abs(s.Pimeas) > 0.0001
+             accum
+            if (s.@p_meas_flag ==0) then
+                  if (s.volt>=220 and s.@Verror < 0.52) then 
+                    if s.@Verror <=@@error_limit_220above then 
+                      @@se_OKNum_bus += 1
+                    end,
+                    @@count_bus += 1
+                  else if (s.volt<220 and s.@Verror < 2.2) then
+                    if s.@Verror <=@@error_limit_220below then 
+                      @@se_OKNum_bus += 1
+                    end,
+                    @@count_bus += 1
+                  end
+              end;      
+             
+  
+  
+  TAClinedotSet = select t from Tsub:s - (connected_Sub_Aclinedot) ->:t;
+  
+  aclinedotSet = select s from TAClinedotSet:s -(Meas_AClinedot:e)-:t 
+                  ACCUM
+                  s.@p_meas_flag = t.P_PseudoFlag,
+                  s.@q_meas_flag = t.Q_PseudoFlag;
+  
+   Tacline = select t from T0:s- (topo_aclinedot:e) -:t 
+                ACCUM
+                    t.@island = s.island;
+
+  TAClinedot = SELECT s
+                FROM aclinedotSet:s -(aclinedot_aclinedot:e) - :t
+                where t.@island == 1 and s.@island==1 and s.off==0 and t.off==0 and s.p_se_error <@@error_p_baddata and abs(s.Pimeas)>0.0001 and t.p_se_error <@@error_p_baddata and abs(t.Pimeas)>0.0001
+                ACCUM
+                  IF (s.@p_meas_flag == 0) THEN
+                        if (s.p_se_error < @@error_limit_P) then
+                           @@se_OKNum_AClinedot += 1,
+                            @@se_OKNum_AClinedotP += 1
+                        end,
+                        @@count_AClinedot += 1,
+                        @@count_AClinedotP += 1
+                  END,
+                    IF (t.@p_meas_flag == 0) THEN
+                        if (t.p_se_error < @@error_limit_P) then
+                           @@se_OKNum_AClinedot += 1,
+                           @@se_OKNum_AClinedotQ += 1
+                        end,
+                        @@count_AClinedot += 1,
+                        @@count_AClinedotQ += 1
+                  end;
+ 
+  
+ 
+ TGenSet = select t from Tsub:s - (connected_Sub_Unit:e) ->:t where t.off==0;
+  
+  TGenSet = select s from TGenSet:s -(Meas_Unit:e)-:t 
+                  ACCUM
+                       s.@p_meas_flag = t.P_PseudoFlag,
+                       s.@q_meas_flag = t.Q_PseudoFlag; 
+  
+  
+    TGenSet = SELECT s FROM TGenSet:s - (topo_unit:e) -:t where t.island == 1 and s.off==0 and s.Gentype != "虚拟机组" and s.Gentype != "交换机组"
+             ACCUM
+               s.@island = t.island,
+             if (s.P >= 0) then
+               @@total_unit_pest += s.P,
+               @@total_unit_pest_positive += s.P
+             else
+               @@total_load_pest += abs(s.P),
+               @@total_unit_pest_negtive += s.P
+             end,
+             if (abs(s.Pimeas) > 0) then
+                    if (s.P_rate >= 300) then
+                       s.@Perror = abs(s.Pimeas - s.P - s.Genload)/s.P_rate*100
+                    else
+                       s.@Perror = abs(s.Pimeas - s.P - s.Genload)/300*100
+                    end
+                  else
+                    s.@Perror = 0
+                  end,
+                  if (abs(s.Qimeas) > 0) then
+                    if (s.P_rate >= 300) then
+                       s.@Qerror = abs(s.Q - s.Qimeas)/s.P_rate*100
+                    else
+                       s.@Qerror = abs(s.Q - s.Qimeas)/300*100
+                    end
+                  else
+                    s.@Qerror = 0
+                  end;
+    
+    TGen = SELECT s
+             FROM TGenSet:s 
+             where s.@island == 1 and s.@Perror <@@error_p_baddata and s.@Qerror <@@error_q_baddata and abs(s.Pimeas) > 0.0001 and abs(s.Qimeas) > 0.0001
+             POST-ACCUM
+             IF (s.@p_meas_flag == 0) THEN
+                 if (s.@Perror <= @@error_limit_P) then
+                     @@se_OKNum_unit += 1,
+                     @@se_OKNum_unitP += 1
+                 end,
+                     @@count_unit += 1,
+                     @@count_unitP += 1
+             END,
+             
+             IF (s.@q_meas_flag == 0) THEN
+                 if (s.@Qerror <= @@error_limit_Q) then
+                     @@se_OKNum_unit += 1,
+                     @@se_OKNum_unitQ += 1
+                 end,
+                     @@count_unit += 1,
+                     @@count_unitQ += 1
+             END;
+             
+
+  
+  // Load
+   TLoadSet = select t from Tsub:s - (connected_Sub_Load:e) ->:t;
+  
+   TLoadSet = select s from TLoadSet:s -(Meas_Load:e)-:t 
+                ACCUM
+                  s.@p_meas_flag = t.P_PseudoFlag,
+                  s.@q_meas_flag = t.Q_PseudoFlag;
+   TLoad = select s
+             from TLoadSet:s - (topo_load:e) -:t
+             where t.island == 1 and s.off == 0 and s.p_se_error <@@error_p_baddata and s.q_se_error <@@error_q_baddata and abs(s.Pimeas) > 0.0001 and abs(s.Qimeas) > 0.0001
+             post-accum
+             if (s.P >= 0) then
+               @@total_load_pest += s.P,
+               @@total_load_pest_positive += s.P
+             else
+               @@total_unit_pest += abs(s.P),
+               @@total_load_pest_negtive += s.P
+             end,
+
+                    IF (s.@q_meas_flag == 0 ) THEN
+                        s.@Perror = s.p_se_error,
+                        if (s.@Perror <= @@error_limit_P) then
+                           @@se_OKNum_load += 1,
+                           @@se_OKNum_loadP += 1
+                        end,
+                        @@count_load += 1,
+                        @@count_loadP += 1
+                    END,
+                    IF (s.@q_meas_flag == 0 ) THEN
+                        s.@Qerror = s.q_se_error, //abs(s.Q - s.Qimeas)/114,
+                        if (s.@Qerror <= @@error_limit_Q) then
+                           @@se_OKNum_load += 1,
+                           @@se_OKNum_loadQ += 1
+                        end,
+                        @@count_load += 1,
+                        @@count_loadQ += 1
+                    END;
+    
+
+
+
+// Two port Trans
+   TTwoportSet = select t from Tsub:s - (connected_Sub_Trans_two:e) ->:t;
+
+   TTwoport = select s from TTwoportSet:s - (topo_Tx_Two:e) -:t where t.island == 1 
+                  ACCUM 
+                        s.@island = t.island,
+                        if (s.S > 0.1) then
+                            s.@Perror = abs(s.P - s.Pimeas)/s.S*100 //
+                        else
+                            s.@Perror = 0 
+                        end;
+  twoportSet = select s from TTwoport:s -(Meas_trans2:e)-:t 
+                ACCUM
+                  s.@p_meas_flag = t.P_PseudoFlag,
+                  s.@q_meas_flag = t.Q_PseudoFlag;
+  
+  Trans2Set = select s from twoportSet:s -(txI_txJ_transformerline:e) - :t where s.@island ==1 and t.@island==1 and s.off==0 and t.off==0 and s.@Perror <@@error_p_baddata and t.@Perror <@@error_p_baddata  and abs(s.Pimeas) > 0.0001 and abs(t.Pimeas) > 0.0001
+             accum
+                 IF (s.@p_meas_flag == 0) THEN
+                        if (s.@Perror <= @@error_limit_P) then
+                           @@se_OKNum_twoport += 1,
+                           @@se_OKNum_twoportP += 1
+                        end,
+                           @@count_twoport += 1,
+                           @@count_twoportP += 1
+                  END,
+                  IF (t.@p_meas_flag == 0 ) THEN
+                        if (t.@Perror <= @@error_limit_P) then
+                           @@se_OKNum_twoport += 1,
+                           @@se_OKNum_twoportQ += 1
+                        end,
+                           @@count_twoport += 1,
+                           @@count_twoportQ += 1
+                  END;
+ 
+  
+ /**
+   TThreeportSet = select t from Tsub:s - (connected_Sub_Trans_three:e) ->:t;
+   
+  
+   TThreeport = select s from TThreeportSet:s - (topo_Tx_Three:e) -:t where t.island == 1 
+             accum
+                 s.@island = t.island,
+                 if (s.S !=0) then
+                           s.@Perror = abs(s.P - s.Pimeas )/s.S, //这里没有乘以100%
+                           s.@Qerror = abs(s.Q - s.Qimeas )/s.S //这里没有乘以100%
+                 else
+                           s.@Perror = 0, //这里没有乘以100%
+                           s.@Qerror = 0 //这里没有乘以100%
+                        end;
+  **/
+  
+
+  threeportSet = SELECT t FROM Tsub:s - (connected_Sub_Trans_three:e) ->:t;
+  
+  threeportSet = select s from threeportSet:s -(Meas_trans3:e)-:t 
+                  ACCUM
+                    s.@p_meas_flag = t.P_PseudoFlag,
+                    s.@q_meas_flag = t.Q_PseudoFlag;
+                
+
+  Tthreeport = select t from threeportSet:s- (topo_Tx_Three:e) -:t where t.island==1
+            accum
+                s.@island = t.island,
+                if (s.S > 0.1) then
+                           s.@Perror = abs(s.P - s.Pimeas )/s.S*100, 
+                           s.@Qerror = abs(s.Q - s.Qimeas )/s.S*100 
+                 else
+                           s.@Perror = 0, 
+                           s.@Qerror = 0 
+                 end;
+  
+  
+  
+   Tthreeport = select s from threeportSet:s -(neutral_three:e) - :t where s.@island == 1 and s.off==0 and s.@Perror <@@error_p_baddata and s.@Qerror <@@error_q_baddata and abs(s.Pimeas) > 0.0001 and abs(s.Qimeas) > 0.0001
+             accum
+             IF (s.@p_meas_flag == 0 ) THEN
+                        if (s.@Perror <= @@error_limit_P) then
+                           @@se_OKNum_threeport += 1,
+                           @@se_OKNum_threeportP += 1
+                        end,
+                           @@count_threeport += 1,
+                           @@count_threeportP += 1
+            END,
+            IF (s.@q_meas_flag == 0 ) THEN
+                        if (s.@Qerror <= @@error_limit_Q) then
+                           @@se_OKNum_threeport += 1,
+                           @@se_OKNum_threeportQ += 1
+                        end,
+                           @@count_threeport += 1,
+                           @@count_threeportQ += 1
+            END;
+
+@@se_meas_OKNum = @@se_OKNum_AClinedot + @@se_OKNum_unit + @@se_OKNum_load + @@se_OKNum_twoport + @@se_OKNum_threeport  + @@se_OKNum_bus;
+@@seNum = @@count_AClinedot + @@count_unit + @@count_load + @@count_twoport + @@count_threeport  + @@count_bus;
+
+if (@@seNum != 0) then
+  @@se_meas_yield = @@se_meas_OKNum/@@seNum;
+else
+  @@se_meas_yield = 0;
+end;
+if (@@count_AClinedot != 0) then
+  @@se_yield_AClinedot = @@se_OKNum_AClinedot/@@count_AClinedot;
+else
+  @@se_yield_AClinedot = 0;
+end;
+if (@@count_unit != 0) then
+  @@se_yield_unit = @@se_OKNum_unit/@@count_unit;
+else
+  @@se_yield_unit = 0;
+end;
+if (@@count_load !=0) then
+  @@se_yield_load = @@se_OKNum_load/@@count_load;
+else
+  @@se_yield_load = 0;
+end;
+if (@@count_twoport != 0) then
+  @@se_yield_twoport = @@se_OKNum_twoport/@@count_twoport;
+else
+  @@se_yield_twoport = 0;
+end;
+if (@@count_threeport != 0) then
+  @@se_yield_threeport = @@se_OKNum_threeport/@@count_threeport;
+else
+  @@se_yield_threeport = 0;
+end;
+if (@@count_CP != 0) then
+  @@se_yield_CP = @@se_OKNum_CP/@@count_CP;
+else
+  @@se_yield_CP = 0;
+end;
+if (@@count_bus != 0) then
+  @@se_yield_bus = @@se_OKNum_bus/@@count_bus;
+else
+  @@se_yield_bus = 0;
+end;
+
+if (@@count_AClinedotP != 0) then
+  @@se_yield_AClinedotP = @@se_OKNum_AClinedotP/@@count_AClinedotP;
+else
+  @@se_yield_AClinedotP = 0;
+end;
+if (@@count_unitP != 0) then
+  @@se_yield_unitP = @@se_OKNum_unitP/@@count_unitP;
+else
+  @@se_yield_unitP = 0;
+end;
+if (@@count_loadP) then
+  @@se_yield_loadP = @@se_OKNum_loadP/@@count_loadP;
+else
+  @@se_yield_loadP = 0;
+end;
+if (@@count_twoportP != 0) then
+  @@se_yield_twoportP = @@se_OKNum_twoportP/@@count_twoportP;
+else
+  @@se_yield_twoportP = 0;
+end;
+if (@@count_threeportP != 0) then
+  @@se_yield_threeportP = @@se_OKNum_threeportP/@@count_threeportP;
+else
+  @@se_yield_threeportP = 0;
+end;
+
+if (@@count_AClinedotQ != 0) then
+  @@se_yield_AClinedotQ = @@se_OKNum_AClinedotQ/@@count_AClinedotQ;
+else
+  @@se_yield_AClinedotQ = 0;
+end;
+if (@@count_unitQ != 0) then
+  @@se_yield_unitQ = @@se_OKNum_unitQ/@@count_unitQ;
+else
+  @@se_yield_unitQ = 0;
+end;
+if (@@count_loadQ) then
+  @@se_yield_loadQ = @@se_OKNum_loadQ/@@count_loadQ;
+else
+  @@se_yield_loadQ = 0;
+end;
+if (@@count_twoportQ != 0) then
+  @@se_yield_twoportQ = @@se_OKNum_twoportQ/@@count_twoportQ;
+else
+  @@se_yield_twoportQ = 0;
+end;
+if (@@count_threeportQ != 0) then
+  @@se_yield_threeportQ = @@se_OKNum_threeportQ/@@count_threeportQ;
+else
+  @@se_yield_threeportQ = 0;
+end;
+@@se_yield_busV = @@se_yield_bus;
+/*
+print @@count_AClinedot;
+print @@count_unit;
+print @@count_load;
+print @@count_twoport;
+print @@count_threeport;
+print @@count_CP;
+print @@count_bus;
+
+print @@se_OKNum_AClinedot;
+print @@se_OKNum_unit;
+print @@se_OKNum_load;
+print @@se_OKNum_twoport;
+print @@se_OKNum_threeport;
+print @@se_OKNum_CP;
+print @@se_OKNum_bus;
+*/
+print @@total_unit_pest;
+print @@total_load_pest;
+print @@se_meas_yield;
+print @@se_yield_AClinedot;
+print @@se_yield_unit;
+print @@se_yield_load;
+print @@se_yield_twoport;
+print @@se_yield_threeport;
+print @@se_yield_CP;
+print @@se_yield_bus;
+print @@count_meas_error;
+print @@count_discrete_error;
+print @@count_island;
+
+print @@se_yield_AClinedotP;
+print @@se_yield_AClinedotQ;
+print @@se_yield_unitP;
+print @@se_yield_unitQ;
+print @@se_yield_loadP;
+print @@se_yield_loadQ;
+print @@se_yield_twoportP;
+print @@se_yield_twoportQ;
+print @@se_yield_threeportP;
+print @@se_yield_threeportQ;
+print @@se_yield_busV;
+
+print @@total_unit_pest_positive;
+print @@total_unit_pest_negtive;
+print @@total_load_pest_positive;
+print @@total_load_pest_negtive;
+}

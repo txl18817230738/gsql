@@ -1,0 +1,386 @@
+CREATE QUERY power_flow_result_update() FOR GRAPH gsql_EMS{
+
+  SumAccum<double> @P_est = 0;
+  SumAccum<double> @Q_est = 0;
+  SumAccum<double> @meas_B = 0;
+  SumAccum<double> @Perror = 0;
+  SumAccum<double> @Qerror = 0;
+  SumAccum<double> @Verror = 0;
+  SumAccum<double> @@Paccuracy = 0;
+  SumAccum<double> @@Qaccuracy = 0;
+  SumAccum<double> @@Vaccuracy = 0;  
+  SumAccum<double> @@PaccuracySum = 0;
+  SumAccum<double> @@QaccuracySum = 0;  
+  SumAccum<double> @@VaccuracySum = 0;
+  SumAccum<double> @@Totalaccuracy = 0;
+  SumAccum<double> @@PNum = 0;  
+  SumAccum<double> @@QNum = 0;  
+  SumAccum<double> @@VNum = 0;  
+  SumAccum<double> @@TotalNum = 0;
+  SumAccum<double> @@pf_converge_Num = 0;
+  SumAccum<double> @@pf_noneconverge_Num = 0;
+  MapAccum<INT, double> @@acline_P_est;
+  MapAccum<INT, double> @@acline_Q_est;
+  MaxAccum<double> @@PI = 3.1415926535898;
+        SumAccum<double> @Pg = 0;
+        SumAccum<double> @Qg = 0;
+        SumAccum<double> @cal_P = 0;
+        SumAccum<double> @cal_Q = 0;
+        SumAccum<double> @total_gen_P = 0;
+        SumAccum<double> @total_gen_Q = 0;
+        SumAccum<int> @total_number_gen = 0;
+        SumAccum<double> @factor = 0;
+        SumAccum<double> @total_load_P = 0;
+        SumAccum<double> @total_load_Q = 0;
+        SumAccum<double> @T_load_P = 0;
+        SumAccum<double> @T_load_Q = 0;
+        SumAccum<double> @Pld = 0;
+        SumAccum<double> @Qld = 0;
+        SumAccum<double> @sumG  = 0; // store for each node the total G on all of its edges
+        SumAccum<double> @sumB  = 0; //similar...
+        SumAccum<double> @Q;
+
+  two_port = {two_port_transformer.*};
+  three_port = {three_port_transformer.*};
+  aclinedotSet = {ACline_dot.*};
+  T_load = {l_oad.*};
+  T_unit = {unit.*};
+  T_CP = {C_P.*};
+  busSet = {BUS.*};
+  analogSet = {meas.*};
+  T0 = {TopoND.*};
+
+
+
+ T0 = SELECT s
+          from T0: s -(topo_connect:e)->TopoND:t
+          where s.island == 1 and t.island == 1 
+          accum //IF e.R.size() != 0 THEN
+                double tap_ratio = abs(e.transformer_final_turns_ratio),
+                double tap_ratio_square = abs((e.transformer_final_turns_ratio)*(e.transformer_final_turns_ratio)),
+                case when (e.transformer_final_turns_ratio == 0) then //and tap_ratio !=0 and tap_ratio_square != 0) then
+                        e.P_TLPF = s.PF_Vm * t.PF_Vm * sin((s.PF_Va - t.PF_Va)*@@PI/180)* e.B + (s.PF_Vm*s.PF_Vm - s.PF_Vm*t.PF_Vm*cos((s.PF_Va - t.PF_Va)*@@PI/180)) * e.G,
+                        e.Q_TLPF = - s.PF_Vm * s.PF_Vm * (-e.B + e.hB) - s.PF_Vm * t.PF_Vm * (e.G*sin((s.PF_Va - t.PF_Va)*@@PI/180) - (-e.B)*cos((s.PF_Va - t.PF_Va)*@@PI/180))
+                when (e.transformer_final_turns_ratio > 0) then
+                                                //IF tap_ratio_square != 0 and tap_ratio != 0 THEN
+                        e.P_TLPF = s.PF_Vm * s.PF_Vm * e.G - s.PF_Vm * t.PF_Vm * ((e.G*tap_ratio)*cos((s.PF_Va - t.PF_Va)*@@PI/180) + (-e.B*tap_ratio)*sin((s.PF_Va - t.PF_Va)*@@PI/180)),
+                        e.Q_TLPF = - s.PF_Vm * s.PF_Vm * (-e.B + e.hB)  - s.PF_Vm * t.PF_Vm * ((e.G*tap_ratio)*sin((s.PF_Va - t.PF_Va)*@@PI/180) - (-e.B*tap_ratio)*cos((s.PF_Va - t.PF_Va)*@@PI/180))
+                else
+                        e.P_TLPF = s.PF_Vm * s.PF_Vm * e.G * tap_ratio_square - s.PF_Vm * t.PF_Vm * ((e.G*tap_ratio)*cos((s.PF_Va - t.PF_Va)*@@PI/180) + (-e.B*tap_ratio)*sin((s.PF_Va - t.PF_Va)*@@PI/180)),
+                        e.Q_TLPF = - s.PF_Vm * s.PF_Vm * (-e.B * tap_ratio_square + e.hB) - s.PF_Vm * t.PF_Vm * ((e.G*tap_ratio)*sin((s.PF_Va - t.PF_Va)*@@PI/180) - (-e.B*tap_ratio)*cos((s.PF_Va - t.PF_Va)*@@PI/180))
+                                                //END;
+
+                end;
+
+// get the estimated values for aclines and transformers
+    T1_topond = SELECT s
+             FROM T0:s-(topo_connect:e)->TopoND:t
+                 where s.island == 1 and t.island == 1
+                 ACCUM
+                 FOREACH i in range [0, e.X.size()-1] DO
+                    if (e.transformer_final_turns_ratio == 0) then
+                        @@acline_P_est += (e.key_list.get(i) -> (s.PF_Vm * t.PF_Vm * sin((s.PF_Va - t.PF_Va)*@@PI/180)* e.B_list.get(i) + (s.PF_Vm*s.PF_Vm - s.PF_Vm*t.PF_Vm*cos((s.PF_Va - t.PF_Va)*@@PI/180)) * e.G_list.get(i))*100),
+                        @@acline_Q_est += (e.key_list.get(i) -> (- s.PF_Vm * s.PF_Vm * (-e.B_list.get(i) + e.hB_list.get(i)) - s.PF_Vm * t.PF_Vm * (e.G_list.get(i)*sin((s.PF_Va - t.PF_Va)*@@PI/180) - (-e.B_list.get(i))*cos((s.PF_Va - t.PF_Va)*@@PI/180)))*100)
+                    else
+                        @@acline_P_est += (e.key_list.get(i) -> e.P_TLPF/e.X.size()*100),
+                        @@acline_Q_est += (e.key_list.get(i) -> e.Q_TLPF/e.X.size()*100)
+                    end
+                 END;
+
+
+        X = select s from aclinedotSet:s -(aclinedot_aclinedot:e) - :t
+                accum
+                        int id = e.id,
+                        if s.id == e.I_mRID then
+                          s.@P_est = @@acline_P_est.get(id),
+                          s.@Q_est = @@acline_Q_est.get(id)
+                        else
+                          s.@P_est = @@acline_P_est.get(-id),
+                          s.@Q_est = @@acline_Q_est.get(-id)
+                        end
+                 post-accum
+                        s.P_pf = s.@P_est,
+                        s.Q_pf = s.@Q_est;
+
+        X2 = select s from aclinedotSet:s -(aclinedot_aclinedot_reverse:e) - :t
+                accum
+                        int id = e.id,
+                        if s.id == e.I_mRID then
+                          s.@P_est = @@acline_P_est.get(id),
+                          s.@Q_est = @@acline_Q_est.get(id)
+                        else
+                          s.@P_est = @@acline_P_est.get(-id),
+                          s.@Q_est = @@acline_Q_est.get(-id)
+                        end
+                post-accum
+                         s.P_pf = s.@P_est,
+                         s.Q_pf = s.@Q_est;
+
+
+  Y = Select src from two_port:src
+      POST-ACCUM
+          src.P_pf = @@acline_P_est.get(src.id),
+          src.Q_pf = @@acline_Q_est.get(src.id);
+
+  Z = Select src from three_port:src
+      POST-ACCUM
+          src.P_pf = @@acline_P_est.get(src.id),
+          src.Q_pf = @@acline_Q_est.get(src.id);
+
+//finish setting aclines and transformers
+
+//get estimationed values for buses
+
+  Vm_bus = SELECT t
+            FROM T0: s-(topo_bus:e)->:t
+            ACCUM
+                t.@P_est = s.PF_Vm * t.volt, //@P_est for buses is Vm
+                t.@Q_est = s.PF_Va
+            POST-ACCUM
+                t.V_pf = t.@P_est,
+                t.Ang_pf = t.@Q_est;
+               
+//finish setting buses
+
+
+//get estimated values for CP generator and load
+   T_CP = SELECT s
+           FROM T_CP:s - (topo_compensatorP:e) - TopoND:t
+                 WHERE t.island == 1
+                 ACCUM
+                 s.@Q = t.PF_Vm * t.PF_Vm *s.Q_rate  // B_pu = (Q_rate/100)/(V_rate/V_rate)^2 = Q_rate/100, Q_est_real = SE_Vm^2*B_pu*100 = SE_Vm^2*Q_rate;
+                 POST-ACCUM
+                 s.Q_pf = s.@Q;
+
+
+
+//finish setting CP generator and load
+
+//============================set vertex status=======================
+       Vstatus = {status.*};
+       measSet = {meas.*};
+
+//==Meas_AClinedot | Meas_CP | Meas_Load | Meas_trans2 | Meas_trans3 | Meas_Unit==//
+
+        Tcomponents = select t from T0:s- ((topo_Tx_Two|topo_Tx_Three|topo_unit|topo_load):e) -:t
+            where s.island == 1
+            post-accum
+                if (t.volt >= 500) then
+                  if (abs(t.Pimeas) > 0.01) then
+                    t.p_pf_error = abs(t.P_pf - t.Pimeas)/1082*100
+                  else
+                    t.p_pf_error = 0
+                  end,
+                  if (abs(t.Qimeas) > 0.01) then
+                    t.q_pf_error = abs(t.Q_pf - t.Qimeas)/1082*100
+                  else
+                    t.q_pf_error = 0
+                  end
+                else if (t.volt >= 330 and t.volt < 500) then
+                  if (abs(t.Pimeas) > 0.01) then
+                    t.p_pf_error = abs(t.P_pf - t.Pimeas)/686*100
+                  else
+                    t.p_pf_error = 0
+                  end,
+                  if (abs(t.Qimeas) > 0.01) then
+                    t.q_pf_error = abs(t.Q_pf - t.Qimeas)/686*100
+                  else
+                    t.q_pf_error = 0
+                  end
+                else if (t.volt >= 220 and t.volt< 330) then
+                  if (abs(t.Pimeas) > 0.01) then
+                    t.p_pf_error= abs(t.P_pf - t.Pimeas)/305*100
+                  else
+                    t.p_pf_error = 0
+                  end,
+                  if (abs(t.Qimeas) > 0.01) then
+                    t.q_pf_error = abs(t.Q_pf - t.Qimeas)/305*100
+                  else
+                    t.q_pf_error = 0
+                  end
+                else if (t.volt >= 110 and t.volt< 220) then
+                  if (abs(t.Pimeas) > 0.01) then
+                    t.p_pf_error = abs(t.P_pf - t.Pimeas)/141*100
+                  else
+                    t.p_pf_error = 0
+                  end,
+                  if (abs(t.Qimeas) > 0.01) then
+                    t.q_pf_error = abs(t.Q_pf - t.Qimeas)/141*100
+                  else
+                    t.q_pf_error = 0
+                  end
+                else if (t.volt >= 66 and t.volt< 110) then
+                  if (abs(t.Pimeas) > 0.01) then
+                    t.p_pf_error = abs(t.P_pf - t.Pimeas)/68.6*100
+                  else
+                    t.p_pf_error = 0
+                  end,
+                  if (abs(t.Qimeas) > 0.01) then
+                    t.q_pf_error = abs(t.Q_pf - t.Qimeas)/68.6*100
+                  else
+                    t.q_pf_error = 0
+                  end
+                else 
+                  if (abs(t.Pimeas) > 0.01) then
+                    t.p_pf_error = abs(t.P_pf - t.Pimeas)/36.4*100
+                  else
+                    t.p_pf_error = 0
+                  end,
+                  if (abs(t.Qimeas) > 0.01) then
+                    t.q_pf_error = abs(t.Q_pf - t.Qimeas)/36.4*100
+                  else
+                    t.q_pf_error = 0
+                  end
+                end;
+
+       TAClinedot = SELECT s
+                FROM aclinedotSet:s - (topo_aclinedot:e) -:t
+                where t.island == 1
+                POST-ACCUM
+                IF (s.volt >= 500) THEN
+                    IF (abs(s.Pimeas) > 0 and abs(s.P) > 0) THEN
+                        s.@Perror = (s.P_pf - s.P)/1082,
+                        @@PaccuracySum += s.@Perror*s.@Perror,
+                        s.p_pf_error = abs(s.P_pf - s.Pimeas)/1082*100,
+                        @@PNum += 1
+                    ELSE
+                        s.p_pf_error = 0
+                    END,
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = (s.Q_pf - s.Q)/1082,
+                        @@QaccuracySum += s.@Qerror*s.@Qerror,
+                        s.q_pf_error = abs(s.Q_pf - s.Qimeas)/1082*100,
+                        @@QNum += 1
+                    ELSE
+                        s.q_pf_error = 0
+                    END
+                ELSE IF (s.volt >= 330 and s.volt < 500) THEN
+                    IF (abs(s.Pimeas) > 0 and abs(s.P) > 0) THEN
+                        s.@Perror = (s.P_pf - s.P)/686,
+                        @@PaccuracySum += s.@Perror*s.@Perror,
+                        s.p_pf_error = abs(s.P_pf - s.Pimeas)/686*100,
+                        @@PNum += 1
+                    ELSE 
+                        s.p_pf_error = 0
+                    END,
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = (s.Q_pf - s.Q)/686,
+                        @@QaccuracySum += s.@Qerror*s.@Qerror,
+                        s.q_pf_error = abs(s.Q_pf - s.Qimeas)/686*100,
+                        @@QNum += 1
+                    ELSE 
+                        s.q_pf_error = 0
+                    END
+                ELSE IF (s.volt >= 220 and s.volt < 330) THEN
+                    IF (abs(s.Pimeas) > 0 and abs(s.P) > 0) THEN
+                        s.@Perror = (s.P_pf - s.P)/305,
+                        @@PaccuracySum += s.@Perror*s.@Perror,
+                        s.p_pf_error = abs(s.P_pf - s.Pimeas)/305*100,
+                        @@PNum += 1
+                    ELSE 
+                        s.p_pf_error = 0
+                    END,
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = (s.Q_pf - s.Q)/305,
+                        @@QaccuracySum += s.@Qerror*s.@Qerror,
+                        s.q_pf_error = abs(s.Q_pf - s.Qimeas)/305*100,
+                        @@QNum += 1
+                    ELSE
+                        s.q_pf_error = 0
+                    END
+                ELSE 
+                    IF (abs(s.Pimeas) > 0 and abs(s.P) > 0) THEN
+                        s.@Perror = (s.P_pf - s.P)/114,
+                        @@PaccuracySum += s.@Perror*s.@Perror,
+                        s.p_pf_error = abs(s.P_pf - s.Pimeas)/114*100,
+                        @@PNum += 1
+                    ELSE
+                        s.p_pf_error = 0
+                    END,
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = (s.Q_pf - s.Q)/114,
+                        @@QaccuracySum += s.@Qerror*s.@Qerror,
+                        s.q_pf_error = abs(s.Q_pf - s.Qimeas)/114*100,
+                        @@QNum += 1
+                    ELSE
+                        s.q_pf_error = 0
+                    END
+                END;
+
+      Tbus = SELECT s
+             FROM busSet:s - (topo_bus:e) -:t
+             where t.island == 1
+             POST-ACCUM
+                IF (s.volt >= 500) THEN
+                    IF (abs(s.Pimeas) > 100) THEN
+                        s.@Verror = (s.V_pf - s.V)/600,
+                        @@VaccuracySum += s.@Verror*s.@Verror,
+                        s.v_pf_error = abs(s.V_pf - s.Pimeas)/600*100,
+                        @@VNum += 1
+                    ELSE
+                        s.v_pf_error = 0
+                    END
+                ELSE IF (s.volt >= 330 and s.volt < 500) THEN
+                    IF (abs(s.Pimeas) > 100) THEN
+                        s.@Verror = (s.V_pf - s.V)/396,
+                        @@VaccuracySum += s.@Verror*s.@Verror,
+                        s.v_pf_error = abs(s.V_pf - s.Pimeas)/396*100,
+                        @@VNum += 1
+                    ELSE
+                        s.v_pf_error = 0
+                    END
+                ELSE IF (s.volt >= 220 and s.volt < 330) THEN
+                    IF (abs(s.Pimeas) > 100) THEN
+                        s.@Verror = (s.V_pf - s.V)/264,
+                        @@VaccuracySum += s.@Verror*s.@Verror,
+                        s.v_pf_error = abs(s.V_pf - s.Pimeas)/264*100,
+                        @@VNum += 1
+                    ELSE
+                        s.v_pf_error = 0
+                    END
+                ELSE IF (s.volt >= 110 and s.volt < 220) THEN
+                    IF (abs(s.Pimeas) > 100) THEN
+                        s.@Verror = (s.V_pf - s.V)/132,
+                        @@VaccuracySum += s.@Verror*s.@Verror,
+                        s.v_pf_error = abs(s.V_pf - s.Pimeas)/132*100,
+                        @@VNum += 1
+                    ELSE
+                        s.v_pf_error = 0
+                    END
+                END;
+
+
+       @@Paccuracy = sqrt(@@PaccuracySum/@@PNum);
+       @@Qaccuracy = sqrt(@@QaccuracySum/@@QNum);
+       @@Vaccuracy = sqrt(@@VaccuracySum/@@VNum);
+       @@Totalaccuracy = sqrt((@@PaccuracySum + @@QaccuracySum + @@VaccuracySum)/(@@PNum + @@QNum + @@VNum));
+
+       Vstatus = select s from Vstatus:s
+                 POST-ACCUM
+                 @@pf_converge_Num += s.pf_converge_Num,
+                 @@pf_noneconverge_Num += s.pf_noneconverge_Num,
+                 IF (s.pf_iteration > 20) THEN
+                    @@pf_noneconverge_Num += 1
+                 ELSE
+                    @@pf_converge_Num += 1
+                 END;
+
+       Vstatus = select s from Vstatus:s
+                 POST-ACCUM
+                 s.pf_converge_Num = @@pf_converge_Num,
+                 s.pf_noneconverge_Num = @@pf_noneconverge_Num,
+                 s.pf_accuracy_value = @@Totalaccuracy*100,
+                 s.pf_Vaccuracy_value = @@Vaccuracy*100,
+                 s.pf_Paccuracy_value = @@Paccuracy*100,
+                 s.pf_Qaccuracy_value = @@Qaccuracy*100,
+                 s.pf_available_month = @@pf_converge_Num/(@@pf_converge_Num + @@pf_noneconverge_Num)*100;
+
+//print TAClinedot[TAClinedot.name, TAClinedot.Pimeas, TAClinedot.P, TAClinedot.@Perror];
+//print Tbus[Tbus.name, Tbus.Pimeas, Tbus.volt,  Tbus.V,  Tbus.@Verror];
+print @@PNum, @@QNum, @@VNum;
+print @@Paccuracy, @@Qaccuracy, @@Vaccuracy, @@Totalaccuracy;
+print @@pf_converge_Num, @@pf_noneconverge_Num;
+print Vstatus[Vstatus.pf_converge_Num, Vstatus.pf_noneconverge_Num, Vstatus.pf_available_month];
+
+
+}

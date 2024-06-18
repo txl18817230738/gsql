@@ -1,0 +1,122 @@
+CREATE QUERY dispatcher_powerflow_device_current_overlimit(string companyID="113715890758877224") FOR GRAPH gsql_EMS syntax v2{ 
+  SetAccum<string> @@Comp_ID;
+  SumAccum<int> @@acline_base_lineq1;
+  SumAccum<int> @@acline_base_lineq2;
+  SumAccum<int> @@acline_base_lineq3;
+  SumAccum<int> @@trans2_base_lineq1;
+  SumAccum<int> @@trans2_base_lineq2;
+  SumAccum<int> @@trans2_base_lineq3;
+  
+  SumAccum<int> @@trans3_base_lineq1;
+  SumAccum<int> @@trans3_base_lineq2;
+  SumAccum<int> @@trans3_base_lineq3;
+  
+  SumAccum<int> @@bus_base_high_overlimit;
+  SumAccum<int> @@bus_base_low_overlimit;
+  
+
+	sub = {Substation.*};
+	comp = {gridcom.*};
+	
+	start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)-:t where s.id in @@Comp_ID; 
+        
+  aclinedot_select = select t from sub:a - (connected_Sub_Aclinedot>:e2) - ACline_dot:t - (topo_aclinedot:e3) - TopoND:b
+        where
+            b.island == 1 and t.volt >=220; 
+  
+  comp_aclinedot = select s from aclinedot_select:s -(aclinedot_aclinedot>:e)-:t 
+             ACCUM
+                  if abs(e.volt*e.Ih) >0.01 then
+                  double line_q_one = sqrt(3)*e.volt*e.Ih/1000,
+                  double line_q_two = 1.1*line_q_one,
+                  double line_q_three = 1.2*line_q_one,
+                  double MVA = sqrt(s.P_pf*s.P_pf + s.Q_pf*s.Q_pf),
+                  case when (MVA>line_q_one and MVA<line_q_two) then
+	                 @@acline_base_lineq1 +=1
+	                when (MVA>=line_q_two and MVA<line_q_three) then
+	                 @@acline_base_lineq2 +=1
+	                when (MVA>=line_q_three) then
+	                 @@acline_base_lineq3 +=1
+	                end
+                  end;
+                 
+  
+  trans2_select = select t from sub:a - (connected_Sub_Trans_two>:e2) - two_port_transformer:t - (topo_Tx_Two:e3) - TopoND:b
+        where
+            b.island == 1 and t.volt >=220;
+  
+   trans2Set_result = select s from trans2_select:s -(txI_txJ_transformerline>:e) -:t 
+                      ACCUM
+                          
+                          if abs(s.S) >0.01 then 
+                            double line_q_one = s.S,
+                            double line_q_two = 1.1*line_q_one,
+                            double line_q_three = 1.2*line_q_one,
+                            double MVA = sqrt(s.P_pf*s.P_pf + s.Q_pf*s.Q_pf),
+                            case when (MVA>line_q_one and MVA<line_q_two) then
+	                             @@trans2_base_lineq1 +=1
+	                          when (MVA>=line_q_two and MVA<line_q_three) then
+	                             @@trans2_base_lineq2 +=1
+	                          when (MVA>=line_q_three) then
+	                           @@trans2_base_lineq3 +=1
+	                        end
+                          end;
+                          
+  trans3_select = select t from sub:a - (connected_Sub_Trans_three>:e2) - three_port_transformer:t - (topo_Tx_Three:e3) - TopoND:b
+        where
+            b.island == 1 and t.volt >=220;
+
+  
+
+  trans3Set_result = select s from trans3_select:s -(neutral_three:e)-:t
+                      ACCUM
+                          if abs(s.S) >0.01 then 
+                            double line_q_one = s.S,
+                            double line_q_two = 1.1*line_q_one,
+                            double line_q_three = 1.2*line_q_one,
+                            double MVA = sqrt(s.P_pf*s.P_pf + s.Q_pf*s.Q_pf),
+                            case when (MVA>line_q_one and MVA<line_q_two) then
+	                             @@trans3_base_lineq1 +=1
+	                          when (MVA>=line_q_two and MVA<line_q_three) then
+	                             @@trans3_base_lineq2 +=1
+	                          when (MVA>=line_q_three) then
+	                           @@trans3_base_lineq3 +=1
+	                        end
+                          end;
+  
+
+   bus_select = select t from sub:a - (connected_Sub_Bus>:e2) - BUS:t - (topo_bus:e3) - TopoND:b
+        where
+            b.island == 1 and t.volt >=220; 
+  
+ 
+  busSet_resut = select s from bus_select:s 
+                  ACCUM
+                    if(s.V >0) then 
+                    double v_stand = s.V / s.volt,
+                    case when (v_stand>1.1) then 
+                        @@bus_base_high_overlimit +=1 
+                     when (v_stand <0.9) then 
+                        @@bus_base_low_overlimit +=1 
+                    END  
+                    end;
+  print @@acline_base_lineq1;
+  print @@acline_base_lineq2;
+  print @@acline_base_lineq3;
+  print @@trans2_base_lineq1;
+  print @@trans2_base_lineq2;
+  print @@trans2_base_lineq3;
+  
+  print @@trans3_base_lineq1;
+  print @@trans3_base_lineq2;
+  print @@trans3_base_lineq3;
+  
+  print @@bus_base_high_overlimit;
+  print @@bus_base_low_overlimit; 
+}

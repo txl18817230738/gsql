@@ -1,0 +1,63 @@
+CREATE QUERY Force_layout_line_test(/* Parameters here */) FOR GRAPH gsql_EMS { 
+
+	TYPEDEF TUPLE < string acline_id, string acline_name, int from_vol, int to_vol, string from_sub_id, string to_sub_id,
+	                double from_pimeas, double from_qimeas, double to_pimeas, double to_qimeas> acline;
+	SumAccum<INT> @from_vol;
+	SumAccum<INT> @to_vol;
+	SumAccum<STRING> @sub_id;
+	SetAccum<INT> @@vol;
+	SumAccum<INT> @voltage;
+	OrAccum<BOOL> @match_aclinedot;
+	OrAccum<BOOL> @match_substation;
+	OrAccum<BOOL> @aclinedot_on_island;
+	SetAccum<acline> @@aclineSet;
+	ListAccum<STRING> @dacline_id_list;
+	ListAccum<STRING> @dacline_name_list;
+	
+	SumAccum<string> @subname;
+	
+	@@vol = (1003,1005,1006,1008,1010);
+	subSet = {Substation.*};
+	# print subSet.size(); 6892
+	subset = select s from subSet:s accum 
+		if s.volt == 500 or s.volt == 525 then s.@voltage = 1003 end,
+                if s.volt == 220 or s.volt == 230 then s.@voltage = 1005 end,
+                if s.volt == 110 or s.volt == 115 then s.@voltage = 1006 end,
+                if s.volt == 35  or s.volt == 34.5 then s.@voltage = 1008 end,
+                if s.volt == 10  or s.volt == 10.5 then s.@voltage = 1010 end;
+	# test = select s from subSet:s where s.volt != 500 and s.volt != 220 and  s.volt != 110 and s.volt != 35 and s.volt != 10;
+	# print test.size(); 127
+	# subst = select s from subset:s where s.@voltage in @@vol;
+	# print subst.size(); 6765
+	sub_with_dacline = select s from subset:s-(connected_Sub_Load:e)->:t where t.volt > 1 accum s.@dacline_id_list += t.strid, s.@dacline_name_list += t.name;
+	aclinedotSet = {ACline_dot.*};
+	aclinedotSet_without_Tline = select s from aclinedotSet:s-(connected_Aclinedot_Sub:e)->:t where t.subtype != "线端连接站" accum 
+		s.@voltage = t.@voltage, s.@sub_id = t.strid;
+	aclinedotSet_with_Tline = select s from aclinedotSet:s-(connected_Aclinedot_Sub:e)->:t where t.subtype == "线端连接站" accum 
+		s.@voltage = t.@voltage;
+	TlineNode = select t from aclinedotSet_with_Tline:s-(aclinedot_cn:e)->:t accum 
+	  t.@voltage = s.@voltage, t.@subname = s.name, t.@sub_id = t.strid, s.@sub_id = t.strid;
+	aclinedotSet = {ACline_dot.*};
+	aclinedotSet_onisland = select s from aclinedotSet:s-(topo_aclinedot:e)->:t where t.island == 1 accum s.@aclinedot_on_island += true;
+	aclinedotSet = select s from aclinedotSet:s-(aclinedot_aclinedot:e)->:t accum
+		if s.@voltage in @@vol and t.@voltage in @@vol and s.@aclinedot_on_island == true and t.@aclinedot_on_island == true then 
+	     s.@match_aclinedot += true, t.@match_aclinedot += true,
+	     @@aclineSet += acline(e.strid, e.name, s.@voltage, t.@voltage, s.@sub_id, t.@sub_id, s.Pimeas, s.Qimeas,
+	                           t.Pimeas, t.Qimeas) 
+	end;
+	TlineNode = select s from TlineNode:s-(aclinedot_cn:e)->:t accum s.@match_substation += t.@match_aclinedot;
+	TlineNode = select s from TlineNode:s where s.@match_substation == true and s.@voltage in @@vol;
+	aclinedotSet = {ACline_dot.*};
+	subset = select t from aclinedotSet:s-(connected_Aclinedot_Sub)->:t accum t.@match_substation += s.@match_aclinedot;
+	subSet = {Substation.*};
+	subSet = select s from subSet:s where s.@match_substation == true and s.@voltage in @@vol and s.strid != "113997367446863940" and s.subtype != "线端连接站" 
+	    accum s.@subname += s.name;
+	# test = select s from subSet:s where s.outdegree("connected_Sub_Aclinedot") == 0;
+	# print test.size(); #1548
+	# print sub.size(); # 5289
+	
+	sub(ANY) = subSet UNION TlineNode;
+	print sub;
+	print @@aclineSet;
+	
+}

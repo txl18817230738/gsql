@@ -1,0 +1,21 @@
+CREATE QUERY Force_layout_sub_equipment(STRING subId) FOR GRAPH gsql_EMS { 
+  /* Write query logic here */ 
+  Start = {Substation.*};
+  start = select s from Start:s where s.strid == subId;
+	subaclineend = select t from start:s-(connected_Sub_Aclinedot:e)->:t;
+	subbus = select t from start:s-(connected_Sub_Bus:e)->:t;
+	subtwoporttrans = select t from start:s-(connected_Sub_Trans_two:e)->:t;
+	subthreeporttrans = select t from start:s-(connected_Sub_Trans_three:e)->:t;
+	subgenerator = select t from start:s-(connected_Sub_Unit:e)->:t;
+	subload = select t from start:s-(connected_Sub_Load:e)->:t;
+	subCS = select t from start:s-(connected_Sub_Compensator_S:e)->:t;
+	subCP = select t from start:s-(connected_Sub_Compensator_P:e)->:t;
+	print subCS;
+	print subCP;
+	print subload;
+	print subgenerator;
+	print subthreeporttrans;
+	print subtwoporttrans;
+	print subbus;
+	print subaclineend;
+}

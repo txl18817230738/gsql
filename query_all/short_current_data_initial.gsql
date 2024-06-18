@@ -1,0 +1,74 @@
+CREATE QUERY short_current_data_initial() FOR GRAPH gsql_EMS { 
+  SumAccum<double> @r_ps;
+  SumAccum<double> @x_ps;
+  SumAccum<double> @r_zs;
+  SumAccum<double> @x_zs;
+  SumAccum<double> @line_r_zs;
+  SumAccum<double> @line_x_zs;
+ 
+  aclineSet = {ACline_dot.*};
+  trans2Set = {two_port_transformer.*};
+  trans3Set = {three_port_transformer.*};
+  unitSet = {unit.*};
+  loadSet = {l_oad.*};
+  
+  //线路零序阻抗赋值
+  /**
+  T_acline = select s from aclineSet:s -(aclinedot_aclinedot:e)-:t
+              ACCUM
+                  e.@line_r_zs = 3*e.line_X
+              POST-ACCUM 
+                  e.line_R = 3*e.line_X;
+  **/
+  //机组正序阻抗、零序阻抗赋值
+  T_unit = select s from unitSet:s
+              ACCUM
+                  s.@r_ps =0,
+                  s.@r_zs =0,
+                  s.@x_ps =0,
+                  s.@x_zs =0
+              POST-ACCUM
+                  s.r_ps = s.@r_ps,
+                  s.r_zs = s.@r_zs,
+                  s.x_ps = s.@x_ps,
+                  s.x_zs = s.@x_zs;
+  
+  //负荷正序阻抗，零序阻抗赋值
+  T_load = select s from loadSet:s 
+            ACCUM
+                  double ss = s.Pimeas*s.Pimeas + s.Qimeas + s.Qimeas,
+                  if abs(ss) > 0.0001 then 
+                      s.@r_zs = s.volt*s.Pimeas / ss,
+                      s.@x_zs = s.volt*s.Qimeas / ss 
+                  ELSE  
+                      s.@r_zs =0,
+                      s.@x_zs =0
+                  END,
+                  s.@r_ps =0,
+                  s.@x_ps =0
+              POST-ACCUM
+                  s.r_ps = s.@r_ps,
+                  s.r_zs = s.@r_zs,
+                  s.x_ps = s.@x_ps,
+                  s.x_zs = s.@x_zs;
+  
+  //两卷变的零序阻抗赋值
+  T_trans2 = select s from trans2Set:s
+            ACCUM
+                  s.@r_zs =3* s.Rstar,
+                  s.@x_zs =3* s.Xstar
+              POST-ACCUM
+                  s.r_zs = s.@r_zs,
+                  s.x_zs = s.@x_zs;
+  
+  
+  //三卷变的零序阻抗赋值
+  T_trans3 = select s from trans3Set:s
+               ACCUM
+                  s.@r_zs =3* s.Rstar,
+                  s.@x_zs =3* s.Xstar
+              POST-ACCUM
+                  s.r_zs = s.@r_zs,
+                  s.x_zs = s.@x_zs;
+  
+}

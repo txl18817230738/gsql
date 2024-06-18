@@ -1,0 +1,89 @@
+//Line 16-17
+'''
+use ems_v1 match (s:ACline_dot)-[e:aclinedot_cn]->(t:CN) where s.Substation = "113997366406676573" or s.Substation = "113997366423453698" or s.Substation = "113997366255681601" DELETE t,e
+'''
+
+//Line 18-19
+'''
+use ems_v1 match (s:BUS)-[e:connected_Bus_CN]->(t:CN) where s.Substation = "113997366406676573" or s.Substation = "113997366423453698" or s.Substation = "113997366255681601" DELETE s,e
+'''
+
+//Line 21-30
+'''
+use ems_v1 match (s:ACline_dot) where s.Substation = "113997366406676573" or s.Substation = "113997366423453698" or s.Substation = "113997366255681601"
+let
+CN_id = s.id + 300000000000000000,
+Bus_id = s.id + 200000000000000000,
+unit_id = s.id + 400000000000000000,
+volt = s.volt,
+name = s.name
+SET
+s.nd = CN_id
+'''
+
+//Line 21-30
+'''
+use ems_v1 match (s:ACline_dot) where s.Substation = "113997366406676573" or s.Substation = "113997366423453698" or s.Substation = "113997366255681601"
+let
+CN_id = s.id + 300000000000000000,
+Bus_id = s.id + 200000000000000000,
+unit_id = s.id + 400000000000000000,
+volt = s.volt,
+name = s.name,
+substation = s.Substation
+let
+unit_name = name || '虚拟机组',
+bus_name = name || '母线'
+INSERT
+(:CN{cnid:CN_id,topoID:CAST(NULL as int),CN_id:CN_id,volt:volt,pos_x:CAST(NULL as DOUBLE),pos_y:CAST(NULL as DOUBLE),strid:CAST(CN_id as string)}),
+(:`unit`{unitid:unit_id,topoID:CAST(NULL as int),id:unit_id,name:unit_name,Eq:CAST(NULL as int),position:CAST(NULL as STRING),V_rate:CAST(NULL as DOUBLE),P_rate:300.0,volt_n:CAST(NULL as DOUBLE),node:CAST(NULL as STRING),P:cast(NULL as DOUBLE), Q:cast(null as DOUBLE), Ue:cast(NULL as DOUBLE), Ang:cast(null as DOUBLE), off:cast(NULL as INT), Pimeas:cast(NULL as DOUBLE), Qimeas:cast(null as DOUBLE), Ue_meas:cast(NULL as DOUBLE), Ang_meas:cast(null as DOUBLE),P_max:cast(null as DOUBLE), P_min:cast(NULL as DOUBLE), Q_max:cast(null as DOUBLE), Q_min:cast(null as DOUBLE), pf:cast(null as DOUBLE),nd:CN_id, bs:cast(null as INT), island:cast(null as STRING), pos_x:cast(null as DOUBLE), pos_y:cast(null as DOUBLE),typename:'unit',volt:volt,base_value:volt,updatestatus:unit_id,strid:cast(unit_id as STRING), type:cast(null as STRING),Substation:substation, BaseVoltage:cast(null as STRING), VoltageLevel:cast(null as STRING), maxU:cast(null as DOUBLE), minU:cast(null as DOUBLE), r:cast(null as DOUBLE), x:cast(null as DOUBLE), r0:cast(null as DOUBLE), x0:cast(null as DOUBLE), AuxRatio:cast(null as DOUBLE), V:volt, region_id:cast(null as INT), P_pf:cast(null as DOUBLE), Q_pf:cast(null as DOUBLE), Ri_V:cast(null as DOUBLE), insertFlag:cast(null as INT), Genload:cast(null as DOUBLE), Gentype:'虚拟机组',p_se_error:cast(NULL as DOUBLE), q_se_error:cast(NULL as DOUBLE), p_pf_error:cast(NULL as DOUBLE), q_pf_error:cast(NULL as DOUBLE), P_base:cast(NULL as DOUBLE), Q_base:cast(NULL as DOUBLE), Decision:cast(NULL as INT), detailed_flag:cast(NULL as INT), SI:cast(NULL as DOUBLE), OverLimit_flag:cast(NULL as INT), OverLimit_count:cast(NULL as INT), Fault_count:cast(NULL as INT), fault_rate:cast(NULL as DOUBLE), weak_index:cast(NULL as DOUBLE), meas_t_next:cast(NULL as DOUBLE), parameter1:cast(NULL as DOUBLE), parameter2:cast(NULL as DOUBLE), parameter3:cast(NULL as DOUBLE), cal_bus_name:cast(NULL as STRING), cal_bus_id:cast(NULL as STRING), load_factor :cast(NULL as DOUBLE)}),
+(:BUS{busid:Bus_id,topoID:cast(null as INT),id:Bus_id,name:bus_name,volt:volt,node:cast(NULL as STRING), V:cast(NULL as DOUBLE), Ang:cast(NULL as DOUBLE), off:cast(NULL as INT), Pimeas:cast(NULL as DOUBLE), Qimeas:cast(NULL as DOUBLE), Ang_meas:cast(NULL as DOUBLE),nd:CN_id,bs:cast(NULL as INT), island:cast(NULL as STRING), v_max:cast(NULL as DOUBLE), v_min:cast(NULL as DOUBLE), pos_x:cast(NULL as DOUBLE), pos_y:cast(NULL as DOUBLE),typename:'Bus',base_value:volt,updatestatus:Bus_id,strid:cast(Bus_id as STRING),BaseVoltage:cast(NULL as STRING),VoltageLevel:cast(NULL as STRING),Substation:substation,Bay:cast(NULL as STRING), region_id:cast(NULL as INT), V_pf:cast(NULL as DOUBLE), Ang_pf:cast(NULL as DOUBLE), Ri_V:cast(NULL as DOUBLE), SC_V:cast(NULL as DOUBLE), Transient_V:cast(NULL as DOUBLE), v_se_error:cast(NULL as DOUBLE), v_pf_error:cast(NULL as DOUBLE), Decision:cast(NULL as INT), detailed_flag:cast(NULL as INT), SI:cast(NULL as DOUBLE), OverLimit_flag:cast(NULL as INT), OverLimit_count:cast(NULL as INT), Fault_count:cast(NULL as INT), fault_rate:cast(NULL as DOUBLE), weak_index:cast(NULL as DOUBLE), V_t_next:cast(NULL as DOUBLE), Ang_t_next:cast(NULL as DOUBLE), parameter1:cast(NULL as DOUBLE), parameter2:cast(NULL as DOUBLE), parameter3:cast(NULL as DOUBLE), cal_bus_name:cast(NULL as STRING), cal_bus_id:cast(NULL as STRING)})
+'''
+
+
+//Line 33-44
+'''
+use ems_v1 match (a:ACline_dot),(s:Substation),(c:CN) where (a.Substation = "113997366406676573" or a.Substation = "113997366423453698" or a.Substation = "113997366255681601" ) and s.subid = a.Substation and c.cnid = (a.id + 300000000000000000)
+INSERT
+(s)-[:sub_cn]->(c),
+(c)-[:cn_subid]->(s)
+'''
+
+'''
+use ems_v1 match (a:ACline_dot),(s:Substation),(b:BUS) where (a.Substation = "113997366406676573" or a.Substation = "113997366423453698" or a.Substation = "113997366255681601" ) and b.busid = (a.id + 200000000000000000) and s.subid = a.Substation
+INSERT
+(b)-[:connected_Bus_Sub{cid:b.busid}]->(s),
+(s)-[:connected_Sub_Bus{cid:b.busid}]->(b)
+'''
+
+'''
+use ems_v1 match (a:ACline_dot),(c:CN) where (a.Substation = "113997366406676573" or a.Substation = "113997366423453698" or a.Substation = "113997366255681601" ) and c.cnid = (a.id + 300000000000000000)
+INSERT
+(a)-[:aclinedot_cn]->(c)
+'''
+
+'''
+use ems_v1 match (a:ACline_dot),(b:BUS),(c:CN) where (a.Substation = "113997366406676573" or a.Substation = "113997366423453698" or a.Substation = "113997366255681601" ) and b.busid = (a.id + 200000000000000000) and c.cnid = (a.id + 300000000000000000)
+INSERT
+(b)-[:connected_Bus_CN]->(c)
+'''
+
+'''
+use ems_v1 match (a:ACline_dot),(s:Substation),(u:`unit`) where (a.Substation = "113997366406676573" or a.Substation = "113997366423453698" or a.Substation = "113997366255681601" ) and u.unitid = (a.id + 400000000000000000) and s.subid = a.Substation
+INSERT
+(u)-[:connected_Unit_Sub{cid:u.unitid}]->(s)
+'''
+
+'''
+use ems_v1 match (a:ACline_dot),(s:Substation),(u:`unit`) where (a.Substation = "113997366406676573" or a.Substation = "113997366423453698" or a.Substation = "113997366255681601" ) and u.unitid = (a.id + 400000000000000000) and s.subid = a.Substation
+INSERT
+(s)-[:connected_Sub_Unit{cid:u.unitid}]->(u)
+'''
+
+'''
+use ems_v1 match (a:ACline_dot),(c:CN),(u:`unit`) where (a.Substation = "113997366406676573" or a.Substation = "113997366423453698" or a.Substation = "113997366255681601" ) and u.unitid = (a.id + 400000000000000000) and c.cnid = (a.id + 300000000000000000)
+INSERT
+(u)-[:connected_Unit_CN]->(c)
+'''
+
+

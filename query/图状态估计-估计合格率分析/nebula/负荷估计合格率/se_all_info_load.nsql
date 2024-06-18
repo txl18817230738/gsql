@@ -1,0 +1,27 @@
+se_all_info_load
+'''
+use ems_v1 
+match (p:parameters)
+let
+error_limit_P = case when p.error_limit_P is not NULL then p.error_limit_P else 0.0 end,
+error_limit_Q = case when p.error_limit_Q is not NULL then p.error_limit_Q else 0.0 end,
+error_p_baddata = case when p.backup1 is not NULL then p.backup1 else 0.0 end,
+error_q_baddata = case when p.backup2 is not NULL then p.backup2 else 0.0 end
+match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:connected_Sub_Load]->(t:`l_oad`)<-(Meas_Load)-(m:meas) filter where startid.id = "113715890758877224"
+let
+p_meas_flag = m.P_PseudoFlag,
+q_meas_flag = m.Q_PseudoFlag,
+sub_name = s.name,
+sub_id = s.strid
+match (l:`l_oad`)<-[topo_unit]-(td:TopoND) where td.island = 1 and l.off = 0 and l.p_se_error < error_p_baddata and l.q_se_error < error_q_baddata and abs(l.Pimeas)>0.0001 and abs(l.Qimeas)>0.0001
+let
+Pimeas = case when l.Pimeas is not NULL then l.Pimeas else 0.0 end,
+Qimeas = case when l.Qimeas is not NULL then l.Qimeas else 0.0 end
+let
+P_meas_mark = case when Pimeas <> 0 then "实测" else "无实测" end,
+P_mark_num = case when Pimeas <> 0 then 1 else 0 end,
+Q_meas_mark = case when Qimeas <> 0 then "实测" else "无实测" end,
+Q_meas_num = case when Qimeas <> 0 then 1 else 0 end,
+factor = 0.0
+return l.name,sub_name,sub_id,l.volt,P_meas_mark,P_mark_num,l.Pimeas,l.P,abs(l.Pimeas - l.P),l.p_se_error,Q_meas_mark,Q_meas_num,l.Qimeas, l.Q, abs(l.Qimeas - l.Q), l.q_se_error, factor
+'''

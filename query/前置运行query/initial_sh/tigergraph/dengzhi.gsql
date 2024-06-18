@@ -1,0 +1,9 @@
+CREATE QUERY dengzhi(/* Parameters here */) FOR GRAPH gsql_EMS { 	
+	T_CN = {CN.*};
+	T_pram = {parameters.*};
+
+	T_CN = SELECT s from T_CN:s - ((connected_Breaker_CN|connected_Disconnector_CN):e)-:t 
+		WHERE pathnameEqual(t.name, "甘孜.东关站", "0") or pathnameEqual(t.name, "雅安.永兴站", "0") or pathnameEqual(t.name,"西昌.城东站","0") or pathnameEqual(t.name,"广元.匡山水泥站", "0") or pathnameEqual(t.name, "西昌.乐寨站", "912") or pathnameEqual(t.name, "西昌.乐寨站", "312") or pathnameEqual(t.name, "巴中.上两站", "0") or pathnameEqual(t.name, "阿坝.安曲站", "0") or pathnameEqual(t.name, "阿坝.马塘站", "0") or pathnameEqual(t.name, "阿坝.川主寺站", "0") or pathnameEqual(t.name, "西昌.德昌凤凰厂", "0") or pathnameEqual(t.name, "遂宁.红江厂", "0") or pathnameEqual(t.name, "攀枝花.布德光伏厂","0") or pathnameEqual(t.name, "四川.狮子坪厂", "0") or pathnameEqual(t.name, "天全.两层岩电厂", "0") or pathnameEqual(t.name, "四川.跑马坪厂", "0") or pathnameEqual(t.name, "德阳.信义玻璃自备", "0")
+		POST-ACCUM
+		t.point = 0;
+}

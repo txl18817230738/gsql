@@ -1,0 +1,393 @@
+CREATE QUERY history_data_update(string timestamp, int mm ,int week, double fire=87.35, double water=1, double load=1, double wind=1, int time_interval=900000) FOR GRAPH gsql_EMS {
+  TYPEDEF TUPLE <string name, string id, string parent> comp_info;
+  TYPEDEF TUPLE <double p, double q> trans_info;
+
+  SumAccum<double> @@diffTime;
+  SumAccum<string> @@lastTimeStamp;
+
+  SetAccum<string> @@Comp_ID;
+  MapAccum<string, double> @@carnpm_Map;
+  MapAccum<string, double> @@loadpm_Map;
+  MapAccum<string, double> @@unitpm_Map;
+  ListAccum<comp_info> @@cur_comp_list;
+  SetAccum<string> @@cur_comp_set;
+  SumAccum<double> @@total_unit_p;
+  SumAccum<double> @@total_load_p;
+  SumAccum<double> @@water_total_p;
+  SumAccum<double> @@fire_total_p;
+  SumAccum<double> @@wind_total_p;
+  SumAccum<double> @@load_total_p;
+  SetAccum<string> @subtype;
+  
+  
+  SumAccum<double> @est_p;
+  SumAccum<double> @est_q;
+  SumAccum<double> @Pimeas;
+  SumAccum<double> @Qimeas;
+  SumAccum<string> @trans_id;
+  
+    // unit
+  SumAccum<double> @Pg = 0;
+  SumAccum<double> @Qg = 0;
+  SumAccum<double> @sumG_gen  = 0; // store for each node the total G on all of its edges
+  SumAccum<double> @sumB_gen  = 0;
+  SumAccum<double> @cal_gen_P = 0;
+  SumAccum<double> @cal_gen_Q = 0;
+  SumAccum<double> @total_gen_P = 0;
+  SumAccum<double> @total_gen_Q = 0;
+  SumAccum<int> @total_number_gen = 0;
+  
+  
+   // load
+  SumAccum<double> @cal_P  = 0;
+  SumAccum<double> @cal_Q  = 0;
+  SumAccum<double> @Pld = 0;
+  SumAccum<double> @Qld = 0;
+  SumAccum<double> @sumG  = 0;
+  SumAccum<double> @sumB  = 0;
+  SumAccum<double> @total_load_P = 0;
+  SumAccum<double> @total_load_Q = 0;
+
+  // CP
+  SumAccum<double> @Q_est_real;
+  
+  
+  // trans2
+ MapAccum<string, double> @@mLineP;
+ MapAccum<string, double> @@LineP;
+ MapAccum<string, double> @@LineP_res;
+ MapAccum<string, double> @@mLineQ;
+ MapAccum<string, double> @@LineQ;
+ MapAccum<string, double> @@LineQ_res;
+ 
+ 
+ MapAccum<string, trans_info> @@trans_Map;
+ ListAccum<carbon_hist_info> @tempListAccum; 
+ ListAccum<meas_hist_info> @tempListAccum2;
+
+ SumAccum<int> @acline_lineq1_num;
+ SumAccum<int> @acline_lineq2_num;
+ SumAccum<int> @acline_lineq3_num;
+  
+ SumAccum<int> @trans2_lineq1_num;
+ SumAccum<int> @trans2_lineq2_num;
+ SumAccum<int> @trans2_lineq3_num;
+
+ SumAccum<int> @trans3_lineq1_num;
+ SumAccum<int> @trans3_lineq2_num;
+ SumAccum<int> @trans3_lineq3_num;
+  
+ ListAccum<carbon_hist_info> @tempListAccum_acline;
+ ListAccum<carbon_hist_info> @tempListAccum_trans2;
+ ListAccum<carbon_hist_info> @tempListAccum_trans3;
+
+  //    get last time history update time   //
+ string last_history_time;
+ statusSet = {status.*};
+ statusSet = select s from statusSet:s ACCUM last_history_time = s.last_history_time;
+ 
+ 
+ 
+IF last_history_time == "" OR isMoreThanInterval(timestamp, last_history_time, time_interval) THEN
+  print "update";
+
+
+  //    update carbon     //
+  // step 1: root company statistic
+  comp = {gridcom.*};
+  start_comp = select s from comp:s where s.id == "113715890758877224" accum @@Comp_ID+= s.id, @@cur_comp_set+=s.id;
+  compSet = start_comp;
+  WHILE(compSet.size()>0) DO
+    compSet = select t from compSet:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@cur_comp_set+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@cur_comp_set; 
+  equips(ANY) = SELECT t FROM sub:s - ((connected_Sub_Unit|connected_Sub_Load):e) ->:t
+                ACCUM t.@subtype = s.subtype;
+  
+  T_unit = SELECT s FROM equips:s - (topo_unit:e) - TopoND:t
+           WHERE t.island == 1
+           ACCUM 
+           @@total_unit_p += s.Pimeas,
+           if s.@subtype.contains("风电场") then
+               @@wind_total_p += s.Pimeas
+           else if s.@subtype.contains("火电厂") then
+               @@fire_total_p += s.Pimeas
+           else if s.@subtype.contains("储能站") then
+               @@load_total_p += s.Pimeas
+           else if s.@subtype.contains("水电厂") or s.@subtype.contains("小水电") then
+               @@water_total_p += s.Pimeas
+           end;
+  T_load = SELECT s FROM equips:s - (topo_load:e) - TopoND:t
+           WHERE t.island == 1
+           ACCUM @@total_load_p += s.Pimeas;
+           
+  rootComp = select s from comp:s where s.id == "113715890758877224" 
+             accum 
+               @@loadpm_Map += (s.id -> abs(@@total_load_p)),
+               @@unitpm_Map += (s.id -> abs(@@total_unit_p)),
+               double self_carbon = fire*abs(@@fire_total_p) + water*abs(@@water_total_p) + load*abs(@@load_total_p) + wind*abs(@@wind_total_p),
+               if abs(@@total_load_p) > 0 and abs(@@total_load_p) > abs(@@total_unit_p) then
+                 @@carnpm_Map += (s.id -> abs(self_carbon/@@total_load_p))
+               else if abs(@@total_unit_p) > 0 then
+                 @@carnpm_Map += (s.id -> abs(self_carbon/@@total_unit_p))
+               else 
+                 @@carnpm_Map += (s.id -> 0)
+               end;
+
+  //step 2: sub company recursion
+  WHILE(start_comp.size()>0) DO
+    @@cur_comp_list.clear();
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t 
+                 where t.id != s.parent_id and not @@Comp_ID.contains(t.id)
+                 accum 
+                   @@Comp_ID+= t.id,
+                   @@cur_comp_list+=comp_info(t.name, t.id, s.id);
+                   
+    // for each current layer company               
+    foreach x in @@cur_comp_list DO
+      @@cur_comp_set.clear();
+      @@total_unit_p = 0;
+      @@total_load_p = 0;
+      @@wind_total_p = 0;
+      @@fire_total_p = 0;
+      @@load_total_p = 0;
+      @@water_total_p = 0;
+      compSet = select s from comp:s where s.id == x.id accum @@cur_comp_set+=s.id;
+      WHILE(compSet.size()>0) DO
+        compSet = select t from compSet:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@cur_comp_set+= t.id;
+      END;
+
+      sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@cur_comp_set; 
+      equips(ANY) = SELECT t FROM sub:s - ((connected_Sub_Unit|connected_Sub_Load):e) ->:t
+                    ACCUM t.@subtype = s.subtype;
+  
+      T_unit = SELECT s FROM equips:s - (topo_unit:e) - TopoND:t
+           WHERE t.island == 1
+           ACCUM 
+           @@total_unit_p += s.Pimeas,
+           if s.@subtype.contains("风电场") then
+               @@wind_total_p += s.Pimeas
+           else if s.@subtype.contains("火电厂") then
+               @@fire_total_p += s.Pimeas
+           else if s.@subtype.contains("储能站") then
+               @@load_total_p += s.Pimeas
+           else if s.@subtype.contains("水电厂") or s.@subtype.contains("小水电") then
+               @@water_total_p += s.Pimeas
+           end;
+           
+      T_load = SELECT s FROM equips:s - (topo_load:e) - TopoND:t
+           WHERE t.island == 1
+           ACCUM @@total_load_p += s.Pimeas;
+           
+      curComp = select s from comp:s where s.id == x.id
+             accum 
+               @@loadpm_Map += (s.id -> abs(@@total_load_p)),
+               @@unitpm_Map += (s.id -> abs(@@total_unit_p)),
+               double self_carbon = fire*abs(@@fire_total_p) + water*abs(@@water_total_p) + load*abs(@@load_total_p) + wind*abs(@@wind_total_p),
+               if abs(@@total_load_p) > 0 and abs(@@total_load_p) > abs(@@total_unit_p) then
+                 if @@carnpm_Map.containsKey(x.parent) and @@carnpm_Map.get(x.parent) > 0 then
+                   @@carnpm_Map += (s.id -> ((abs(@@total_load_p)-abs(@@total_unit_p))*@@carnpm_Map.get(x.parent)+self_carbon)/abs(@@total_load_p))
+                 else
+                   @@carnpm_Map += (s.id -> abs(self_carbon/@@total_load_p))
+                 end
+               else if abs(@@total_unit_p) > 0 then
+                 @@carnpm_Map += (s.id -> abs(self_carbon/@@total_unit_p))
+               else 
+                 if @@carnpm_Map.containsKey(x.parent) and @@carnpm_Map.get(x.parent) > 0 then
+                   @@carnpm_Map += (s.id -> @@carnpm_Map.get(x.parent))
+                 else
+                   @@carnpm_Map += (s.id -> 0)
+                 end
+               end;
+    end;
+  END;
+  
+  ////////////// update carbon history /////////////////
+  comp = {gridcom.*};
+  carbonSet = select t from comp:s - (comp_carbonhistory:e) - carbon_history:t
+              where @@carnpm_Map.containsKey(t.id)
+              accum
+              FOREACH x in t.today DO
+                IF isOneDay(timestamp, x.t) THEN
+                  t.@tempListAccum+=x
+                END
+              END,
+              double v = @@carnpm_Map.get(t.id),
+              t.@tempListAccum+=carbon_hist_info(v, timestamp)
+              post-accum
+              t.today = t.@tempListAccum;  
+  
+  loadSet = select t from comp:s - (comp_loadhistory:e) - load_history:t
+              where @@loadpm_Map.containsKey(t.id)
+              accum
+              FOREACH x in t.today DO
+                IF isOneDay(timestamp, x.t) THEN
+                  t.@tempListAccum+=x
+                END
+              END,
+              double v = @@loadpm_Map.get(t.id),
+              t.@tempListAccum+=carbon_hist_info(v, timestamp)
+              post-accum
+              t.today = t.@tempListAccum;  
+              
+  unitSet = select t from comp:s - (comp_unithistory:e) - unit_history:t
+              where @@unitpm_Map.containsKey(t.id)
+              accum
+              FOREACH x in t.today DO
+                IF isOneDay(timestamp, x.t) THEN
+                  t.@tempListAccum+=x
+                END
+              END,
+              double v = @@unitpm_Map.get(t.id),
+              t.@tempListAccum+=carbon_hist_info(v, timestamp)
+              post-accum
+              t.today = t.@tempListAccum;  
+              
+              
+              
+              
+  ////////////// update equip analog history /////////////////
+  start = {Substation.*};
+  equips(ANY) = SELECT t
+                FROM start:s - ((connected_Sub_Bus|connected_Sub_Load|connected_Sub_Unit|connected_Sub_Trans_two|connected_Sub_Trans_three|connected_Sub_Compensator_P |connected_Sub_Compensator_S|connected_Sub_Aclinedot):e) ->:t;
+  equips = SELECT s
+                FROM equips:s - ((Bus_meas_history|Load_meas_history|Unit_meas_history|trans2_meas_history|trans3_meas_history|CP_meas_history |CS_meas_history|AClinedot_meas_history):e) - meas_history:t
+              accum 
+              FOREACH x in t.today DO
+                IF isOneDay(timestamp, x.t) THEN
+                  t.@tempListAccum2+=x
+                END
+              END,
+              IF e.type=="Bus_meas_history" THEN
+                t.@tempListAccum2+=meas_hist_info(s.Pimeas, s.Qimeas, s.V, s.Ang, timestamp)
+              ELSE
+                t.@tempListAccum2+=meas_hist_info(s.Pimeas, s.Qimeas, s.P, s.Q, timestamp)
+              END
+              post-accum
+              t.today = t.@tempListAccum2;
+              
+  //////////////// update next meas history //////////////////////////////
+  subSet = {Substation.*};
+  
+  meas_next_equips(ANY) = select t from subSet:s -((connected_Sub_Aclinedot|connected_Sub_Load|connected_Sub_Unit|connected_Sub_Bus):e) ->:t;
+  
+  meas_next_equips = select s from meas_next_equips:s -((aclinedot_history_meas_next|load_history_meas_next|unit_history_meas_next|bus_history_V_next|bus_history_Ang_next):e) -:t 
+                      ACCUM 
+                         FOREACH x in t.today DO
+                          IF isOneDay(timestamp, x.t) THEN
+                          t.@tempListAccum += x
+                          END
+                        END,
+                        IF e.type=="bus_history_V_next" THEN
+                          t.@tempListAccum+=carbon_hist_info(s.V_t_next,timestamp)
+                        ELSE IF e.type =="bus_history_Ang_next" THEN
+                          t.@tempListAccum+=  carbon_hist_info(s.Ang_t_next,timestamp)
+                        ELSE 
+                          t.@tempListAccum+=  carbon_hist_info(s.meas_t_next,timestamp)  
+                        END
+                        POST-ACCUM
+                          t.today = t.@tempListAccum;
+  
+   ////////////// update lineq1 lineq2 lineq3 value in history
+ /** 
+  faultSet = {Fault.*};
+  aclinedotSet = {ACline_dot.*};
+  trans2Set = {two_port_transformer.*};
+  trans3Set = {three_port_transformer.*};
+  
+  T_acline = select s from aclinedotSet:s -(fault_aclinedot_select:e) -:t 
+                ACCUM
+                    t.@acline_lineq1_num += t.linevioQ1,
+                    t.@acline_lineq2_num += t.linevioQ2,
+                    t.@acline_lineq3_num += t.linevioQ3;
+  
+  T_fault_acline = select s from faultSet:s -((fault_history_lineQ1vio|fault_history_lineQ2vio|fault_history_lineQ3vio):e)-:t 
+              ACCUM
+                FOREACH x in t.today DO
+                IF isOneDay(timestamp, x.t) THEN
+                  t.@tempListAccum_acline += x
+                END
+              END,
+              IF e.type=="fault_history_lineQ1vio" THEN
+                t.@tempListAccum_acline+=carbon_hist_info(s.@acline_lineq1_num,timestamp)
+              ELSE IF e.type =="fault_history_lineQ2vio" THEN
+                t.@tempListAccum_acline+=  carbon_hist_info(s.@acline_lineq2_num,timestamp)
+              ELSE 
+                t.@tempListAccum_acline+=  carbon_hist_info(s.@acline_lineq3_num,timestamp)  
+              END
+              POST-ACCUM
+                t.today = t.@tempListAccum_acline;
+  
+  T_trans2 = select s from trans2Set:s -(fault_twoport_select:e) -:t 
+                ACCUM
+                    t.@trans2_lineq1_num += t.linevioQ1,
+                    t.@trans2_lineq2_num += t.linevioQ2,
+                    t.@trans2_lineq3_num += t.linevioQ3;
+  
+  T_fault_trans2 = select s from faultSet:s -((fault_history_lineQ1vio|fault_history_lineQ2vio|fault_history_lineQ3vio):e)-:t 
+              ACCUM
+                FOREACH x in t.today DO
+                IF isOneDay(timestamp, x.t) THEN
+                  t.@tempListAccum_trans2 += x
+                END
+              END,
+              IF e.type=="fault_history_lineQ1vio" THEN
+                t.@tempListAccum_trans2+=carbon_hist_info(s.@trans2_lineq1_num,timestamp)
+              ELSE IF e.type =="fault_history_lineQ2vio" THEN
+                t.@tempListAccum_trans2+=  carbon_hist_info(s.@trans2_lineq2_num,timestamp)
+              ELSE 
+                t.@tempListAccum_trans2+=  carbon_hist_info(s.@trans2_lineq3_num,timestamp)  
+              END
+              POST-ACCUM
+                t.today = t.@tempListAccum_trans2;
+  
+  
+  T_trans3 = select s from trans3Set:s -(fault_threeport_select:e) -:t 
+                ACCUM
+                    t.@trans3_lineq1_num += t.linevioQ1,
+                    t.@trans3_lineq2_num += t.linevioQ2,
+                    t.@trans3_lineq3_num += t.linevioQ3;
+  
+  T_fault_trans3 = select s from faultSet:s -((fault_history_lineQ1vio|fault_history_lineQ2vio|fault_history_lineQ3vio):e)-:t 
+              ACCUM
+                FOREACH x in t.today DO
+                IF isOneDay(timestamp, x.t) THEN
+                  t.@tempListAccum_trans3 += x
+                END
+              END,
+              IF e.type=="fault_history_lineQ1vio" THEN
+                t.@tempListAccum_trans3+=carbon_hist_info(s.@trans3_lineq1_num,timestamp)
+              ELSE IF e.type =="fault_history_lineQ2vio" THEN
+                t.@tempListAccum_trans3+=  carbon_hist_info(s.@trans3_lineq2_num,timestamp)
+              ELSE 
+                t.@tempListAccum_trans3+=  carbon_hist_info(s.@trans3_lineq3_num,timestamp)  
+              END
+              POST-ACCUM
+                t.today = t.@tempListAccum_trans3;
+  **/
+                    
+  /**
+  T_lineq = select t from faultSet:s -((fault_history_lineQ1vio|fault_history_lineQ2vio|fault_history_lineQ3vio):e)-:t 
+              ACCUM
+                FOREACH x in t.today DO
+                IF isOneDay(timestamp, x.t) THEN
+                  t.@tempListAccum += x
+                END
+              END,
+              IF e.type=="fault_history_lineQ1vio" THEN
+                t.@tempListAccum+=carbon_hist_info(s.linevioQ1,timestamp)
+              ELSE IF e.type =="fault_history_lineQ2vio" THEN
+                t.@tempListAccum+=  carbon_hist_info(s.linevioQ2,timestamp)
+              ELSE 
+                t.@tempListAccum+=  carbon_hist_info(s.linevioQ3,timestamp)  
+              END
+              POST-ACCUM
+                t.today = t.@tempListAccum;
+  
+      **/        
+
+             
+  statusSet = select s from statusSet:s post-accum s.last_history_time = timestamp;
+END;               
+}

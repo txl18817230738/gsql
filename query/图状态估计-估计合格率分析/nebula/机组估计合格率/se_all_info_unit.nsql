@@ -1,0 +1,40 @@
+se_all_info_unit
+'''
+use ems_v1 
+match (p:parameters)
+let
+error_limit_P = case when p.error_limit_P is not NULL then p.error_limit_P else 0.0 end,
+error_limit_Q = case when p.error_limit_Q is not NULL then p.error_limit_Q else 0.0 end,
+error_p_baddata = case when p.backup1 is not NULL then p.backup1 else 0.0 end,
+error_q_baddata = case when p.backup2 is not NULL then p.backup2 else 0.0 end
+match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:connected_Sub_Unit]->(t:`unit`)<-(Meas_Unit)-(m:meas) filter where startid.id = "113715890758877224"
+let
+p_meas_flag = m.P_PseudoFlag,
+q_meas_flag = m.Q_PseudoFlag,
+sub_name = s.name,
+sub_id = s.strid
+match (u:`unit`)<-[topo_unit]-(td:TopoND) where td.island = 1 and u.off = 0 and u.Gentype <> "虚拟机组" and u.Gentype <> "交换机组"
+let
+Pimeas = case when u.Pimeas is not NULL then u.Pimeas else 0.0 end,
+Qimeas = case when u.Qimeas is not NULL then u.Qimeas else 0.0 end,
+P = case when u.P is not NULL then u.P else 0.0 end,
+Q = case when u.Q is not NULL then u.Q else 0.0 end,
+Genload = case when u.Genload is not NULL then u.Genload else 0.0 end,
+P_rate = case when u.P_rate is not NULL then u.P_rate else 1.0 end
+let
+bus_name = td.bus_name,
+P_error = case when abs(Pimeas) > 0.0 then Pimeas - P - Genload else 0.0 end,
+P_error_abs = case when abs(Pimeas) > 0.0 then abs(Pimeas - P - Genload) else 0.0 end,
+P_error_pct = case when abs(Pimeas) > 0.0 and P_rate >= 300.0 then abs(Pimeas - P - Genload)/P_rate*100 when abs(Pimeas) > 0.0 and P_rate < 300.0 then abs(Pimeas - P - Genload)/300*100 else 0.0 end,
+
+Q_error = case when abs(Qimeas) > 0.0 then Q - Qimeas else 0.0 end,
+Q_error_abs = case when abs(Qimeas) > 0.0 then abs(Q - Qimeas) else 0.0 end,
+Q_error_pct = case when abs(Qimeas) > 0.0 and P_rate >= 300.0 then abs(Q - Qimeas)/P_rate*100 when abs(Qimeas) > 0.0 and P_rate < 300.0 then abs(Q - Qimeas)/300*100 else 0.0 end
+match (ut:`unit`) where ut.island = 1 and P_error_pct < error_p_baddata and Q_error_pct < error_q_baddata and abs(ut.Pimeas) > 0.0001 and abs(ut.Qimeas) > 0.0001
+let
+P_mark = case when ut.Pimeas <> 0 then "实测" else "无实测" end,
+P_mark_num = case when ut.Pimeas <> 0 then 1 else 0 end,
+Q_mark = case when ut.Qimeas <> 0 then "实测" else "无实测" end,
+Q_mark_num = case when ut.Pimeas <> 0 then 1 else 0 end
+return ut.name, sub_name, sub_id, ut.Gentype, bus_name, ut.volt, P_mark, P_mark_num, ut.Pimeas, ut.P, P_error_abs, P_error_pct, Q_mark, Q_mark_num, ut.Qimeas, ut.Q, Q_error_abs, Q_error_pct, ut.Genload
+'''

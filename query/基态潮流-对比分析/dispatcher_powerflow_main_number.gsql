@@ -1,0 +1,66 @@
+CREATE QUERY dispatcher_powerflow_main_number(string companyID="113715890758877224") FOR GRAPH gsql_EMS syntax v2{ 
+  SumAccum<int> @@subnum;
+  SumAccum<int> @@aclinenum;
+  SumAccum<int> @@unitnum;
+  SumAccum<int> @@loadnum;
+  SumAccum<int> @@trans2num;
+  SumAccum<int> @@trans3num;
+  SumAccum<int> @@cpnum;
+  SumAccum<int> @@breakernum;
+  SumAccum<int> @@disconnectornum;
+  SumAccum<int> @@busnum;
+  SumAccum<int> @@bus_analysis_num;
+  SumAccum<int> @@cp_analysis_num;
+  SumAccum<int> @island;
+  SetAccum<string> @@Comp_ID;
+  
+  SumAccum<int> @@acline_analysis_num;
+  SumAccum<int> @@load_analysis_num;
+  SumAccum<int> @@trans2_analysis_num;
+  SumAccum<int> @@trans3_analysis_num;
+  SumAccum<int> @@unit_analysis_num;
+  
+  T0 = {TopoND.*};
+  sub = {Substation.*};
+	comp = {gridcom.*};
+  comp_stat = {gridcom_stat.*};
+  
+  
+  Tcount_number = select s from comp_stat:s where s.id==companyID
+            ACCUM
+              @@subnum += s.count_sub,
+              @@aclinenum += s.count_acline,
+              @@unitnum += s.count_unit,
+              @@loadnum += s.count_load,
+              @@trans2num += s.count_trans2,
+              @@trans3num += s.count_trans3,
+              @@cpnum += s.count_CP,
+              @@breakernum += s.count_breaker,
+              @@disconnectornum += s.count_disconnector,
+              @@busnum += s.count_bus,
+              @@bus_analysis_num += s.bus_analysis_num,
+              @@acline_analysis_num += s.acline_analysis_num,
+              @@load_analysis_num += s.load_analysis_num,
+              @@trans2_analysis_num += s.trans2_analysis_num,
+              @@trans3_analysis_num += s.trans3_analysis_num,
+              @@unit_analysis_num += s.unit_analysis_num;
+  
+  print @@subnum;
+  print @@aclinenum;
+  print @@unitnum;
+  print @@loadnum;
+  print @@trans2num;
+  print @@trans3num;
+  print @@cpnum;
+  print @@breakernum;
+  print @@disconnectornum;
+  print @@busnum;
+  
+  print @@bus_analysis_num;
+  print @@cp_analysis_num;
+  print @@acline_analysis_num;
+  print @@load_analysis_num;
+  print @@trans2_analysis_num;
+  print @@trans3_analysis_num;
+  print @@unit_analysis_num; 
+}

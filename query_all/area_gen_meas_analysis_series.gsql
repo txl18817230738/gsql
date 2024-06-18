@@ -1,0 +1,97 @@
+CREATE QUERY area_gen_meas_analysis_series(string timestamp, string companyID) FOR GRAPH gsql_EMS syntax v2{
+  ListAccum<carbon_hist_info> @@fire_list;
+  ListAccum<carbon_hist_info> @@water_list;
+  ListAccum<carbon_hist_info> @@wind_list;
+  ListAccum<carbon_hist_info> @@solar_list;
+  ListAccum<carbon_hist_info> @@storage_list;
+  ListAccum<carbon_hist_info> @@nuclear_list;
+  ListAccum<carbon_hist_info> @@distribution_list;
+  ListAccum<carbon_hist_info> @@other_list;
+
+	comp = {gridcom.*};
+ 
+  area = select s from comp:s where s.id == companyID;
+  
+  //area_comp = select t from start_comp:s -(gridcom_gridcom:e)->:t where t.id !=s.parent_id ACCUM @@Comp_ID +=t.id;
+ 
+ //火电量测的时序曲线数值
+  fire_meas_set = select s from area:s -(com_fire_history_p_meas:e)-:t
+            accum
+              FOREACH x IN t.today DO 
+                IF isOneDay(timestamp, x.t) THEN 
+                    @@fire_list +=x 
+                END
+              END;
+  //水电量测的时序曲线数值
+  water_meas_set = select s from area:s -(com_water_history_p_meas:e)-:t
+            accum
+              FOREACH x IN t.today DO 
+                IF isOneDay(timestamp, x.t) THEN 
+                    @@water_list +=x 
+                END
+              END;
+          
+  //风电量测的时序曲线数值
+  wind_meas_set = select s from area:s -(com_wind_history_p_meas:e)-:t
+            accum
+              FOREACH x IN t.today DO 
+                IF isOneDay(timestamp, x.t) THEN 
+                    @@wind_list +=x 
+                END
+              END;
+  //光伏量测的时序曲线数值
+  solar_meas_set = select s from area:s -(com_solar_history_p_meas:e)-:t
+            accum
+              FOREACH x IN t.today DO 
+                IF isOneDay(timestamp, x.t) THEN 
+                    @@solar_list +=x 
+                END
+              END;
+  
+  //储能量测的时序曲线数值
+  storage_meas_set = select s from area:s -(com_storage_history_p_meas:e)-:t
+            accum
+              FOREACH x IN t.today DO 
+                IF isOneDay(timestamp, x.t) THEN 
+                    @@storage_list +=x 
+                END
+              END;
+  
+  //核能量测的时序曲线数值
+  nuclear_meas_set = select s from area:s -(com_nuclear_history_p_meas:e)-:t
+            accum
+              FOREACH x IN t.today DO 
+                IF isOneDay(timestamp, x.t) THEN 
+                    @@nuclear_list +=x 
+                END
+              END;
+  //其他形式能源量测的时序曲线数值
+  other_meas_set = select s from area:s -(com_other_history_p_meas:e)-:t
+            accum
+              FOREACH x IN t.today DO 
+                IF isOneDay(timestamp, x.t) THEN 
+                    @@other_list +=x 
+                END
+              END;
+  
+   //分布式能源量测的时序曲线数值
+  distribution_meas_set = select s from area:s -(com_distributed_history_p_meas:e)-:t
+            accum
+              FOREACH x IN t.today DO 
+                IF isOneDay(timestamp, x.t) THEN 
+                    @@distribution_list +=x 
+                END
+              END;
+  
+  print @@fire_list;
+  print @@water_list;
+  print @@wind_list;
+  print @@solar_list;
+  print @@storage_list;
+  print @@nuclear_list;
+  print @@other_list;
+  print @@distribution_list;
+  
+  print area[area.name,area.fire_p_meas,area.water_p_meas,area.wind_p_meas,area.storage_p_meas,area.solar_p_meas,area.nuclear_p_meas,area.otherpower_p_meas,area.distributed_p_meas] where area.id == companyID;
+  
+}

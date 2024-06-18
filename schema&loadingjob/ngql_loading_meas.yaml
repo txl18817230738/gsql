@@ -1,0 +1,100 @@
+client:
+  address: 127.0.0.1:9669
+  concurrencyPerAddress: 60
+  password: nebula
+  reconnectInitialInterval: 1s
+  retry: 3
+  retryInitialInterval: 1s
+  user: root
+  version: v5
+manager:
+  batch: 1
+  graphName: ems_v1
+  importerConcurrency: 512
+  readerConcurrency: 50
+  statsInterval: 10s
+sources:
+  - path: /home/nebula/data/meas.csv
+    csv:
+      delimiter: ","
+      withHeader: true
+    nodes:
+    - name: '`meas`'
+      mode: UPDATE
+      id:
+        name: "measid"
+        type: "STRING"
+        index: 0
+      props:
+        - index: $"meas_id"
+          name: '`id`'
+          type: STRING
+        - index: $"type_name"
+          name: '`type_name`'
+          type: STRING
+        - index: $"strid"
+          name: '`strid`'
+          type: STRING
+        - index: $"str_name"
+          name: '`strName`'
+          type: STRING
+        - index: $"dev_name"
+          name: '`devName`'
+          type: STRING
+        - index: $"off"
+          name: '`off`'
+          type: INT
+        - index: $"p"
+          name: '`P`'
+          type: DOUBLE
+        - index: $"q"
+          name: '`Q`'
+          type: DOUBLE
+        - index: $"p_flag"
+          name: '`PFlag`'
+          type: INT
+        - index: $"q_flag"
+          name: '`QFlag`'
+          type: INT
+        - index: $"tap"
+          name: '`tap`'
+          type: DOUBLE
+        - index: $"tap_flag"
+          name: '`tapFlag`'
+          type: INT
+  - path: /home/nebula/data/discrete.csv
+    csv:
+      delimiter: ","
+      withHeader: true
+    nodes:
+    - name: '`discrete`'
+      mode: UPDATE
+      id:
+        name: "discid"
+        type: "STRING"
+        index: 0
+      props:
+        - index: $"discrete_id"
+          name: '`id`'
+          type: STRING
+        - index: $"status"
+          name: '`status`'
+          type: INT
+        - index: $"flag"
+          name: '`flag`'
+          type: INT
+        - index: $"strid"
+          name: '`strid`'
+          type: STRING
+        - index: $"str_name"
+          name: '`strName`'
+          type: STRING
+        - index: $"dev_name"
+          name: '`devName`'
+          type: STRING
+        - index: $"off"
+          name: '`off`'
+          type: INT
+        - index: $"type_name"
+          name: '`type_name`'
+          type: STRING

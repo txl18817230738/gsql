@@ -1,0 +1,309 @@
+CREATE QUERY se_all_info_area_baddata(/* Parameters here */) FOR GRAPH gsql_EMS { 
+  SetAccum<string> @@Comp_ID;
+  MapAccum<string,double> @@se_baddata_yield_all;
+  SumAccum<int> @island;
+  SumAccum<double> @@count_acline_p_baddata;
+  //SumAccum<double> @@count_acline_p_baddata_t;
+  SumAccum<double> @@count_acline_q_baddata;
+  //SumAccum<double> @@count_acline_q_baddata_t;
+  SumAccum<double> @@count_trans2_p_baddata;
+  SumAccum<double> @@count_trans2_q_baddata;
+  SumAccum<double> @@count_trans3_p_baddata;
+  SumAccum<double> @@count_trans3_q_baddata;
+  SumAccum<double> @@count_unit_p_baddata;
+  SumAccum<double> @@count_unit_q_baddata;
+  SumAccum<double> @@count_load_p_baddata;
+  SumAccum<double> @@count_load_q_baddata;
+  SumAccum<double> @@count_bus_v_baddata;
+  
+  SumAccum<double> @@count_AClinedot;
+  SumAccum<double> @@count_unit;
+  SumAccum<double> @@count_load;
+  SumAccum<double> @@count_twoport;
+  SumAccum<double> @@count_threeport;
+  SumAccum<double> @@count_bus;
+  
+  SumAccum<double> @@se_baddata;
+  SumAccum<double> @@seNum;
+  SumAccum<double> @@se_meas_yield;
+  
+  
+  SumAccum<double> @Perror = 0;
+  SumAccum<double> @Qerror = 0;
+  SumAccum<double> @Verror = 0;
+  SumAccum<double> @@error_limit_P;
+  SumAccum<double> @@error_limit_Q;
+  SumAccum<int> @p_meas_flag;
+  SumAccum<int> @q_meas_flag;
+  string companyName;
+  
+  comp = {gridcom.*};
+  Tparameter = {parameters.*};
+  T0 = {TopoND.*};
+  aclinedotSet = {ACline_dot.*};
+  busSet = {BUS.*};
+  unitSet = {unit.*};
+  loadSet = {l_oad.*};
+  twoportSet = {two_port_transformer.*};
+  threeportSet = {three_port_transformer.*};
+
+  start_comp = select s from comp:s where s.parent_id =="";
+
+  sub_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+//parameter setting
+  Tparameter = select s from Tparameter:s
+     post-accum
+     @@error_limit_P += s.error_limit_P,
+     @@error_limit_Q += s.error_limit_Q;
+
+foreach compID in @@Comp_ID do
+
+Tsub = select t from sub_comp:s-(connected_grid_sub:e)->:t
+         where s.id == compID
+        ACCUM
+           companyName = s.name; 
+
+                       
+ // bus
+   TBusSet = select t from Tsub:s - (connected_Sub_Bus:e) ->:t;
+  
+   TBusSet = select s from TBusSet:s -(Meas_Bus:e)-:t 
+               ACCUM
+                  s.@p_meas_flag = t.P_PseudoFlag,
+                  s.@q_meas_flag = t.Q_PseudoFlag; 
+  
+  busSet = SELECT s FROM TBusSet:s - (topo_bus:e) - TopoND:t where t.island==1 and s.off==0
+              accum
+              s.@island = t.island,
+            if (s.base_value >= 500) then
+                s.@Verror = abs(s.Pimeas-s.V)/600*100
+            else if (s.base_value >= 330 and s.base_value < 500) then
+                s.@Verror = abs(s.Pimeas-s.V)/396*100
+            else if (s.base_value >= 220 and s.base_value < 330) then
+                s.@Verror = abs(s.Pimeas-s.V)/264*100
+            else if (s.base_value >= 110 and s.base_value < 220) then
+                s.@Verror = abs(s.Pimeas-s.V)/132*100
+            else if (s.base_value >= 66 and s.base_value < 110) then
+                s.@Verror = abs(s.Pimeas-s.V)/79.2*100
+            else 
+                s.@Verror = abs(s.Pimeas-s.V)/42*100
+            end;
+
+   TBus = SELECT s FROM busSet:s  where s.@island == 1 and s.off ==0 //and s.@Verror >= 5*@@error_limit_P
+             accum
+             if s.@p_meas_flag ==0 then
+                    if s.@Verror >=5*@@error_limit_P then 
+                    @@count_bus_v_baddata += 1
+                    end,
+                @@count_bus += 1
+             end;
+  
+   TAClinedotSet = select t from Tsub:s - (connected_Sub_Aclinedot) ->:t;
+  
+   aclinedotSet = select s from TAClinedotSet:s -(Meas_AClinedot:e)-:t 
+                  ACCUM
+                  s.@p_meas_flag = t.P_ManualFlag,
+                  s.@q_meas_flag = t.Q_ManualFlag;
+  
+   Tacline = select t from T0:s- (topo_aclinedot:e) -:t 
+                ACCUM
+                    t.@island = s.island;
+
+  TAClinedot = SELECT s
+                FROM aclinedotSet:s -(aclinedot_aclinedot:e) - :t
+                where t.@island == 1 and s.@island==1 and s.off==0 and t.off==0 //and (s.p_se_error >=5*@@error_limit_P  or t.p_se_error >=5*@@error_limit_P )
+                ACCUM
+                  IF (s.@p_meas_flag == 0) THEN
+                        if (s.p_se_error >= 5*@@error_limit_P) then
+                           @@count_acline_p_baddata +=1
+                        end,
+                        @@count_AClinedot += 1
+                  END,
+                    IF (t.@p_meas_flag == 0) THEN
+                        if (t.p_se_error >= 5*@@error_limit_P) then
+                           @@count_acline_p_baddata += 1
+                        end,
+                        @@count_AClinedot += 1
+                  end;
+ 
+  
+ 
+ TGenSet = select t from Tsub:s - (connected_Sub_Unit:e) ->:t where t.off==0;
+  
+  TGenSet = select s from TGenSet:s -(Meas_Unit:e)-:t 
+                  ACCUM
+                       s.@p_meas_flag = t.P_PseudoFlag,
+                       s.@q_meas_flag = t.Q_PseudoFlag; 
+  
+  
+    TGenSet = SELECT s FROM TGenSet:s - (topo_unit:e) -:t where t.island == 1 and s.off==0 and s.Gentype != "虚拟机组" and s.Gentype != "交换机组"
+             ACCUM
+               s.@island = t.island,
+             if (abs(s.Pimeas) > 0) then
+                    if (s.P_rate >= 300) then
+                       s.@Perror = abs(s.Pimeas - s.P - s.Genload)/s.P_rate*100
+                    else
+                       s.@Perror = abs(s.Pimeas - s.P - s.Genload)/300*100
+                    end
+                  else
+                    s.@Perror = 0
+                  end,
+                  if (abs(s.Qimeas) > 0) then
+                    if (s.P_rate >= 300) then
+                       s.@Qerror = abs(s.Q - s.Qimeas)/s.P_rate*100
+                    else
+                       s.@Qerror = abs(s.Q - s.Qimeas)/300*100
+                    end
+                  else
+                    s.@Qerror = 0
+                  end;
+    
+    TGen = SELECT s
+             FROM TGenSet:s 
+             where s.@island == 1 //and s.@Perror <5*@@error_limit_P and s.@Qerror <3.33*@@error_limit_Q
+             POST-ACCUM
+             IF (s.@p_meas_flag == 0) THEN
+                 if (s.@Perror >= 5*@@error_limit_P) then
+                     @@count_unit_p_baddata += 1
+                 end,
+                @@count_unit += 1
+             END,
+             
+             IF (s.@q_meas_flag == 0) THEN
+                 if (s.@Qerror >= 5*@@error_limit_Q) then
+                     @@count_unit_q_baddata += 1
+                 end,
+                     @@count_unit += 1
+             END;
+             
+
+  
+  // Load
+   TLoadSet = select t from Tsub:s - (connected_Sub_Load:e) ->:t;
+  
+   TLoadSet = select s from TLoadSet:s -(Meas_Load:e)-:t 
+                ACCUM
+                  s.@p_meas_flag = t.P_ManualFlag,
+                  s.@q_meas_flag = t.Q_ManualFlag;
+   TLoad = select s
+             from TLoadSet:s - (topo_load:e) -:t
+             where t.island == 1 and s.off == 0 //and s.p_se_error <5*@@error_limit_P and s.q_se_error <3.33*@@error_limit_Q
+             post-accum
+
+                    IF (s.@q_meas_flag == 0) THEN
+                        s.@Perror = s.p_se_error,
+                        if (s.@Perror >= 5*@@error_limit_P) then
+                           @@count_load_p_baddata += 1
+                        end,
+                        @@count_load += 1
+                    END,
+                    IF (s.@q_meas_flag == 0) THEN
+                        s.@Qerror = s.q_se_error, //abs(s.Q - s.Qimeas)/114,
+                        if (s.@Qerror >= 5*@@error_limit_Q) then
+                           @@count_load_q_baddata += 1
+                        end,
+                        @@count_load += 1
+                    END;
+  
+// Two port Trans
+   TTwoportSet = select t from Tsub:s - (connected_Sub_Trans_two:e) ->:t;
+
+   TTwoport = select s from TTwoportSet:s - (topo_Tx_Two:e) -:t where t.island == 1 
+                  ACCUM 
+                        s.@island = t.island,
+                        if (s.S != 0) then
+                            s.@Perror = abs(s.P - s.Pimeas)/s.S*100 //
+                        else
+                            s.@Perror = 0 //这里没有乘以100%
+                        end;
+  twoportSet = select s from TTwoport:s -(Meas_trans2:e)-:t 
+                ACCUM
+                  s.@p_meas_flag = t.P_PseudoFlag,
+                  s.@q_meas_flag = t.Q_PseudoFlag;
+  
+  Trans2Set = select s from twoportSet:s -(txI_txJ_transformerline:e) - :t where s.@island ==1 and t.@island==1 and s.off==0 and t.off==0 //and s.@Perror <5*@@error_limit_P and t.@Perror <5*@@error_limit_P
+             accum
+                 IF (s.@p_meas_flag == 0) THEN
+                        if (s.@Perror >= 5*@@error_limit_P) then
+                           @@count_trans2_p_baddata += 1
+                        end,
+                        @@count_twoport += 1
+                  END,
+                    IF (t.@p_meas_flag == 0) THEN
+                        if (t.@Perror >= 5*@@error_limit_P) then
+                           @@count_trans2_p_baddata += 1
+                        end,
+                        @@count_twoport += 1
+                    END;
+ 
+  
+ 
+  threeportSet = SELECT t FROM Tsub:s - (connected_Sub_Trans_three:e) ->:t;
+  
+  threeportSet = select s from threeportSet:s -(Meas_trans3:e)-:t 
+                  ACCUM
+                    s.@p_meas_flag = t.P_PseudoFlag,
+                    s.@q_meas_flag = t.Q_PseudoFlag;
+                
+
+  Tthreeport = select t from threeportSet:s- (topo_Tx_Three:e) -:t where t.island==1
+            accum
+                s.@island = t.island,
+                if (s.S !=0) then
+                           s.@Perror = abs(s.P - s.Pimeas )/s.S*100, 
+                           s.@Qerror = abs(s.Q - s.Qimeas )/s.S*100 
+                 else
+                           s.@Perror = 0, 
+                           s.@Qerror = 0 
+                        end;
+  
+  
+  
+   Tthreeport1 = select s from threeportSet:s -(neutral_three:e) - :t where s.@island == 1 and s.off==0 //and s.@Perror <5*@@error_limit_P and s.@Qerror <3.33*@@error_limit_Q
+             accum
+             IF (s.@p_meas_flag == 0) THEN
+                        if (s.@Perror >= 5*@@error_limit_P) then
+                           @@count_trans3_p_baddata += 1
+                        end,
+                        @@count_threeport += 1
+            END,
+            IF (s.@q_meas_flag == 0) THEN
+                        if (s.@Qerror >= 5*@@error_limit_Q) then
+                           @@count_trans3_q_baddata += 1
+                        end,
+                        @@count_threeport += 1
+                    END;
+  
+  @@se_baddata = @@count_bus_v_baddata + @@count_acline_p_baddata + @@count_unit_p_baddata + @@count_unit_q_baddata + @@count_load_p_baddata + @@count_load_q_baddata + @@count_trans2_p_baddata + @@count_trans3_p_baddata + @@count_trans3_q_baddata;
+@@seNum = @@count_bus + @@count_AClinedot + @@count_unit + @@count_load + @@count_twoport + @@count_threeport;
+
+if (@@seNum != 0) then
+   @@se_meas_yield = @@se_baddata/@@seNum*100;
+  
+   @@se_baddata_yield_all += (companyName -> @@se_meas_yield);
+else
+   @@se_meas_yield = 0;
+end;
+  
+  @@count_acline_p_baddata =0;
+  @@count_trans2_p_baddata=0;
+  //@@count_trans2_q_baddata=0;
+  @@count_trans3_p_baddata=0;
+  @@count_trans3_q_baddata=0;
+  @@count_unit_p_baddata=0;
+  @@count_unit_q_baddata=0;
+  @@count_load_p_baddata=0;
+  @@count_load_q_baddata=0;
+  @@count_bus_v_baddata=0;
+  
+  @@count_AClinedot=0;
+  @@count_unit=0;
+  @@count_load=0;
+  @@count_twoport=0;
+  @@count_threeport=0;
+  @@count_bus=0;
+  
+ end; 
+  
+ print @@se_baddata_yield_all; 
+}

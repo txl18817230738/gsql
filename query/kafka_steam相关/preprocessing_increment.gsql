@@ -1,0 +1,160 @@
+create query preprocessing_increment(SET<INT> changed_equipment)
+for graph gsql_EMS {
+  
+// ------------------------------------------------------------------------------------------------
+// 				Define variables and arrays
+// ------------------------------------------------------------------------------------------------
+ typedef tuple<int exId, int ep, double xk_hB, double G, double B, int busType> sort_vertex;
+ typedef tuple<int exId, double eG, double eB, double ehB, double eBIJ, double eTrans_FTR, double eline_Q1, int ei> sort_edge;
+ // counter
+ SumAccum<int> @@Ex_counter = 0;
+ SumAccum<int> @@Inner_counter = 0;
+ 
+ // 悬空线路
+ SumAccum<double> @xk_hB = 0.0;
+  
+ // ********************************* Attributes Update ********************************
+ MapAccum<int, double> @G;
+ MapAccum<int, double> @B;
+ MapAccum<int, double> @hB;
+ MapAccum<int, double> @BIJ; 
+ MapAccum<int, double> @transformer_final_turns_ratio;
+ MapAccum<int, double> @line_Q1;
+ MapAccum<int, double> @line_Q2;
+ MapAccum<int, double> @line_Q3;
+ MapAccum<int, int> @@counterMap;
+ // ********************************* NumofEdges and NumofNodes **************************
+  
+ SumAccum<int> @@NumofEdges = 0;
+ SumAccum<int> @@NumofNodes = 0;
+ SumAccum<int> @@vertexsize = 0;
+ SumAccum<int> @@edgesize = 0; 
+ // ********************************* Countinuous exId Attributes ************************
+ ListAccum<int> @@nodeList;
+ SumAccum<int> @exId;
+ SetAccum<string> @voltlist;
+ // ******************************** Outdegree Calculation **************************
+ SumAccum<int> @outdegree = 0;
+ SumAccum<int> @alldgr = 0; // the degree (number of edges connecting to) a bus
+ // ******************************** Attributes save**************************
+ HeapAccum<sort_vertex>(1000000000, exId asc) @@vertex; 
+ HeapAccum<sort_edge>(1000000000, exId asc) @@edge;
+
+ // End of variable definition
+ // ************************************************************************************
+  T0= {TopoND.*};   //start from all vertices in the graph
+  T_status = {status.*};
+  breakerset = {Breaker.*};
+  disset = {Disconnector.*};
+
+  Set_of_Changed_Breaker_or_Disconnectors1(ANY) = select t from breakerset:t where t.id in changed_equipment and t.connecting_type!="CP_Switching" and t.connecting_type!="load_Switching" and t.connecting_type!="unit_Switching";
+  Set_of_Changed_Breaker_or_Disconnectors2(ANY) = select t from disset:t where t.id in changed_equipment and t.connecting_type!="CP_Switching" and t.connecting_type!="load_Switching" and t.connecting_type!="unit_Switching"; 
+
+  Set_of_Changed_Breaker_or_Disconnectors = Set_of_Changed_Breaker_or_Disconnectors2 union Set_of_Changed_Breaker_or_Disconnectors1;
+
+  select_substation = SELECT sub
+                        FROM Set_of_Changed_Breaker_or_Disconnectors:s-((connected_Breaker_Sub|connected_Disconnector_Sub):e) ->:sub;
+
+print Set_of_Changed_Breaker_or_Disconnectors[Set_of_Changed_Breaker_or_Disconnectors.name, Set_of_Changed_Breaker_or_Disconnectors.Substation];
+print Set_of_Changed_Breaker_or_Disconnectors.size();
+print select_substation[select_substation.name];
+print select_substation.size();
+
+  T0_select = select t from select_substation:s - (topoid_subid:e)-:t
+       where t.island == 1;
+ 
+  AClinedot_select = select t from select_substation:s - (connected_Sub_Aclinedot:e)->:t;
+
+  AClinedot_other = select t from AClinedot_select:s - (aclinedot_aclinedot:e)->:t;
+
+  other_topo = select t from AClinedot_other:s - (topo_aclinedot:e)-:t
+       where t.island == 1;
+
+  topo_select = T0_select UNION other_topo;
+
+ // // ********************************** Token Bank Function *****************************
+	 T3 = SELECT s FROM topo_select:s-(topo_connect:e)-> TopoND:t
+	  WHERE e.X.size() > 1 AND (s.island == 1 AND t.island==1) 
+	  ACCUM
+	  @@Ex_counter += 1,
+	  e.kcount = e.X.size(),
+	  //log(true, "edgesize", e.X.size()),
+	  FOREACH i in range [0, e.X.size() - 1] DO
+		case when (e.device_type == "AC传输线" and e.from_off.get(i) == 0 and e.to_off.get(i) == 1) then // 悬空线路
+			s.@xk_hB += 2*e.hB
+		end,
+		s.@hB += (t.exId -> e.hB_list.get(i)),
+		double ratio = e.R.get(i)/e.X.get(i),
+		IF (e.R.get(i) <= 0) THEN
+			s.@G += (t.exId -> -e.R.get(i)/(e.R.get(i)*e.R.get(i) + e.X.get(i)*e.X.get(i))),
+			s.@B += (t.exId -> e.X.get(i)/(e.R.get(i)*e.R.get(i) + e.X.get(i)*e.X.get(i)))
+		ELSE
+			s.@G += (t.exId -> e.R.get(i)/(e.R.get(i)*e.R.get(i) + e.X.get(i)*e.X.get(i))),
+			s.@B += (t.exId -> e.X.get(i)/(e.R.get(i)*e.R.get(i) + e.X.get(i)*e.X.get(i)))
+		END,
+		s.@BIJ += (t.exId -> 1.0/e.X.get(i)),
+		s.@transformer_final_turns_ratio += (t.exId -> e.transformer_final_turns_ratio_list.get(i)/e.X.size()),
+		//s.@M_P_TLPF += (t.exId -> e.M_P_TLPF_list.get(i)),
+		//s.@M_Q_TLPF += (t.exId -> e.M_Q_TLPF_list.get(i)),
+		s.@line_Q1 += (t.exId -> e.line_Q1_list.get(i)),
+		s.@line_Q2 += (t.exId -> e.line_Q2_list.get(i)),
+		s.@line_Q3 += (t.exId -> e.line_Q3_list.get(i)),
+		@@Inner_counter += 1,
+		@@NumofEdges += 1
+	  END
+          POST-ACCUM
+	  s.xk_hB = s.@xk_hB,
+          @@NumofNodes += 1;
+
+//print T3[T3.exId, T3.bus_name, T3.Sub];
+//print T3.size();
+
+T4 = SELECT s from T3:s-(topo_connect:e)-> TopoND:t
+      WHERE e.X.size() > 1 AND s.island == 1
+          ACCUM
+          e.hB = s.@hB.get(t.exId),
+          e.G = s.@G.get(t.exId),
+          e.B = s.@B.get(t.exId),
+          e.BIJ = s.@BIJ.get(t.exId),
+          e.transformer_final_turns_ratio = s.@transformer_final_turns_ratio.get(t.exId),
+          //e.M_P_TLPF = s.@M_P_TLPF.get(t.exId),
+          //e.M_Q_TLPF = s.@M_Q_TLPF.get(t.exId),
+          IF s.@line_Q1.get(t.exId) == 0 THEN
+                e.line_Q1 = 200
+          ELSE e.line_Q1 = s.@line_Q1.get(t.exId)
+          END,
+          IF s.@line_Q2.get(t.exId) == 0 THEN
+                e.line_Q2 = 250
+          ELSE e.line_Q2 = s.@line_Q2.get(t.exId)
+          END,
+          IF s.@line_Q3.get(t.exId) == 0 THEN
+                e.line_Q3 = 300
+          ELSE e.line_Q3 = s.@line_Q3.get(t.exId)
+          END;
+	  
+ T5 = SELECT s from T0:s-(topo_connect:e)-> TopoND:t
+	  WHERE s.island == 1 AND t.island == 1
+	  ACCUM
+           @@edge += sort_edge(s.exId*100000 + t.exId, e.G, e.B, e.hB, e.BIJ, e.transformer_final_turns_ratio, e.line_Q1, t.exId),
+	   s.@alldgr += 1
+	  POST-ACCUM
+          @@vertex += sort_vertex(s.exId, s.@alldgr, s.@xk_hB, s.G, s.B, s.busType);	  
+	  
+	
+   
+   AttrSave_NTP_insert(@@vertex, @@edge);
+
+ @@edgesize += @@edge.size();
+ @@vertexsize += @@vertex.size();
+
+//print @@vertex;
+//print @@edge;
+	
+ T_status  = SELECT s FROM T_status:s
+			 POST-ACCUM
+			 s.NumofNodes = @@vertexsize,
+			 s.NumofEdges = @@edgesize+@@Inner_counter-@@Ex_counter;
+
+
+   print @@Ex_counter, @@Inner_counter,@@NumofNodes, @@NumofEdges, @@vertexsize, @@edgesize;
+}

@@ -1,0 +1,71 @@
+CREATE QUERY area_p_balence_est_analysis() FOR GRAPH gsql_EMS { 
+  TYPEDEF TUPLE<string area_name, double unit_est, double input_power, double load_est, double output_power, double loss> info;
+  
+  SumAccum<INT> @@count_all;
+	SumAccum<string> @sub_name;
+	SumAccum<string> @sub_id;
+	HeapAccum<info>(10000000, area_name DESC, loss DESC) @@result_all;
+	//HeapAccum<info>(50, area_name DESC, loss DESC) @@result_part;
+	SetAccum<string> @@Comp_ID;
+  SumAccum<double> @load_est;
+  SumAccum<double> @unit_est;
+  SumAccum<double> @Input_P;
+  SumAccum<double> @Output_P;
+  SumAccum<double> @Loss_P;
+  
+  T0 = {TopoND.*};
+	sub = {Substation.*};
+	comp = {gridcom.*};
+ 
+  start_comp = select s from comp:s where s.parent_id =="";
+  
+  area_comp = select t from start_comp:s -(gridcom_gridcom:e)->:t where t.id !=s.parent_id ACCUM @@Comp_ID +=t.id;
+ 
+  //选择23个区域的区域发电估计值
+  comp_gen_est_set = select s from area_comp:s -(comp_history_total_gen:e)-:t
+            accum
+              int genindex = t.today.size(),
+              if(genindex >0) THEN
+                s.@unit_est = t.today.get(genindex-1).v
+              else 
+                s.@unit_est =0
+              end;
+  //选择23个区域的区域输入功率
+  comp_input_p_set = select s from area_comp:s -(comp_history_input_p:e)-:t
+            accum
+              int inputindex = t.today.size(),
+              if(inputindex >0) THEN
+                s.@Input_P = t.today.get(inputindex-1).v
+              else 
+                s.@Input_P =0
+              end;
+          
+  //选择23个区域的区域负荷估计
+  comp_load_est_set = select s from area_comp:s -(comp_history_total_load:e)-:t
+            accum
+              int loadindex = t.today.size(),
+              if(loadindex >0) THEN
+                s.@load_est = t.today.get(loadindex-1).v
+              else 
+                s.@load_est =0
+              end;
+  //选择23个区域的区域输出功率
+  comp_output_p_set = select s from area_comp:s -(comp_history_output_p:e)-:t
+            accum
+              int outputindex = t.today.size(),
+              if(outputindex >0) THEN
+                s.@Output_P = t.today.get(outputindex-1).v
+              else 
+                s.@Output_P =0
+              end;
+  //计算23个区域的区域网损
+  com_lodd_set = select s from area_comp:s 
+            accum 
+              s.@Loss_P = abs(s.@unit_est) + abs(s.@Input_P) - abs(s.@load_est) -abs(s.@Output_P);
+  
+  Result = select s from area_comp:s 
+           ACCUM
+                @@result_all += info(s.name,s.@unit_est,s.@Input_P,s.@load_est,s.@Output_P,s.@Loss_P);
+              
+  print @@result_all;
+}

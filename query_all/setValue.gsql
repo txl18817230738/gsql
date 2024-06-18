@@ -1,0 +1,372 @@
+create query setValue() for graph gsql_EMS{
+        SumAccum<int> @off = 0;
+        ListAccum<string> @@zerosub;
+        SumAccum<double> @Pm_sum;
+        SumAccum<double> @Qm_sum;
+        SumAccum<double> @Pm_unit;
+        SumAccum<double> @Qm_unit;
+        SumAccum<double> @Pm_abs;
+        SumAccum<double> @Qm_abs;
+        SumAccum<double> @error_Pm;
+        SumAccum<double> @error_Qm;
+        SumAccum<double> @meas_A = 1;
+        SumAccum<double> @meas_B = 0;
+        SumAccum<double> @Trans_voltlevel;
+        SumAccum<string> @P_obstatus = "平衡";
+        SumAccum<int> @statusM = 0;
+        SumAccum<int> @flagM = 0;
+        SumAccum<int> @updateFlag = 1;
+        SetAccum<string> @@Comp_ID;
+        SumAccum<double> @volt;
+
+        sub = {Substation.*};
+	T2port = {two_port_transformer.*};
+        T3port = {three_port_transformer.*};
+	aclinedot = {ACline_dot.*};
+        loadset = {l_oad.*};
+        unitset = {unit.*};
+        busset = {BUS.*};
+
+
+ sub = {Substation.*};
+  comp = {gridcom.*};
+/*
+  start_comp = select s from comp:s where s.id == "113715891027312646"
+           accum 
+           @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID;
+
+    Ttwoport = select t from sub:s-(connected_Sub_Trans_two:e)-:t
+             post-accum
+             t.@off = 1;
+
+    Tthreeport = select t from sub:s-(connected_Sub_Trans_three:e)-:t
+             post-accum
+             t.@off = 1;
+
+   Tacline = select t from sub:s-(connected_Sub_Aclinedot:e)-:t
+             post-accum
+             t.@off = 1;
+
+*/
+
+	T1 = SELECT s FROM T2port:s -((txI_txJ_transformerline|txJ_txI_transformerline):e) ->:t  //two-port transformer from Primary (High Voltage) side to Secondary (Low Voltage) side
+		 WHERE (s.volt == 35 or s.volt == 34.5) and (t.volt == 10 or t.volt == 10.5 or t.volt == 11.5) or s.Substation == "清远.110kV富强站"
+		 ACCUM
+		 s.@off = 1,
+		 t.@off = 1;
+
+	T2 = SELECT s FROM T2port:s -((txI_txJ_transformerline|txJ_txI_transformerline):e) ->:t  
+                 ACCUM
+                 IF (abs(s.Pimeas) > 0.01 or abs(s.Qimeas) > 0.01) or (abs(t.Pimeas) > 0.01 or abs(t.Qimeas) > 0.01) THEN
+                     log(false,"checked_twoport", s.name, s.type_two, s.@off, s.off, t.name, t.type_two, t.@off, t.off),
+                     s.@off = 0,
+                     t.@off = 0
+                 END;
+
+        T3 = SELECT s FROM T2port:s -((txI_txJ_transformerline|txJ_txI_transformerline):e) ->:t  
+                 WHERE (s.volt == 35 or s.volt == 34.5 or s.volt == 10 or s.volt == 10.5 or s.volt == 11.5) and t.volt < 10
+                 ACCUM
+                 s.@off = 1,
+                 t.@off = 1;
+
+
+
+        T3_1 = SELECT s FROM T2port:s -((txI_txJ_transformerline|txJ_txI_transformerline):e) ->:t
+                 WHERE (s.volt == 35 or s.volt == 34.5) and (t.volt== 35 or t.volt == 34.5)
+                 ACCUM
+                 s.@off = 1,
+                 t.@off = 1;
+
+        T3_2 = SELECT s FROM T2port:s -((txI_txJ_transformerline|txJ_txI_transformerline):e) ->:t
+                 WHERE (s.volt == 10 or s.volt == 10.5 or s.volt == 11.5) and (t.volt== 10 or t.volt == 10.5 or t.volt == 11.5)
+                 ACCUM
+                 s.@off = 1,
+                 t.@off = 1;
+
+        T3_3 = SELECT s FROM T2port:s -((txI_txJ_transformerline|txJ_txI_transformerline):e) ->:t
+                 WHERE (s.volt == 6.3) and (t.volt== 6.3)
+                 ACCUM
+                 s.@off = 1,
+                 t.@off = 1;
+
+        T3_4 = SELECT s FROM T2port:s -((txI_txJ_transformerline|txJ_txI_transformerline):e) ->:t
+                 WHERE (s.volt <= 1) or (t.volt <= 1)
+                 ACCUM
+                 s.@off = 1,
+                 t.@off = 1;
+
+        T4 = select s from T2port:s
+               where s.Xstar > 0.2 
+                 post-accum
+                 s.@off = 1;
+
+     T5_1 = SELECT s FROM T2port:s
+                 where s.Substation == "东莞.铁松站"
+                 POST-ACCUM
+                       s.Rstar = 0.0005,
+                       s.Xstar = 0.0025;
+ 
+//==============================================================================================//
+        Tmanual = select s from T2port:s
+                where s.name == "澄海站.1站用变-高" or s.name == "澄海站.2站用变-高"
+                post-accum
+                s.@off = 1;
+
+        T4 = SELECT s FROM T2port:s
+                 POST-ACCUM
+                 s.off = s.@off;	
+
+//======================set three port transformers=============================================//
+
+//=====================set RX================================================//
+/*
+        T3portsub = select s from T3port:s - (connected_Trans_three_Sub:e) -Substation:t
+                 accum
+                 IF (t.volt == 500 or t.volt == 525) THEN
+                     s.@Trans_voltlevel = 525
+                 ELSE IF (t.volt == 220 or t.volt == 230) THEN
+                     s.@Trans_voltlevel = 230
+                 ELSE IF (t.volt == 110 or t.volt == 115) THEN
+                     s.@Trans_voltlevel = 115
+                 ELSE
+                     s.@Trans_voltlevel = t.volt
+                 END;
+
+       T6 = SELECT s FROM T3port:s
+                 POST-ACCUM
+                 IF (s.volt > 0) THEN
+                   IF (abs(s.R/(s.volt*s.volt/100)) >= 0.0001) THEN
+                       s.Rstar = abs(s.R/(s.volt*s.volt/100))
+                   ELSE
+                       s.Rstar = 0.0001
+                   END,
+                   IF (abs(s.X/(s.volt*s.volt/100)) >= 0.001) THEN
+                       s.Xstar = s.X/(s.volt*s.volt/100)
+                   ELSE IF abs(s.X/(s.volt*s.volt/100)) < 0.001 THEN
+                       s.Xstar = 0.001
+                   END
+                 END,
+                  IF (s.@Trans_voltlevel < 500 and s.@Trans_voltlevel > 0) THEN
+                     IF (abs(s.R/(525*525/100)) > 0.0001) THEN
+                         s.Rstar = abs(s.R)/(525*525/100)
+                     ELSE
+                         s.Rstar = 0.0001
+                     END,
+                     IF (abs(s.X/(525*525/100)) >= 0.001) THEN
+                         s.Xstar = s.X/(525*525/100)
+                     ELSE IF abs(s.X/(525*525/100)) < 0.001 THEN
+                         s.Xstar = 0.001
+                     END
+                   END;
+
+       T6_1 = SELECT s FROM T3port:s
+                 POST-ACCUM
+                 IF (s.name == "基地站.1主变-高") THEN
+                     s.Xstar = 0.1579
+                 END,
+                 IF (s.Rstar > 0.6*s.Xstar) THEN
+                     s.Rstar = s.Rstar/10
+                 END;
+
+     T7 = SELECT s FROM T3port:s
+                 where s.Substation == "熙龙站"
+                 POST-ACCUM
+                   if (s.volt == 220) then
+                       s.Xstar = s.Xstar/2
+                   end;
+*/
+//======================set off=========================================//
+//off 110kV three port transformers
+
+        T5_1 = SELECT s FROM T3port:s
+             where s.Xstar > 0.2
+             post-accum
+                s.@off = 1;
+
+
+        T5_2 = select s from T3port:s
+             where s.name == "掌洲站.1主变-高" or s.name == "掌洲站.1主变-中" or s.name == "掌洲站.1主变-低" or s.Substation == "清远.110kV富强站" or s.Substation == "韶关A厂"
+             post-accum
+                s.@off = 1;
+
+        T5 = SELECT s FROM T3port:s
+                 POST-ACCUM
+                 s.off = s.@off;
+//======================set acline=========================================================//
+/*
+        Tacline = select s from aclinedot:s -(aclinedot_aclinedot:e) - :t
+              where abs(s.Pimeas - 0) < 0.0001 and abs(s.Qimeas - 0) < 0.0001 and s.volt - 500 > -0.0001
+                POST-ACCUM
+                   s.@off = 1;
+*/
+
+        Taclineset = select s from aclinedot:s -((aclinedot_aclinedot|aclinedot_aclinedot_reverse):e) - :t
+                where s.Subname == "清远.110kV富强站" or t.Subname == "清远.110kV富强站" 
+                      or s.name == "葵银乙线葵T1" or s.name == "葵银乙线银T3" or s.name == "葵银乙铁线铁T3"
+                POST-ACCUM
+                       s.@off = 1;
+
+
+        Tacline = select s from aclinedot:s
+                POST-ACCUM
+                   s.off = s.@off;
+
+//======================set load=========================================================// 
+        Tload = select s from loadset:s
+               POST-ACCUM
+                   IF (s.name == "马窝换流站.1站用变" or s.name == "马窝换流站.2站用变") THEN
+                       s.@off = 1
+                   END;
+
+        Tload = select s from loadset:s
+               POST-ACCUM
+                   s.off = s.@off;
+
+//======================set unit========================================================//
+
+        Tsub1 = SELECT s
+          from sub: s -(connected_Sub_Unit:e)-> :t
+          where t.off == 0
+          accum
+             s.@Pm_unit += t.Pimeas,
+             s.@Qm_unit += t.Qimeas;
+
+        Tsub2 = SELECT s
+          from Tsub1: s -((connected_Sub_Aclinedot|connected_Sub_Trans_two|connected_Sub_Trans_three|connected_Sub_Load|connected_Sub_Compensator_P):e)-> :t
+          where t.off == 0
+          accum
+             s.@Pm_sum += t.Pimeas,
+             s.@Qm_sum += t.Qimeas,
+             s.@Pm_abs += abs(t.Pimeas),
+             s.@Qm_abs += abs(t.Qimeas)
+          post-accum
+             s.@Pm_sum += -s.@Pm_unit,
+             s.@Qm_sum += -s.@Qm_unit,
+             IF (s.@Pm_abs > 0.001) THEN
+                 s.@error_Pm = abs(s.@Pm_sum/s.@Pm_abs)*100
+             ELSE
+                 s.@error_Pm = 0
+             END,
+             IF (s.@error_Pm > 10 - 0.0001) THEN
+                 s.@P_obstatus = "不平衡"
+             END;
+
+        Tsub_unbalance = select s from Tsub2:s
+             where s.@P_obstatus == "不平衡" or s.name == "龙门换流站";
+/* 
+        Tunit = select s from unitset:s
+               where s.id > 200000000000000000
+               POST-ACCUM
+                   s.@off = 1;
+
+        Tunit_unbalance = select t from Tsub_unbalance:s-(connected_Sub_Unit:e)->:t
+               where t.id > 200000000000000000
+               POST-ACCUM
+                   t.@off = 0;
+
+        Taclinezero = select t from aclinedot:s-((aclinedot_aclinedot|aclinedot_aclinedot_reverse):e)->:t
+               where s.nd == 0 //and s.Pimeas == 0 and s.Qimeas == 0
+               ACCUM
+                   @@zerosub += t.Substation;
+
+        Tsubzero = select t from Taclinezero:s-(connected_Aclinedot_Sub:e)->:t;
+
+        Tvirtualsub = select s from sub:s
+               where s.subtype == "虚拟站";
+
+        Tunitvirtual = select t from Tvirtualsub:s-(connected_Sub_Unit:e)->:t
+               where t.id > 200000000000000000
+               POST-ACCUM
+                   t.@off = 0;
+
+        Tunitzeor = select t from Tsubzero:s-(connected_Sub_Unit:e)->:t
+               where t.id > 200000000000000000
+               POST-ACCUM
+                   t.@off = 0;
+
+        Tunitsetvalue = select s from unitset:s
+               where s.name == "柳州.110kV东起风电场.115kV等值机" or s.name == "柳州.110kV新桂站.115kV等值机" or s.name == "柳州.110kV安琪站.115kV等值机" or s.name == "贵港.110kV贵钢站.115kV等值机"
+               POST-ACCUM
+                   s.@off = 0;
+*/
+        Tunitvirtual = select s from unitset:s-(connected_Unit_Sub:e)->:t
+              where s.id > 200000000000000000 and t.subtype == "换流站"
+              post-accum
+              s.@off = 0;
+
+        Tunit = select s from unitset:s
+               POST-ACCUM
+                   s.off = s.@off;
+//print @@zerosub;
+//======================set measurment of PQ=============================================//
+ measSet = {meas.*};
+ measManageSet = {measManage.*};
+
+     #T6 = SELECT s FROM measSet:s-(Meas_measManage:e)-:t
+     #       ACCUM
+     #       if (abs(t.Meas_A + 1) < 0.0001) then
+     #         s.@meas_A = t.Meas_A
+     #       end,
+     #         s.@meas_B = t.Meas_B
+     #       POST-ACCUM
+     #         s.meas_A = s.@meas_A,
+     #         s.meas_B = s.@meas_B;
+
+//======================set discrete for breaker and disconnectors=============================
+/*
+ discreteSet = {discrete.*};
+
+       Tdiscrete = select s from discreteSet:s-(discrete_disManage:e)-:t
+            accum
+              s.@statusM = t.statusM,
+              s.@flagM = t.flagM,
+              s.@updateFlag = 1
+            post-accum
+              s.statusM = s.@statusM,
+              s.flagM = s.@flagM,
+              s.updateFlag = s.@updateFlag;
+*/
+//======================set base voltage=======================================================
+basevoltage = {BaseVoltage.*};
+
+ Tbus = select t from basevoltage:s - (basevoltage_bus:e) -:t
+               accum
+                   t.@volt = s.nomkV
+               post-accum
+                   t.volt = t.@volt,
+                   t.base_value = t.@volt;
+
+ busset = select s from busset:s
+         post-accum
+         if (s.base_value > 0.001) then
+            if s.Pimeas/s.base_value >= 1.035 then
+               if s.base_value == 500 then
+                  s.base_value = 525,
+                  s.volt = 525
+               else if s.base_value == 220 then
+                  s.base_value = 230,
+                  s.volt = 230
+               else if s.base_value == 110 then
+                  s.base_value = 115,
+                  s.volt = 115
+               else if s.base_value == 35 then
+                  s.base_value = 37.5,
+                  s.volt = 37.5
+               else if s.base_value == 10 then
+                  s.base_value = 10.5,
+                  s.volt = 10.5
+               end
+            end
+          end;
+
+//=============================================================================================
+
+//print Tsub_unbalance[Tsub_unbalance.id, Tsub_unbalance.name, Tsub_unbalance.volt];
+
+}

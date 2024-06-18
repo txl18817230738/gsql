@@ -1,0 +1,321 @@
+CREATE QUERY virtual_unit_analysis(string companyID="113715890758877224", bool return_all=true) FOR GRAPH gsql_EMS { 
+  
+	TYPEDEF TUPLE<string unit_name,  string sub_name, string subid, string Gentype, string bus_name, double volt, string P_mark, int P_mark_num, double Pimeas, double P,  double P_residual_abs, double P_residual_pct, string Q_mark, int Q_mark_num, double Qimeas, double Q, double Q_residual_abs, double Q_residual_pct, double sub_use_load> unit_list;
+	SumAccum<INT> @@count_all;
+  //SumAccum<int> @island;
+	SumAccum<string> @sub_name;
+	SumAccum<string> @bus_name;
+  SumAccum<string> @sub_id;
+    SumAccum<int> @island;
+    SumAccum<double> @P_error;
+    SumAccum<double> @Q_error;
+    SumAccum<double> @P_error_abs;
+    SumAccum<double> @Q_error_abs;
+    SumAccum<double> @P_error_pct;
+    SumAccum<double> @Q_error_pct;
+  HeapAccum<unit_list>(10000000, P_mark_num DESC, Q_mark_num DESC, unit_name DESC) @@result;
+  HeapAccum<unit_list>(50, P_mark_num DESC, Q_mark_num DESC, unit_name DESC) @@result_part;
+ 
+  SetAccum<string> @@Comp_ID;
+  SumAccum<INT> @@count_P_0;
+  SumAccum<INT> @@count_P_0_10;
+  SumAccum<INT> @@count_P_10;
+  SumAccum<double> @@value_P_neg;
+  SumAccum<double> @@value_P_pos;
+  
+  SumAccum<INT> @@count_500;
+  SumAccum<INT> @@count_500_0;
+  SumAccum<INT> @@count_500_0_10;
+  SumAccum<INT> @@count_500_10;
+  SumAccum<double> @@value_500_neg;
+  SumAccum<double> @@value_500_pos;
+
+  SumAccum<INT> @@count_220;
+  SumAccum<INT> @@count_220_0;
+  SumAccum<INT> @@count_220_0_10;
+  SumAccum<INT> @@count_220_10;
+  SumAccum<double> @@value_220_neg;
+  SumAccum<double> @@value_220_pos;
+
+  SumAccum<INT> @@count_110;
+  SumAccum<INT> @@count_110_0;
+  SumAccum<INT> @@count_110_0_10;
+  SumAccum<INT> @@count_110_10;
+  SumAccum<double> @@value_110_neg;
+  SumAccum<double> @@value_110_pos;
+
+  SumAccum<INT> @@count_35;
+  SumAccum<INT> @@count_35_0;
+  SumAccum<INT> @@count_35_0_10;
+  SumAccum<INT> @@count_35_10;
+  SumAccum<double> @@value_35_neg;
+  SumAccum<double> @@value_35_pos;
+
+  SumAccum<INT> @@count_10;
+  SumAccum<INT> @@count_10_0;
+  SumAccum<INT> @@count_10_0_10;
+  SumAccum<INT> @@count_10_10;
+  SumAccum<double> @@value_10_neg;
+  SumAccum<double> @@value_10_pos;
+
+  SumAccum<INT> @@count_other;
+  SumAccum<INT> @@count_other_0;
+  SumAccum<INT> @@count_other_0_10;
+  SumAccum<INT> @@count_other_10;
+  SumAccum<double> @@value_other_neg;
+  SumAccum<double> @@value_other_pos;
+
+
+	T0 = {TopoND.*};
+  sub = {Substation.*};
+  comp = {gridcom.*};
+	//T_unit = {unit.*};
+
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID; 
+
+  unitSet = SELECT t FROM sub:s - (connected_Sub_Unit:e) ->:t
+                accum
+                t.@sub_name = s.name,
+                t.@sub_id = s.strid;
+
+        T0 = {TopoND.*};
+
+        Tunit = select t from T0:s- (topo_unit:e) -:t
+            accum
+                t.@island = s.island,
+                t.@bus_name = s.bus_name
+            post-accum
+                  if (abs(t.Pimeas) > 0.01) then
+                    t.@P_error = t.P - t.Pimeas,
+                    t.@P_error_abs = abs(t.P - t.Pimeas),
+                    if (t.P_rate >= 300) then
+                       t.@P_error_pct = abs(t.P - t.Pimeas)/t.P_rate*100
+                    else
+                       t.@P_error_pct = abs(t.P - t.Pimeas)/300*100
+                    end
+                  else
+                    t.@P_error = 0,
+                    t.@P_error_abs = 0,
+                    t.@P_error_pct = 0
+                  end,
+                  if (abs(t.Qimeas) > 0.01) then
+                    t.@Q_error = t.Q - t.Qimeas,
+                    t.@Q_error_abs = abs(t.Q - t.Qimeas),
+                    if (t.P_rate >= 300) then
+                       t.@Q_error_pct = abs(t.Q - t.Qimeas)/t.P_rate*100
+                    else
+                       t.@Q_error_pct = abs(t.Q - t.Qimeas)/300*100
+                    end
+                  else
+                    t.@Q_error = 0,
+                    t.@Q_error_abs = 0,
+                    t.@Q_error_pct = 0
+                  end;
+	
+			
+	T_unit = SELECT s FROM unitSet:s - (topo_unit:e) - TopoND:t
+			WHERE t.island == 1
+                        ACCUM
+                        s.@bus_name = t.bus_name;
+			
+         T_unit = SELECT s FROM T_unit:s		
+		ACCUM
+		        string P_mark = "",
+                        string Q_mark = "",
+                        int P_mark_num = 0,
+                        int Q_mark_num = 0,
+                        IF(s.Pimeas != 0) THEN
+                                P_mark = "实测",
+                                P_mark_num = 1
+                        ELSE
+                                P_mark = "无实测",
+                                P_mark_num = 0
+                        END,
+                        IF(s.Qimeas != 0) THEN
+                                Q_mark = "实测",
+                                Q_mark_num = 1
+                        ELSE
+                                Q_mark = "无实测",
+                                Q_mark_num = 0
+                        END,
+                        
+                        IF s.Gentype == "虚拟机组" THEN 
+	                         @@result += unit_list(s.name, s.@sub_name, s.@sub_id, s.Gentype, s.@bus_name, s.volt, P_mark, P_mark_num, s.Pimeas, s.P, s.@P_error_abs, s.@P_error_pct, Q_mark, Q_mark_num, s.Qimeas, s.Q, s.@Q_error_abs, s.@Q_error_pct, 0),
+                             @@result_part += unit_list(s.name, s.@sub_name, s.@sub_id, s.Gentype, s.@bus_name, s.volt, P_mark, P_mark_num, s.Pimeas, s.P, s.@P_error_abs, s.@P_error_pct, Q_mark, Q_mark_num, s.Qimeas, s.Q, s.@Q_error_abs, s.@Q_error_pct, 0),
+                            @@count_all += 1,
+                            if s.volt >= 500 then
+                                @@count_500 += 1,
+                                if (s.P < 0) then
+                                    @@count_500_0 += 1,
+                                    @@count_P_0 += 1,
+                                    @@value_P_neg += s.P,
+                                    @@value_500_neg += s.P
+                                else if (s.P >= 0 and s.P <= 10) then
+                                    @@count_500_0_10 += 1,
+                                    @@count_P_0_10 += 1,
+                                    @@value_P_pos += s.P,
+                                    @@value_500_pos += s.P
+                                else if (s.P > 10) then
+                                    @@count_500_10 += 1,
+                                    @@count_P_10 += 1,
+                                    @@value_P_pos += s.P,
+                                    @@value_500_pos += s.P
+                                end
+                            else if s.volt >= 220 and s.volt < 500 then
+                                @@count_220 += 1,
+                                if (s.P < 0) then
+                                    @@count_220_0 += 1,
+                                    @@count_P_0 += 1,
+                                    @@value_P_neg += s.P,
+                                    @@value_220_neg += s.P
+                                else if (s.P >= 0 and s.P <= 10) then
+                                    @@count_220_0_10 += 1,
+                                    @@count_P_0_10 += 1,
+                                    @@value_P_pos += s.P,
+                                    @@value_220_pos += s.P
+                                else if (s.P > 10) then
+                                    @@count_220_10 += 1,
+                                    @@count_P_10 += 1,
+                                    @@value_P_pos += s.P,
+                                    @@value_220_pos += s.P
+                                end
+                            else if s.volt >= 110 and s.volt < 220 then
+                                @@count_110 += 1,
+                                if (s.P < 0) then
+                                    @@count_110_0 += 1,
+                                    @@count_P_0 += 1,
+                                    @@value_P_neg += s.P,
+                                    @@value_110_neg += s.P
+                                else if (s.P >= 0 and s.P <= 10) then
+                                    @@count_110_0_10 += 1,
+                                    @@count_P_0_10 += 1,
+                                    @@value_P_pos += s.P,
+                                    @@value_110_pos += s.P
+                                else if (s.P > 10) then
+                                    @@count_110_10 += 1,
+                                    @@count_P_10 += 1,
+                                    @@value_P_pos += s.P,
+                                    @@value_110_pos += s.P
+                                end
+                            else if s.volt >= 34.5 and s.volt < 110 then
+                                @@count_35 += 1,
+                                if (s.P < 0) then
+                                    @@count_35_0 += 1,
+                                    @@count_P_0 += 1,
+                                    @@value_P_neg += s.P,
+                                    @@value_35_neg += s.P
+                                else if (s.P >= 0 and s.P <= 10) then
+                                    @@count_35_0_10 += 1,
+                                    @@count_P_0_10 += 1,
+                                    @@value_P_pos += s.P,
+                                    @@value_35_pos += s.P
+                                else if (s.P > 10) then
+                                    @@count_35_10 += 1,
+                                    @@count_P_10 += 1,
+                                    @@value_P_pos += s.P,
+                                    @@value_35_pos += s.P
+                                end
+                            else if s.volt >= 10 and s.volt < 34.5 then
+                                @@count_10 += 1,
+                                if (s.P < 0) then
+                                    @@count_10_0 += 1,
+                                    @@count_P_0 += 1,
+                                    @@value_P_neg += s.P,
+                                    @@value_10_neg += s.P
+                                else if (s.P >= 0 and s.P <= 10) then
+                                    @@count_10_0_10 += 1,
+                                    @@count_P_0_10 += 1,
+                                    @@value_P_pos += s.P,
+                                    @@value_10_pos += s.P
+                                else if (s.P > 10) then
+                                    @@count_10_10 += 1,
+                                    @@count_P_10 += 1,
+                                    @@value_P_pos += s.P,
+                                    @@value_10_pos += s.P
+                                end
+                            else
+                                @@count_other += 1,
+                                if (s.P < 0) then
+                                    @@count_other_0 += 1,
+                                    @@count_P_0 += 1,
+                                    @@value_P_neg += s.P,
+                                    @@value_other_neg += s.P
+                                else if (s.P >= 0 and s.P <= 10) then
+                                    @@count_other_0_10 += 1,
+                                    @@count_P_0_10 += 1,
+                                    @@value_P_pos += s.P,
+                                    @@value_other_pos += s.P
+                                else if (s.P > 10) then
+                                    @@count_other_10 += 1,
+                                    @@count_P_10 += 1,
+                                    @@value_P_pos += s.P,
+                                    @@value_other_pos += s.P
+                                end
+                            end
+                        END;
+	
+		
+	if return_all then
+    print @@result;
+  else
+    print @@result_part;
+  end;
+  
+  print @@count_P_0;
+  print @@count_P_0_10;
+  print @@count_P_10;
+
+  print @@count_500;
+  print @@count_500_0;
+  print @@count_500_0_10;
+  print @@count_500_10;
+
+  print @@count_220;
+  print @@count_220_0;
+  print @@count_220_0_10;
+  print @@count_220_10;
+
+  print @@count_110;
+  print @@count_110_0;
+  print @@count_110_0_10;
+  print @@count_110_10;
+
+  print @@count_35;
+  print @@count_35_0;
+  print @@count_35_0_10;
+  print @@count_35_10;
+
+  print @@count_10;
+  print @@count_10_0;
+  print @@count_10_0_10;
+  print @@count_10_10;
+
+  print @@count_other;
+  print @@count_other_0;
+  print @@count_other_0_10;
+  print @@count_other_10;
+
+  print @@count_all;
+
+  print @@value_P_neg;
+  print @@value_P_pos;
+  print @@value_500_neg;
+  print @@value_500_pos;
+  print @@value_220_neg;
+  print @@value_220_pos;
+  print @@value_110_neg;
+  print @@value_110_pos;
+  print @@value_35_neg;
+  print @@value_35_pos;
+  print @@value_10_neg;
+  print @@value_10_pos;
+  print @@value_other_neg;
+  print @@value_other_pos;
+
+}

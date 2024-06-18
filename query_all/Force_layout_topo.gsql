@@ -1,0 +1,81 @@
+CREATE QUERY Force_layout_topo(/* Parameters here */) FOR GRAPH gsql_EMS { 
+
+	TYPEDEF TUPLE <edge topo_connect_link, int from_vol, int to_vol, int from_sub_id, int to_sub_id> acline;
+
+	SetAccum<INT> @@vol;
+	SumAccum<INT> @voltage;
+	SumAccum<INT> @sub_voltage;
+	SumAccum<string> @subID;
+	SumAccum<string> @subName;
+	SetAccum<acline> @@aclineSet;
+	OrAccum<bool> @subisland;
+	ListAccum<STRING> @load_id_list;
+	ListAccum<STRING> @load_name_list;
+	ListAccum<STRING> @generator_id_list;
+	ListAccum<STRING> @generator_name_list;
+	ListAccum<DOUBLE> @generator_P_meas_list;
+	ListAccum<DOUBLE> @generator_Q_meas_list;
+	ListAccum<DOUBLE> @load_P_meas_list;
+	ListAccum<DOUBLE> @load_Q_meas_list;
+	
+	SumAccum<DOUBLE> @latitude;
+	SumAccum<DOUBLE> @longitude;
+	
+	SumAccum<INT> @subtopoCount;
+	
+	@@vol = (1003,1005,1006,1008,1010);
+	TopoNDSet = {TopoND.*};
+	TopoNDSet = select s from TopoNDSet:s-(topo_load:e)->:t accum 
+	                    s.@load_id_list += t.strid, s.@load_name_list += t.name, s.@load_P_meas_list += t.Pimeas, s.@load_Q_meas_list += t.Qimeas;
+	TopoNDSet = {TopoND.*};
+	TopoNDSet = select s from TopoNDSet:s-(topo_unit:e)->:t accum 
+	                    s.@generator_id_list += t.strid, s.@generator_name_list += t.name, s.@generator_P_meas_list += t.Pimeas, s.@generator_Q_meas_list += t.Qimeas;
+	SubSet = {Substation.*};
+	SubSet = select s from SubSet:s-(topoid_subid:e)->:t accum 
+                 if s.x != 0 and s.y != 0 and (s.volt == 500 or s.volt == 525 or s.volt == 800 or s.volt == 1000)
+                     then t.@latitude = s.y, t.@longitude = s.x
+                 else t.@latitude = s.pos_y, t.@longitude = s.pos_x end;
+        SubSet = {Substation.*};
+	SubSet = select s from SubSet:s-(topoid_subid:e)->:t where t.island == 1 accum s.@subtopoCount += 1;
+	SubSet = {Substation.*};
+	SubSet = select s from SubSet:s-(topoid_subid:e)->:t where s.@subtopoCount == 1 and t.island == 1 accum t.@subisland += true;
+	TopoNDSet = {TopoND.*};
+	TopoNDSet = select s from TopoNDSet:s where s.outdegree() - s.outdegree("topoid_subid") - s.outdegree("topo_connect") > 1 accum s.@subisland += true;
+	TopoNDSet = {TopoND.*};
+	TopoNDSet = select s from TopoNDSet:s accum 
+		if s.base_kV == 500 or s.base_kV == 525 then s.@voltage = 1003 end,
+		if s.base_kV == 220 or s.base_kV == 230 then s.@voltage = 1005 end,
+		if s.base_kV == 110 or s.base_kV == 115 then s.@voltage = 1006 end,
+		if s.base_kV == 35 or s.base_kV == 34.5 then s.@voltage = 1008 end,
+		if s.base_kV == 10 or s.base_kV == 10.5 then s.@voltage = 1010 end;
+	TopoNDSet_withsub = select s from TopoNDSet:s-(topoid_subid:e)->:t ACCUM
+	  if t.volt == 1000 then s.@sub_voltage = 1001, s.@subID = t.strid, s.@subName = t.name end,
+	  if t.volt == 800 then s.@sub_voltage = 1002, s.@subID = t.strid, s.@subName = t.name end,
+	  if t.volt == 500 or s.volt == 525 then s.@sub_voltage = 1003, s.@subID = t.strid, s.@subName = t.name end,
+		if t.volt == 220 or s.volt == 230 then s.@sub_voltage = 1005, s.@subID = t.strid, s.@subName = t.name end,
+		if t.volt == 110 or s.volt == 115 then s.@sub_voltage = 1006, s.@subID = t.strid, s.@subName = t.name end,
+		if t.volt == 35 or s.volt == 34.5 then s.@sub_voltage = 1008, s.@subID = t.strid, s.@subName = t.name end,
+		if t.volt == 10.5 then s.@sub_voltage = 1010, s.@subID = t.strid, s.@subName = t.name end,
+		if t.volt == 10 then s.@sub_voltage = 1010, s.@subID = t.strid, s.@subName = t.name end;
+	TopoNDSet_without_base_kV = select s from TopoNDSet:s where s.@voltage == 0 accum  s.@voltage += s.@sub_voltage;
+	TopoNDSet_with_neutral = select s from TopoNDSet:s-(topo_neutral:e)->:t;
+	TopoNDSet_with_neutral = select s from TopoNDSet_with_neutral:s-(topo_connect:e)-> TopoND:t accum 
+	                            s.@voltage = t.@sub_voltage, s.@subID = t.@subID, s.@subName = t.@subName, s.@sub_voltage = t.@sub_voltage, s.@latitude = t.@latitude, s.@longitude = t.@longitude;
+	
+	T0 = {TopoND.*};
+	topoSet = SELECT s from T0:s -(topoid_subid:e)-> :t where t.subtype == "线端连接站" accum 
+	                        s.@sub_voltage = s.@voltage,  s.@subName = s.bus_name, s.@subID = s.bus_name;
+	
+	T0 = {TopoND.*};
+	topoSet = SELECT s from T0:s -(topo_connect:e)-> TopoND:t where s.island == 1 and t.island == 1 and s.@subID != "113997367446863940" 
+	                    and t.@subID != "113997367446863940" accum 
+	                        if s.@subName == t.@subName then s.@subisland += true, t.@subisland += true end;
+	
+	T2 = SELECT s from topoSet:s -(topo_connect:e)-> TopoND:t WHERE (s.island == 1 and t.island == 1) and (e.reverse == 1) 
+	                                                          and  s.@subID != "113997367446863940" and t.@subID != "113997367446863940"
+	  ACCUM	@@aclineSet += acline(e, s.@sub_voltage, t.@sub_voltage, s.TOPOID, t.TOPOID);
+
+	print topoSet;
+	print @@aclineSet;
+	
+}

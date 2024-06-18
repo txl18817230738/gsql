@@ -1,0 +1,57 @@
+create query linevio_analysis()
+for graph gsql_EMS {
+	
+	TYPEDEF TUPLE <string devname, string devtype, double volt, string from_bus, string to_bus, double lineQ1, double lineQ2, double lineQ3> row;
+	HeapAccum<row>(1000000, devname DESC) @@edgeList;
+        SumAccum<int> @device_vio_flag = 0;
+
+	T0 = {TopoND.*};
+        FaultSet = {Fault.*};
+
+
+    Taclinedot  = select t from FaultSet:s-(fault_aclinedot_overlimit:e)-:t
+         where e.OverLimit_value > 0.0001;
+
+    Taclinedot = select s from Taclinedot:s-(aclinedot_aclinedot:e)-:t
+         accum
+            s.@device_vio_flag = 1,
+            t.@device_vio_flag = 1;
+
+    Ttwoport  = select t from FaultSet:s-(fault_twoport_overlimit:e)-:t
+         where e.OverLimit_value > 0.0001;
+
+    Ttwoport = select s from Ttwoport:s-(txI_txJ_transformerline:e)-:t
+         accum
+            s.@device_vio_flag = 1,
+            t.@device_vio_flag = 1;
+
+    Tthreeport  = select t from FaultSet:s-(fault_threeport_overlimit:e)-:t
+         where e.OverLimit_value > 0.0001;
+  
+    Tthreeport = select s from Tthreeport:s-(neutral_three:e)-:t
+         accum
+            s.@device_vio_flag = 1,
+            t.@device_vio_flag = 1;
+
+    T1 = select s from T0:s-((topo_aclinedot|topo_Tx_Two|topo_Tx_Three|topo_neutral):e)-:t
+         accum
+            s.@device_vio_flag += t.@device_vio_flag;
+
+    T2 = select s from T0:s-(topo_connect:e)->TopoND:t
+      where s.@device_vio_flag >= 1 and t.@device_vio_flag >= 1 and e.reverse == 1
+     accum
+         foreach i in range[0, e.X.size()-1] do 
+             double MVAmax1 = floor(e.line_Q1*100/e.R.size()),
+             double MVAmax2 = floor(e.line_Q2*100/e.R.size()),
+             double MVAmax3 = floor(e.line_Q3*100/e.R.size()),
+             @@edgeList += row(e.edge_name.get(i), e.device_type, s.base_kV, s.bus_name, t.bus_name,  MVAmax1, MVAmax2, MVAmax3)
+         end;
+
+
+	foreach x in @@edgeList do
+            print x.devname, x.devtype, x.volt, x.from_bus, x.to_bus, x.lineQ1, x.lineQ2, x.lineQ3;
+        end;
+
+   print Taclinedot.size(),  Ttwoport.size(), Tthreeport.size(), T2.size();
+		 
+}

@@ -1,0 +1,65 @@
+CREATE QUERY onegraph_spacetime_overview_info(string companyID="113715890758877224", string timestamp) FOR GRAPH gsql_EMS syntax v2{   
+  SetAccum<string> @@Comp_ID;
+  MapAccum<string, double> @@sub_se_gen;
+  MapAccum<string, double> @@sub_se_trans;
+  MapAccum<string, double> @@sub_se_storage;
+  MapAccum<string, double> @@sub_se_load;
+
+  comp = {gridcom.*};
+   
+  area = select s from comp:s where s.id == companyID;
+  
+  start_comp = select s from comp:s where s.id == companyID 
+                  accum 
+                    @@Comp_ID+= s.id;
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  SE_gen_set = select t from area:s-(comp_history_total_gen:e) - :t
+    ACCUM
+      FOREACH x in t.today DO
+        IF isOneDay(timestamp, x.t) THEN
+            @@sub_se_gen+=(x.t -> x.v)
+        END
+      END;
+  
+  SE_load_set = select t from area:s-(comp_history_total_load:e) - :t
+    ACCUM
+      FOREACH x in t.today DO
+        IF isOneDay(timestamp, x.t) THEN
+            @@sub_se_load+=(x.t -> x.v)
+        END
+      END;
+
+          
+  se_meas_result_storage = select s from comp:s-(connected_grid_sub:e1)-Substation:c-((connected_Sub_Unit>|connected_Sub_Load>):e2) - :b - ((Unit_meas_history|Load_meas_history):e)-:t where c.subtype=="抽蓄厂" and s.id in @@Comp_ID
+         ACCUM
+            if(b.typename=="Unit") then 
+              FOREACH x in t.today DO
+                      IF isOneDay(timestamp, x.t) THEN
+                            @@sub_se_storage += (x.t -> x.est_p)
+                      END
+              END
+            else 
+                FOREACH x in t.today DO
+                      IF isOneDay(timestamp, x.t) THEN
+                            @@sub_se_storage += (x.t -> -x.est_p)  
+                      END
+                END
+          end;
+  
+  
+   se_meas_result_trans = select t from area:s-(comp_history_total_loss:e) - :t
+    ACCUM
+      FOREACH x in t.today DO
+        IF isOneDay(timestamp, x.t) THEN
+            @@sub_se_trans+=(x.t -> x.v)
+        END
+      END;
+              
+  print @@sub_se_gen;
+  print @@sub_se_trans;
+  print @@sub_se_storage;
+  print @@sub_se_load;
+}

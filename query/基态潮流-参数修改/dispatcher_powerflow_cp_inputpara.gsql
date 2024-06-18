@@ -1,0 +1,173 @@
+CREATE QUERY dispatcher_powerflow_cp_inputpara(string companyID="113715890758877224", bool return_all=true) FOR GRAPH gsql_EMS { 
+  TYPEDEF TUPLE < string cp_name, string sub_name, string sub_id, double volt, double Q_rate, double q_pf, string from_vertex_id> row;
+	
+	SetAccum<string> @@Comp_ID;
+  SumAccum<string> @sub_name;
+  SumAccum<string> @sub_id;
+
+	SumAccum<INT> @@count_all;
+  SumAccum<INT> @@count_low;
+  SumAccum<INT> @@count_high;
+  
+
+  
+  SumAccum<INT> @@count_500;
+  SumAccum<INT> @@count_500_low;
+  SumAccum<INT> @@count_500_high;
+  
+  
+  SumAccum<INT> @@count_220;
+  SumAccum<INT> @@count_220_low;
+  SumAccum<INT> @@count_220_high;
+  
+  
+  SumAccum<INT> @@count_110;
+  SumAccum<INT> @@count_110_low;
+  SumAccum<INT> @@count_110_high;
+  
+  
+  SumAccum<INT> @@count_35;
+  SumAccum<INT> @@count_35_low;
+  SumAccum<INT> @@count_35_high;
+  
+  SumAccum<INT> @@count_10;
+  SumAccum<INT> @@count_10_low;
+  SumAccum<INT> @@count_10_high;
+  
+  SumAccum<INT> @@count_other;
+  SumAccum<INT> @@count_other_low;
+  SumAccum<INT> @@count_other_high;
+  
+  HeapAccum<row>(50, cp_name DESC, sub_name DESC) @@result_part;
+  HeapAccum<row>(1000000, cp_name DESC, sub_name DESC) @@result;
+	
+	T0 = {TopoND.*};
+  comp = {gridcom.*};
+  
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID; 
+        
+  cpSet = SELECT t FROM sub:s - (connected_Sub_Compensator_P:e) ->:t
+                accum
+                t.@sub_name = s.name,
+                t.@sub_id = s.strid;
+  
+  
+  
+  T_CP = SELECT s
+	      FROM cpSet:s - (topo_compensatorP:e) - TopoND:t
+		  where t.island == 1;
+		  
+	T_CP = SELECT s FROM T_CP:s	  
+		      POST-ACCUM  
+		          @@result += row(s.name, s.@sub_name, s.@sub_id, s.volt,s.Q_rate, s.Q_pf, s.strid),
+              @@result_part += row(s.name, s.@sub_name, s.@sub_id, s.volt,s.Q_rate, s.Q_pf, s.strid),
+              @@count_all += 1,
+				      double volt = s.volt,
+              double current_x = s.Q_rate,
+              if volt >= 500 then
+                  @@count_500 += 1,
+                  if current_x<=0 then
+                    @@count_500_low+=1,
+                    @@count_low+=1
+                  else if current_x > 0 then
+                    @@count_500_high+=1,
+                    @@count_high+=1            
+                  end            
+                
+                else if volt >= 220 then
+                  @@count_220+=1,
+                  if current_x<=0 then
+                    @@count_220_low+=1,
+                    @@count_low+=1
+                  else if current_x > 0 then
+                    @@count_220_high+=1,
+                    @@count_high+=1            
+                  end
+                  
+                else if volt >= 110 then
+                  @@count_110+=1,
+                  if current_x<=0 then
+                    @@count_110_low+=1,
+                    @@count_low+=1
+                  else if current_x > 0 then
+                    @@count_110_high+=1,
+                    @@count_high+=1            
+                  end
+                  
+                else if volt >= 34.5 then
+                  @@count_35+=1,
+                  if current_x<=0 then
+                    @@count_35_low+=1,
+                    @@count_low+=1
+                  else if current_x > 0 then
+                    @@count_35_high+=1,
+                    @@count_high+=1            
+                  end
+  
+                else if volt >= 10 then
+                  @@count_10+=1,
+                  if current_x<=0 then
+                    @@count_10_low+=1,
+                    @@count_low+=1
+                  else if current_x > 0 then
+                    @@count_10_high+=1,
+                    @@count_high+=1            
+                  end
+                  
+                else
+                  @@count_other+=1,
+                  if current_x<=0 then
+                    @@count_other_low+=1,
+                    @@count_low+=1
+                  else if current_x > 0 then
+                    @@count_other_high+=1,
+                    @@count_high+=1            
+                  end
+                end
+          end;
+  
+  if return_all then
+    print @@result;
+  else
+    print @@result_part;
+  end;
+  
+  print @@count_all;
+  print @@count_low;
+  print @@count_high;
+  
+
+  
+  print @@count_500;
+  print @@count_500_low;
+  print @@count_500_high;
+  
+  
+  print @@count_220;
+  print @@count_220_low;
+  print @@count_220_high;
+  
+  
+  print @@count_110;
+  print @@count_110_low;
+  print @@count_110_high;
+  
+  
+  print @@count_35;
+  print @@count_35_low;
+  print @@count_35_high;
+  
+  print @@count_10;
+  print @@count_10_low;
+  print @@count_10_high;
+  
+  print @@count_other;
+  print @@count_other_low;
+  print @@count_other_high; 
+}

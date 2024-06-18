@@ -1,0 +1,8 @@
+"""
+use ems match (startid:gridcom)-[:gridcom_gridcom]->{0,}(s:gridcom)<-[e:gridcom_gridcom_stat] -(t:)  filter where startid.id = "113715890758877224"
+let
+meas_coverage = s.count_sub_meas/s.count_sub,
+indu_standard_coverage = t.parameter1*100
+return t.name, s.line_p_coverage_rate, s.line_q_coverage_rate, s.unit_p_coverage_rate, s.unit_q_coverage_rate, s.load_p_coverage_rate, s.load_q_coverage_rate, s.trans2_p_coverage_rate, 
+s.trans2_q_coverage_rate, s.trans3_p_coverage_rate, s.trans3_q_coverage_rate, s.cp_coverage_rate, s.bus_meas_coverage_rate, meas_coverage, indu_standard_coverage
+"""

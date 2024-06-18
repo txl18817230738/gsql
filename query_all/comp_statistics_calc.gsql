@@ -1,0 +1,338 @@
+CREATE QUERY comp_statistics_calc(string timestamp="", int time_interval=900000) FOR GRAPH gsql_EMS syntax v2{ 
+
+    MapAccum<string, double> @area_statistic;
+    MapAccum<string, double> @area_total_loss;
+    MapAccum<string, double> @sub_total_loss;
+    SumAccum<double> @area_gen;
+    SumAccum<double> @area_load;
+    SumAccum<double> @area_gen_meas;
+    SumAccum<double> @area_load_meas;
+    SumAccum<double> @area_gen_pf;
+    SumAccum<double> @area_load_pf;
+    SumAccum<double> @area_input;
+    SumAccum<double> @area_output;
+    #SumAccum<double> @area_loss;
+    SumAccum<double> @@area_input;
+    SumAccum<double> @@area_output;
+
+    // 区域负荷，分电压等级，估计值
+    SumAccum<double> @area_load_500;
+    SumAccum<double> @area_load_220;
+    SumAccum<double> @area_load_110;
+    SumAccum<double> @area_load_35;
+    SumAccum<double> @area_load_10;
+    SumAccum<double> @area_load_other;
+    // 区域负荷，分电压等级，量测值
+    SumAccum<double> @area_load_500_meas;
+    SumAccum<double> @area_load_220_meas;
+    SumAccum<double> @area_load_110_meas;
+    SumAccum<double> @area_load_35_meas;
+    SumAccum<double> @area_load_10_meas;
+    SumAccum<double> @area_load_other_meas;
+    // 区域发电，分机组类型，估计值
+    SumAccum<double> @area_fire;
+    SumAccum<double> @area_water;
+    SumAccum<double> @area_wind;
+    SumAccum<double> @area_solar;
+    SumAccum<double> @area_nuclear;
+    SumAccum<double> @area_storage;
+    SumAccum<double> @area_distributed;
+    SumAccum<double> @area_gen_other;
+    // 区域发电，分机组类型，量测值
+    SumAccum<double> @area_fire_meas;
+    SumAccum<double> @area_water_meas;
+    SumAccum<double> @area_wind_meas;
+    SumAccum<double> @area_solar_meas;
+    SumAccum<double> @area_nuclear_meas;
+    SumAccum<double> @area_storage_meas;
+    SumAccum<double> @area_distributed_meas;
+    SumAccum<double> @area_gen_other_meas;
+ 
+    
+    ListAccum<carbon_hist_info> @tempListAccum;
+    OrAccum @hasParent;
+    OrAccum @isRoot;
+    string last_history_time;
+  
+    MapAccum<string, double> @area_total_overlimit;
+  
+    SumAccum<int> @area_lineq1_num;
+    SumAccum<int> @area_lineq2_num;
+    SumAccum<int> @area_lineq3_num;
+    SumAccum<int> @area_vol_num;
+  
+    SumAccum<int> @area_lineq1_num_base;
+    SumAccum<int> @area_lineq2_num_base;
+    SumAccum<int> @area_lineq3_num_base;
+    SumAccum<int> @area_vol_num_base;
+  
+
+
+  //==========================================================================================================================
+  //-------------------------------------------区域属性更新---------------------------------------------------------------------
+  //==========================================================================================================================
+  
+
+  
+    comp = {gridcom.*};
+  
+    // 根公司更新
+    childComp = select s from comp:s - (gridcom_gridcom:e) - :t where s.parent_id==t.id
+        accum
+	    s.@hasParent += true;
+    rootComp = select s from comp:s where s.@hasParent== false
+        accum
+            s.@isRoot += true;
+    
+
+    // 各级公司计算统计量
+    comp = select s from comp:s
+        accum
+	    if s.id!="" then
+            	s.@area_statistic = single_comp_statistics(s.id)
+	    end
+	post-accum
+            s.@area_load = s.@area_statistic.get("area_load"),
+            s.@area_load_meas = s.@area_statistic.get("area_load_meas"),
+            s.@area_load_pf = s.@area_statistic.get("area_load_pf"),
+            s.@area_gen = s.@area_statistic.get("area_gen"),
+            s.@area_gen_meas = s.@area_statistic.get("area_gen_meas"),
+            s.@area_gen_pf = s.@area_statistic.get("area_gen_pf"),
+            s.@area_load_500 = s.@area_statistic.get("area_load_500"),
+            s.@area_load_500_meas = s.@area_statistic.get("area_load_500_meas"),
+            s.@area_load_220 = s.@area_statistic.get("area_load_220"),
+            s.@area_load_220_meas = s.@area_statistic.get("area_load_220_meas"),
+            s.@area_load_110 = s.@area_statistic.get("area_load_110"),
+            s.@area_load_110_meas = s.@area_statistic.get("area_load_110_meas"),
+            s.@area_load_35 = s.@area_statistic.get("area_load_35"),
+            s.@area_load_35_meas = s.@area_statistic.get("area_load_35_meas"),
+            s.@area_load_10 = s.@area_statistic.get("area_load_10"),
+            s.@area_load_10_meas = s.@area_statistic.get("area_load_10_meas"),
+            s.@area_load_other = s.@area_statistic.get("area_load_other"),
+            s.@area_load_other_meas = s.@area_statistic.get("area_load_other_meas"),
+            s.@area_fire = s.@area_statistic.get("area_fire"),
+            s.@area_fire_meas = s.@area_statistic.get("area_fire_meas"),
+            s.@area_water = s.@area_statistic.get("area_water"),
+            s.@area_water_meas = s.@area_statistic.get("area_water_meas"),
+            s.@area_wind = s.@area_statistic.get("area_wind"),
+            s.@area_wind_meas = s.@area_statistic.get("area_wind_meas"),
+            s.@area_solar = s.@area_statistic.get("area_solar"),
+            s.@area_solar_meas = s.@area_statistic.get("area_solar_meas"),
+            s.@area_nuclear = s.@area_statistic.get("area_nuclear"),
+            s.@area_nuclear_meas = s.@area_statistic.get("area_nuclear_meas"),
+            s.@area_storage = s.@area_statistic.get("area_storage"),
+            s.@area_storage_meas = s.@area_statistic.get("area_storage_meas"),
+            s.@area_distributed = s.@area_statistic.get("area_distributed"),
+            s.@area_distributed_meas = s.@area_statistic.get("area_distributed_meas"),
+            s.@area_gen_other = s.@area_statistic.get("area_gen_other"),
+            s.@area_gen_other_meas = s.@area_statistic.get("area_gen_other_meas"),
+            s.@area_input = s.@area_statistic.get("area_input"),
+            s.@area_output = s.@area_statistic.get("area_output");  
+
+    // 根公司流入流出单独处理，从全部换流机组累加
+//    T1 = select c from comp:c - (connected_grid_sub:e1) - Substation:s - (connected_Sub_Unit>:e2) - unit:u
+//        accum
+//            if u.Gentype=="交换机组" then
+//                if u.P>0 then
+//                    @@area_input += u.P
+//                else
+//                    @@area_output += abs(u.P)
+//                end
+//            end;
+//    rootComp = select r from rootComp:r
+//        post-accum
+//            r.@area_input=@@area_input,
+//            r.@area_output=@@area_output;
+  
+  //计算越限情况（基态和预想故障）
+  comp = select s from comp:s 
+           ACCUM
+            if s.id!="" then
+                s.@area_total_overlimit = single_comp_statistics_foroverlimit(s.id)
+            end 
+           POST-ACCUM
+               s.@area_lineq1_num = s.@area_total_overlimit.get("area_lineq1_num"),
+               s.@area_lineq2_num = s.@area_total_overlimit.get("area_lineq2_num"),
+               s.@area_lineq3_num = s.@area_total_overlimit.get("area_lineq3_num"),
+               s.@area_vol_num = s.@area_total_overlimit.get("area_vol_num"),
+               s.@area_lineq1_num_base = s.@area_total_overlimit.get("area_lineq1_num_base"),
+               s.@area_lineq2_num_base = s.@area_total_overlimit.get("area_lineq2_num_base"),
+               s.@area_lineq3_num_base = s.@area_total_overlimit.get("area_lineq3_num_base"),
+               s.@area_vol_num_base = s.@area_total_overlimit.get("area_vol_num_base");
+
+    //计算网损
+    comp = select s from comp:s
+        accum
+            s.@area_total_loss = area_loss_cal_total(s.id);
+  //==============================================================================
+  ////////////// update realtime statistics on gridcom ///////////////////////////////////////
+  //==============================================================================
+    comp = select s from comp:s
+        post-accum
+            s.total_load = s.@area_load,
+            s.total_gen = s.@area_gen,
+            s.input_p = s.@area_input,
+            s.output_p = s.@area_output,
+            s.total_gen_meas = s.@area_gen_meas,
+            s.total_load_meas = s.@area_load_meas,
+            s.total_loss = s.@area_total_loss.get("area_loss_total"),
+            s.fire_p = s.@area_fire,
+            s.water_p = s.@area_water,
+            s.wind_p = s.@area_wind,
+            s.solar_p = s.@area_solar,
+            s.storage_p = s.@area_storage,
+            s.nuclear_p = s.@area_nuclear,
+            s.otherpower_p = s.@area_gen_other,
+            s.distributed_p = s.@area_distributed,
+            s.fire_p_meas = s.@area_fire_meas,
+            s.water_p_meas = s.@area_water_meas,
+            s.wind_p_meas = s.@area_wind_meas,
+            s.solar_p_meas = s.@area_solar_meas,
+            s.storage_p_meas = s.@area_storage_meas,
+            s.nuclear_p_meas = s.@area_nuclear_meas,
+            s.otherpower_p_meas = s.@area_gen_other_meas,
+            s.distributed_p_meas = s.@area_distributed_meas;
+
+
+  //==============================================================================
+  ////////////// update history ///////////////////////////////////////
+  //==============================================================================
+
+      comp = select s from gridcom:s - ((comp_history_total_gen|comp_history_total_load|
+            com_history_gen_p_meas|com_history_load_p_meas|comp_history_input_p|comp_history_output_p|
+            comp_history_total_loss|com_fire_history_p|com_wind_history_p|com_water_history_p|
+            com_solar_history_p|com_other_history_p|com_nuclear_history_p|com_storage_history_p|com_distributed_history_p|
+            com_fire_history_p_meas|com_water_history_p_meas|
+            com_wind_history_p_meas|com_solar_history_p_meas|com_nuclear_history_p_meas|
+            com_storage_history_p_meas|com_distributed_history_p_meas|com_other_history_p_meas|
+            com_history_500_load |com_history_220_load |com_history_110_load |com_history_35_load |
+            com_history_10_load |com_history_other_load |com_history_500_load_meas |
+            com_history_220_load_meas |com_history_110_load_meas |com_history_35_load_meas |
+            com_history_10_load_meas |com_history_other_load_meas|comp_history_total_pf_load|comp_history_total_pf_gen|com_history_detailedPF_lineQ1vio|com_history_detailedPF_lineQ2vio|com_history_detailedPF_lineQ3vio|com_history_lineQ1vio|com_history_lineQ2vio|com_history_lineQ3vio|com_history_volvio|com_history_detailedPF_volvio):e) - :t
+      //comp = select s from gridcom:s - ((comp_history_total_gen|comp_history_total_load|
+      //      com_history_gen_p_meas|com_history_load_p_meas|comp_history_input_p|comp_history_output_p|
+      //      comp_history_total_loss|com_fire_history_p|com_wind_history_p|com_water_history_p|
+      //      com_solar_history_p|com_other_history_p|com_nuclear_history_p|com_storage_history_p|com_distributed_history_p|
+      //      com_history_500_load |com_history_220_load |com_history_110_load |com_history_35_load |
+      //      com_history_10_load |com_history_other_load |com_history_500_load_meas |
+      //      com_history_220_load_meas |com_history_110_load_meas |com_history_35_load_meas |
+      //      com_history_10_load_meas |com_history_other_load_meas):e) - :t
+              accum
+              FOREACH x in t.today DO
+                IF isOneDay(timestamp, x.t) THEN
+                  t.@tempListAccum+=x
+                END
+              END,
+              IF e.type=="comp_history_total_gen" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_gen, timestamp)
+              ELSE IF e.type=="comp_history_total_load" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_load, timestamp)
+              ELSE IF e.type=="com_history_gen_p_meas" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_gen_meas, timestamp)
+              ELSE IF e.type=="com_history_load_p_meas" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_load_meas, timestamp)   
+              ELSE IF e.type=="comp_history_input_p" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_input, timestamp)
+              ELSE IF e.type=="comp_history_output_p" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_output, timestamp)
+              ELSE IF e.type=="comp_history_total_loss" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_total_loss.get("area_loss_total"), timestamp)
+              ELSE IF e.type=="com_fire_history_p" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_fire, timestamp)
+              ELSE IF e.type=="com_wind_history_p" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_wind, timestamp)
+              ELSE IF e.type=="com_water_history_p" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_water, timestamp)
+              ELSE IF e.type=="com_solar_history_p" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_solar, timestamp)
+              ELSE IF e.type=="com_nuclear_history_p" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_nuclear, timestamp)
+              ELSE IF e.type=="com_distributed_history_p" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_distributed, timestamp)
+              ELSE IF e.type=="com_storage_history_p" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_storage, timestamp)
+              ELSE IF e.type=="com_other_history_p" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_gen_other, timestamp)
+              ELSE IF e.type=="com_fire_history_p_meas" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_fire_meas, timestamp)
+              ELSE IF e.type=="com_water_history_p_meas" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_water_meas, timestamp)
+              ELSE IF e.type=="com_wind_history_p_meas" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_wind_meas, timestamp)
+              ELSE IF e.type=="com_solar_history_p_meas" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_solar_meas, timestamp)
+              ELSE IF e.type=="com_nuclear_history_p_meas" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_nuclear_meas, timestamp)
+              ELSE IF e.type=="com_storage_history_p_meas" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_storage_meas, timestamp)
+              ELSE IF e.type=="com_distributed_history_p_meas" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_distributed_meas, timestamp)
+              ELSE IF e.type=="com_other_history_p_meas" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_gen_other_meas, timestamp)
+              ELSE IF e.type=="com_history_500_load" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_load_500, timestamp)
+              ELSE IF e.type=="com_history_220_load" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_load_220, timestamp)
+              ELSE IF e.type=="com_history_110_load" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_load_110, timestamp)
+              ELSE IF e.type=="com_history_35_load" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_load_35, timestamp)
+              ELSE IF e.type=="com_history_10_load" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_load_10, timestamp)
+              ELSE IF e.type=="com_history_other_load" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_load_other, timestamp)
+              ELSE IF e.type=="com_history_500_load_meas" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_load_500_meas, timestamp)
+              ELSE IF e.type=="com_history_220_load_meas" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_load_220_meas, timestamp)
+              ELSE IF e.type=="com_history_110_load_meas" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_load_110_meas, timestamp)
+              ELSE IF e.type=="com_history_35_load_meas" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_load_35_meas, timestamp)
+              ELSE IF e.type=="com_history_10_load_meas" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_load_10_meas, timestamp)
+              ELSE IF e.type=="com_history_other_load_meas" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_load_other_meas, timestamp)
+              ELSE IF e.type=="comp_history_total_pf_load" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_load_pf, timestamp)
+              ELSE IF e.type=="comp_history_total_pf_gen" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_gen_pf, timestamp)
+              ELSE IF e.type=="com_history_detailedPF_lineQ1vio" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_lineq1_num, timestamp)
+              ELSE IF e.type=="com_history_detailedPF_lineQ2vio" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_lineq2_num, timestamp)
+              ELSE IF e.type=="com_history_detailedPF_lineQ3vio" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_lineq3_num, timestamp)
+              ELSE IF e.type=="com_history_lineQ1vio" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_lineq1_num_base, timestamp)
+              ELSE IF e.type=="com_history_lineQ2vio" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_lineq2_num_base, timestamp)
+              ELSE IF e.type=="com_history_lineQ3vio" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_lineq3_num_base, timestamp)
+              ELSE IF e.type=="com_history_volvio" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_vol_num_base, timestamp)
+              ELSE IF e.type=="com_history_detailedPF_volvio" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@area_vol_num, timestamp)
+              END
+              post-accum
+              	t.today = t.@tempListAccum;
+   //按厂站维度统计网损
+	sub={Substation.*};
+	
+	sub = select s from sub:s 
+			accum
+            s.@sub_total_loss = sub_loss_cal_total(s.strid);
+			
+			
+			
+	comp = select s from sub:s - ((sub_history_total_loss):e) - :t
+              accum
+              FOREACH x in t.today DO
+                IF isOneDay(timestamp, x.t) THEN
+                  t.@tempListAccum+=x
+                END
+              END,       
+                t.@tempListAccum+=carbon_hist_info(s.@sub_total_loss.get("sub_loss_total"), timestamp)
+              post-accum
+              	t.today = t.@tempListAccum; 
+}

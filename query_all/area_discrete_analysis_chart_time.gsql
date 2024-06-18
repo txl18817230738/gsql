@@ -1,0 +1,102 @@
+CREATE QUERY area_discrete_analysis_chart_time(string companyID="113715890758877224",string time,BOOL isTimeGroup=TRUE) FOR GRAPH gsql_EMS syntax v2 { 
+TYPEDEF TUPLE<previous_time string, breakNum int, disconnectorNum int> discrete_chart_time;
+TYPEDEF TUPLE<strName STRING, breakNum int, disconnectorNum int> discrete_chart_sub;
+
+HeapAccum<discrete_chart_time>(5000, previous_time ASC) @@discreteChartTime;
+HeapAccum<discrete_chart_sub>(5000, strName ASC) @@discreteChartSub;
+
+SumAccum<INT> @INode;
+SumAccum<INT> @JNode;
+SetAccum<string> @@Comp_ID;
+  
+SetAccum<STRING> @@times;
+SetAccum<STRING> @@subNames;
+SumAccum<STRING> @subName;
+  
+//SumAccum<INT> @@count_Breaker_time;
+//SumAccum<INT> @@count_Disconnector_time;
+
+MapAccum<STRING,INT> @@count_Breaker_Time_Map;
+MapAccum<STRING,INT> @@count_Disconnector_Time_Map;
+  
+MapAccum<STRING,INT> @@count_Breaker_Sub_Map;
+MapAccum<STRING,INT> @@count_Disconnector_Sub_Map;
+  
+  comp = {gridcom.*};
+  
+  area = select s from comp:s where s.id == companyID;
+  
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+  
+  subSet = select t from comp:s-(connected_grid_sub:e)-:t where s.id in @@Comp_ID; 
+  
+  discreteSet = SELECT t FROM subSet:s - (discrete_sub:e) -:t WHERE t.previous_time>=time AND t.id != ""
+                ACCUM
+                t.@subName = s.name,
+                @@subNames += s.name,
+                @@times += t.previous_time,
+                if t.type_name == "Breaker" THEN
+                    IF(@@count_Breaker_Sub_Map.containsKey(s.name)) THEN
+                      @@count_Breaker_Sub_Map+=(s.name->0)
+                    ELSE
+                      @@count_Breaker_Sub_Map+=(s.name->1)
+                    END,
+                    IF(@@count_Breaker_Time_Map.containsKey(t.previous_time)) THEN
+                      @@count_Breaker_Time_Map+=(t.previous_time->0)
+                    ELSE
+                      @@count_Breaker_Time_Map+=(t.previous_time->1)
+                    END
+                else if t.type_name == "Disconnector" THEN
+                    IF(@@count_Disconnector_Sub_Map.containsKey(s.name)) THEN
+                      @@count_Disconnector_Sub_Map+=(s.name->0)
+                    ELSE
+                      @@count_Disconnector_Sub_Map+=(s.name->1)
+                    END,
+                    IF(@@count_Disconnector_Time_Map.containsKey(t.previous_time)) THEN
+                      @@count_Disconnector_Time_Map+=(t.previous_time->0)
+                    ELSE
+                      @@count_Disconnector_Time_Map+=(t.previous_time->1)
+                    END
+                end;
+  
+  discreteSet = SELECT s FROM discreteSet:s-((discrete_dis|discrete_breaker):e1)-(Disconnector|Breaker):t-((connected_Disconnector_CN|connected_Breaker_CN):e2)-CN:p
+                accum 
+                s.@INode = t.I_nd,
+                s.@JNode = t.J_nd;
+  
+  IF(isTimeGroup) THEN
+    FOREACH x IN @@times DO
+//      @@count_Breaker_time=0;
+//      @@count_Disconnector_time=0;
+//      discreteChartTimeRes = SELECT s FROM discreteSet:s - (discrete_sub:e) -:t WHERE s.previous_time==x
+//                ACCUM
+//                  if s.type_name == "Breaker" THEN
+//                    @@count_Breaker_time+=1
+//                  else if s.type_name == "Disconnector" THEN
+//                    @@count_Disconnector_time+=1
+//                  end;
+      @@discreteChartTime += discrete_chart_time(x,@@count_Breaker_Time_Map.get(x),@@count_Disconnector_Time_Map.get(x));
+    END;
+  ELSE
+    FOREACH x IN @@subNames DO
+ //     @@count_Breaker_time=0;
+ //     @@count_Disconnector_time=0;
+ //     discreteChartTimeRes = SELECT s FROM discreteSet:s - (discrete_sub:e) -:t WHERE s.@subName==x
+ //               ACCUM
+ //                 if s.type_name == "Breaker" THEN
+ //                   @@count_Breaker_time+=1
+ //                 else if s.type_name == "Disconnector" THEN
+ //                   @@count_Disconnector_time+=1
+ //                 end;
+      @@discreteChartSub += discrete_chart_sub(x,@@count_Breaker_Sub_Map.get(x),@@count_Disconnector_Sub_Map.get(x));
+    END;
+  END;
+  
+  PRINT @@discreteChartTime;
+  PRINT @@discreteChartSub;
+  print area[area.name] where area.id == companyID;
+}

@@ -1,0 +1,18 @@
+"""
+use ems match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:connected_Sub_Trans_three]->(t:three_port_transformer)<-[e:topo_Tx_Three]-(t2:TopoND) filter where startid.id = "113715890758877224"
+let
+
+p_rate = case when t.S is not NULL then t.S else 1.0 end,
+pimeas = case when t.Pimeas is not NULL then t.Pimeas else 0.0 end,
+qimeas = case when t.Qimeas is not NULL then t.Qimeas else 0.0 end
+let
+meas_overload = case when abs(p_rate) >= 0.5 then abs(pimeas/p_rate)*100 else 0.0 end
+let
+meas_overload_type = case when meas_overload >= 0.0 and meas_overload < 20.0 then "轻微" when meas_overload >= 20.0 and meas_overload < 80.0 then "正常" when meas_overload >= 80.0 and meas_overload < 100.0 then "重载" when meas_overload >= 100.0 then "过载" end,
+p_mark = case when pimeas <> 0.0  then "实测" else "无实测" end,
+p_mark_num = case when pimeas <> 0.0 then 1 else 0 end,
+q_mark = case when qimeas <> 0.0 then "实测" else "无实测" end,
+q_mark_num = case when qimeas <> 0.0 then 1 else 0 end,
+device_type = "三卷变压器"
+return t.name as name,device_type, s.name as subName, s.strid as subId, meas_overload,meas_overload_type,t.busName as busName,t2.topoID,t2.name,t2.id,t.volt,p_mark,p_mark_num,pimeas,q_mark,q_mark_num, qimeas,e.Ri_eP, e.Ri_eQ LIMIT 5
+"""

@@ -1,0 +1,170 @@
+CREATE QUERY Faultdatainit() FOR GRAPH gsql_EMS{
+ typedef tuple<int id, string name, string faulttype, string devname, string devtype, string Substation, string subid, double volt, int devid, string groupname, double SI, int decesion_flag, int fastscreen_flag, int detailedanalysis_flag, int FaultGroup_select_flag> complexfault;
+  HeapAccum<complexfault>(1000000, devname asc) @@fault_result;
+  HeapAccum<complexfault>(1000000, devname asc) @@smart_fault_result;
+  SumAccum<string> @faultname;
+  SumAccum<string> @faulttype;
+  SumAccum<string> @linename;
+  SumAccum<string> @groupname;
+  SumAccum<double> @SI = 0;
+  SumAccum<int> @decesion_flag = 1;
+  SumAccum<int> @fastscreen_flag = 0;
+  SumAccum<int> @detailedanalysis_flag = 0;
+  SumAccum<int> @FaultGroup_select_flag = 0;
+  SumAccum<string> @subid;
+  SumAccum<int> @topoid;
+  SumAccum<int> @xlineflag = 0;
+  SumAccum<int> @devid;
+  string sub_name;
+  string sub_id;
+  MapAccum<int, int> @@acline_MapAccum;
+  ListAccum<VERTEX<Fault>> @@fault_list;
+
+  FILE file1 ("/home/tigergraph/ems-query/guangdong_newdata_cn/Faultdata.csv");
+  FILE file2 ("/home/tigergraph/ems-query/guangdong_newdata_cn/FaultGroupdata.csv");
+
+  Tfault = {Fault.*};
+  Tunit = {unit.*};
+  Tacline = {ACline_dot.*};
+  Ttwoport = {two_port_transformer.*};
+  Tthreeport = {three_port_transformer.*};
+  Tbus = {BUS.*};
+  Tsub = {Substation.*};
+  T0 = {TopoND.*};
+  
+  
+ T0 = select s from T0:s-(topoid_subid)-:t
+     accum
+        s.@subid = t.strid;
+
+
+         X = select s from Tacline:s -(aclinedot_aclinedot:e) - :t
+                accum
+                        int id = e.id,
+                        if s.id == e.I_mRID then
+                                @@acline_MapAccum += (id -> s.id)
+                        else
+                                @@acline_MapAccum += (-id -> s.id)
+                        end;
+         X1 = select s from Tacline:s -(aclinedot_aclinedot_reverse:e) - :t
+                accum
+                        int id = e.id,
+                        if s.id == e.I_mRID then
+                                @@acline_MapAccum += (id -> s.id)
+                        else
+                                @@acline_MapAccum += (-id -> s.id)
+                        end;
+
+
+//Generate N-1 faults 
+  Taclinedot = select s from Tacline:s-(aclinedot_aclinedot:e)-:t
+        accum
+        s.@linename = e.name;
+
+  aclineSet = select s from Taclinedot:s-(topo_aclinedot:e)-:t 
+        where s.volt >= 220 and t.island == 1
+        accum
+        s.@subid = t.@subid,
+        s.@faultname = s.@linename + ".故障",    
+        s.@faulttype = "N-1"
+        post-accum
+        s.@devid = s.id,
+        s.@groupname = "线路N-1故障组",
+        s.@fastscreen_flag = 1,
+        s.@detailedanalysis_flag = 0,
+        s.Decision = 1;
+
+
+  Ttwoporthigh = select s from Ttwoport:s-(txI_txJ_transformerline:e) -> :t;
+
+  twoportSet = select s from Ttwoporthigh:s-(topo_Tx_Two:e)-:t
+        where s.volt >= 220 and t.island == 1
+        accum
+        s.@subid = t.@subid,
+        s.@faultname = s.name + ".故障",
+        s.@faulttype = "N-1"
+        post-accum
+        s.@devid = s.id,
+        s.@groupname = "两卷变N-1故障组",
+        s.@fastscreen_flag = 1,
+        s.@detailedanalysis_flag = 0,
+        s.Decision = 1;
+
+  threeportSet = select s from Tthreeport:s-(topo_Tx_Three:e)-:t
+        where s.volt >= 220 and t.island == 1
+        accum
+        s.@subid = t.@subid,
+        s.@faultname = s.name + ".故障",
+        s.@faulttype = "N-1"
+        post-accum
+        s.@devid = s.id,
+        s.@groupname = "三卷变N-1故障组",
+        s.@fastscreen_flag = 1,
+        s.@detailedanalysis_flag = 0,
+        s.Decision = 1;
+
+  unitSet = select s from Tunit:s-(topo_unit:e)-:t
+        where s.Gentype == "火电机组" and t.island == 1
+        accum
+        s.@subid = t.@subid,
+        s.@faultname = s.name + ".故障",
+        s.@faulttype = "N-1"
+        post-accum
+        s.@devid = s.id,
+        s.@groupname = "机组N-1故障组",
+        s.@fastscreen_flag = 1,
+        s.@detailedanalysis_flag = 0,
+        s.Decision = 1;
+
+//Generate Complex Fault
+  T1 = select s from T0:s-(topo_connect:e)-:t
+     where e.X.size() > 1 and e.reverse == 1
+     accum
+     int faultid = s.TOPOID + t.TOPOID, 
+     string faultname = s.Sub + "-" +t.Sub + "-平行线组合故障",
+     string faulttype = "复杂故障",
+     string groupname = "智能复杂故障组",
+     double MVA = sqrt(e.P_TLPF*e.P_TLPF + e.Q_TLPF*e.Q_TLPF),
+     if (MVA > 0.3*e.line_Q1 and s.base_kV >= 110 and e.device_type == "AC传输线") then
+     foreach i in range [0, e.X.size() - 1] do
+     @@smart_fault_result += complexfault(faultid, faultname, faulttype, e.edge_name.get(i), "AClinedot", s.Sub, s.@subid, s.base_kV, @@acline_MapAccum.get(e.key_list.get(i)), groupname, 0, 1, 1, 0, 0)
+     end
+     end;
+
+
+ complexSet = select s from Tfault:s
+         where s.faulttype == "复杂故障" and s.groupname == "复杂故障"
+            post-accum
+              FOREACH i in range [0, s.faultdevname.size() - 1] DO
+                @@fault_result += complexfault(s.id, s.name, s.faulttype, s.faultdevname.get(i), s.faultdevtype.get(i), s.faultdevSub.get(i), convertToString(s.faultdevSubid.get(i)), s.volt.get(i), s.devid.get(i), s.groupname, s.SI, s.decesion_flag, s.fastscreen_flag, s.detailedanalysis_flag, s.FaultGroup_select_flag)
+              END;
+
+//print @@fault_result;
+
+//print fault
+  print "faultid, faultname, faulttype, faultdevname, faultdevtype, faultdevSub, MemberOf_Substation, volt, devid, groupname, SI, decesion_flag, fastscreen_flag, detailedanalysis_flag, FaultGroup_select_flag" TO_CSV file1;
+  print aclineSet.id, aclineSet.@faultname, aclineSet.@faulttype, aclineSet.name, aclineSet.typename, aclineSet.Subname, aclineSet.@subid, aclineSet.volt, aclineSet.@devid, aclineSet.@groupname, aclineSet.@SI, aclineSet.@decesion_flag, aclineSet.@fastscreen_flag, aclineSet.@detailedanalysis_flag, aclineSet.@FaultGroup_select_flag TO_CSV file1;
+  print twoportSet.id, twoportSet.@faultname, twoportSet.@faulttype, twoportSet.name, twoportSet.typename, twoportSet.Substation, twoportSet.@subid, twoportSet.volt, twoportSet.@devid, twoportSet.@groupname, twoportSet.@SI, twoportSet.@decesion_flag, twoportSet.@fastscreen_flag, twoportSet.@detailedanalysis_flag, twoportSet.@FaultGroup_select_flag TO_CSV file1;
+  print threeportSet.id, threeportSet.@faultname, threeportSet.@faulttype, threeportSet.name, threeportSet.typename, threeportSet.Substation, threeportSet.@subid, threeportSet.volt, threeportSet.@devid, threeportSet.@groupname, threeportSet.@SI, threeportSet.@decesion_flag, threeportSet.@fastscreen_flag, threeportSet.@detailedanalysis_flag, threeportSet.@FaultGroup_select_flag TO_CSV file1;
+  print unitSet.id, unitSet.@faultname, unitSet.@faulttype, unitSet.name, unitSet.typename, unitSet.Substation, unitSet.@subid, unitSet.volt, unitSet.@devid, unitSet.@groupname, unitSet.@SI, unitSet.@decesion_flag, unitSet.@fastscreen_flag, unitSet.@detailedanalysis_flag, unitSet.@FaultGroup_select_flag TO_CSV file1;
+FOREACH x in @@smart_fault_result DO
+  print x.id, x.name, x.faulttype, x.devname, x.devtype, x.Substation, x.subid, x.volt, x.devid, x.groupname, x.SI, x.decesion_flag, x.fastscreen_flag, x.detailedanalysis_flag, x.FaultGroup_select_flag TO_CSV file1;
+END;
+
+FOREACH x in @@fault_result DO
+  print x.id, x.name, x.faulttype, x.devname, x.devtype, x.Substation, x.subid, x.volt, x.devid, x.groupname, x.SI, x.decesion_flag, x.fastscreen_flag, x.detailedanalysis_flag, x.FaultGroup_select_flag TO_CSV file1;
+END;
+
+//print faultgroup
+  print "faultgroupid,groupname,describe,faultnumber,screen_flag,analysis_flag" TO_CSV file2;
+  print "1,线路N-1故障组,线路N-1故障集合,0,1,0" TO_CSV file2;
+  print "2,两卷变N-1故障组,两卷变N-1故障集合,0,1,0" TO_CSV file2;
+  print "3,三卷变N-1故障组,三卷变N-1故障集合,0,1,0" TO_CSV file2;
+  print "4,机组N-1故障组,机组N-1故障集合,0,1,0" TO_CSV file2;
+  print "5,复杂故障,自定义复杂故障集合,0,1,1" TO_CSV file2;
+  print "6,智能复杂故障,智能生成复杂故障集合,0,1,1" TO_CSV file2;
+
+print aclineSet.size(), twoportSet.size(), threeportSet.size(), unitSet.size();
+print @@smart_fault_result.size(), @@fault_result.size();
+
+}

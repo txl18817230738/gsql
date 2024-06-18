@@ -1,0 +1,29 @@
+se_all_info_load_overview
+'''
+use ems_v1 
+match (p:parameters)
+let
+error_limit_P = case when p.error_limit_P is not NULL then p.error_limit_P else 0.0 end,
+error_limit_Q = case when p.error_limit_Q is not NULL then p.error_limit_Q else 0.0 end,
+error_p_baddata = case when p.backup1 is not NULL then p.backup1 else 0.0 end,
+error_q_baddata = case when p.backup2 is not NULL then p.backup2 else 0.0 end
+match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:connected_Sub_Load]->(t:`l_oad`)<-(Meas_Load)-(m:meas) filter where startid.id = "113715890758877224"
+let
+p_meas_flag = m.P_PseudoFlag,
+q_meas_flag = m.Q_PseudoFlag,
+sub_name = s.name,
+sub_id = s.strid
+match (l:`l_oad`)<-[topo_unit]-(td:TopoND) where td.island = 1 and l.off = 0 and l.p_se_error < error_p_baddata and l.q_se_error < error_q_baddata and abs(l.Pimeas)>0.0001 and abs(l.Qimeas)>0.0001
+let
+Pimeas = case when l.Pimeas is not NULL then l.Pimeas else 0.0 end,
+Qimeas = case when l.Qimeas is not NULL then l.Qimeas else 0.0 end
+let
+
+count_P_belowlimit = case when p_meas_flag = 0 and l.p_se_error <= error_limit_P then 1 else 0 end,
+count_P_abovelimit = case when p_meas_flag = 0 and l.p_se_error > error_limit_P then 1 else 0 end,
+
+count_Q_belowlimit = case when q_meas_flag = 0 and l.q_se_error <= error_limit_Q then 1 else 0 end,
+count_Q_abovelimit = case when q_meas_flag = 0 and l.q_se_error > error_limit_Q then 1 else 0 end
+
+return case when l.volt >= 500.0 then "500kV" when l.volt >= 220.0 then "220kV"  when l.volt >= 110.0 then "110kV" when l.volt >= 34.5 then "35kV" when l.volt >= 10.0 then "10kV" else "other" end as voltageLevel, count(*) as total, sum(count_P_belowlimit) as count_P_belowlimit_total, sum(count_P_abovelimit) as count_P_abovelimit_total, sum(count_Q_belowlimit) as count_Q_belowlimit_total, sum(count_Q_abovelimit) as count_Q_abovelimit_total group by voltageLevel Next return voltageLevel, total, count_P_belowlimit_total, count_P_abovelimit_total, count_Q_belowlimit_total, count_Q_abovelimit_total
+'''

@@ -1,0 +1,216 @@
+CREATE QUERY area_meas_analysis(string companyID="113715890758877224", string time, bool return_all=true, STRING searchTime="",STRING subName="") FOR GRAPH gsql_EMS syntax v2 { 
+
+  TYPEDEF TUPLE<id string, type_name string, strid string, strName string, devName string, off uint, P_previous double, Q_previous double, P double, Q double, PFlag int, QFlag int, pChangeRate DOUBLE, qChangeRate DOUBLE,volt DOUBLE> meas_get;
+
+HeapAccum<meas_get>(10000000, pChangeRate DESC,qChangeRate DESC) @@meas_all;
+HeapAccum<meas_get>(50, pChangeRate DESC,qChangeRate DESC) @@meas;
+  
+SumAccum<INT> @@count_all;
+SumAccum<INT> @@count_Bus;
+SumAccum<INT> @@count_AClinedot;
+SumAccum<INT> @@count_trans2;
+SumAccum<INT> @@count_trans3;
+SumAccum<INT> @@count_CP;
+SumAccum<INT> @@count_CS;
+SumAccum<INT> @@count_Load;
+SumAccum<INT> @@count_Unit;
+SumAccum<string> @subname;
+SumAccum<string> @devtype;
+SumAccum<string> @gridcom_name;
+SetAccum<string> @@Comp_ID;
+SumAccum<DOUBLE> @volt;
+SumAccum<DOUBLE> @p_rate;
+  
+SumAccum<double> @current_p;
+SumAccum<double> @beforeone_p;
+SumAccum<double> @current_q;
+SumAccum<double> @beforeone_q;
+
+
+  comp = {gridcom.*};
+  measSet = {meas.*};
+  
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+  
+  subSet = select t from comp:s-(connected_grid_sub:e)-:t where s.id in @@Comp_ID; 
+  
+  IF subName != "" THEN
+    subSet = select t from comp:s-(connected_grid_sub:e)-:t where s.id in @@Comp_ID AND t.name==subName;
+  END;
+
+  Tsub = select s from subSet:s - (connected_grid_sub:e) -:t
+            accum
+            s.@gridcom_name = t.name;
+
+  Tsub = select s from Tsub:s - (connected_grid_sub:e) -:t
+            accum
+            s.@gridcom_name = t.name;
+  
+  measSet = SELECT s FROM measSet:s - (Meas_Unit:e) -:t 
+            ACCUM s.@p_rate=t.P_rate;
+
+  MeasT = SELECT s FROM measSet:s - (Meas_sub:e) -:t
+            where s.id != "" and s.type_name != "Substation" and t.name != ""
+            ACCUM
+            s.@gridcom_name = t.@gridcom_name,
+            s.@subname = t.name,
+            s.@volt = t.volt
+            POST-ACCUM
+            if (s.type_name == "Load") then
+                s.@devtype = "负荷"
+            else if (s.type_name == "Bus") then
+                s.@devtype = "母线"
+            else if (s.type_name == "Unit") then
+                s.@devtype = "机组"
+            else if (s.type_name == "AClinedot") then 
+                s.@devtype = "线端"
+            else if (s.type_name == "CP") then
+                s.@devtype = "并补"
+            else if (s.type_name == "CS") then
+                s.@devtype = "串补"
+            else if (s.type_name == "trans2") then
+                s.@devtype = "双绕组变压器"
+            else if (s.type_name == "trans3") then
+                s.@devtype = "三绕组变压器"
+            else if (s.type_name == "two_tap") then
+                s.@devtype = "双绕组变压器档位"
+            else if (s.type_name == "three_tap") then
+                s.@devtype = "三绕组变压器档位"
+            else if (s.type_name == "breaker") then
+                s.@devtype = "开关"
+            else if (s.type_name == "disconnector") then
+                s.@devtype = "断路器"
+            end;
+
+  MeasT = select s from MeasT:s - (meas_meas_history:e)- :t
+            ACCUM
+                int currentindex = t.today.size(),
+                if(currentindex < 1) THEN
+                    s.@current_p = 0,
+                    s.@beforeone_p =0,
+                    s.@current_q = 0,
+                    s.@beforeone_q =0
+                else if(currentindex <2) THEN
+                    s.@beforeone_p =0,
+                    s.@current_p = t.today.get(currentindex-1).p,
+                    s.@beforeone_q =0,
+                    s.@current_q = t.today.get(currentindex-1).q
+                else if(currentindex <3) THEN
+                    s.@current_p = t.today.get(currentindex-1).p,
+                    s.@beforeone_p = t.today.get(currentindex -2).p,
+                    s.@current_q = t.today.get(currentindex-1).q,
+                    s.@beforeone_q = t.today.get(currentindex -2).q
+                else 
+                    s.@current_p = t.today.get(currentindex -1).p,
+                    s.@beforeone_p = t.today.get(currentindex -2).p,
+                    s.@current_q = t.today.get(currentindex -1).q,
+                    s.@beforeone_q = t.today.get(currentindex -2).q
+                end;
+
+  MeasT = select s from MeasT:s
+            ACCUM
+            DOUBLE pChangeRate=0,
+            DOUBLE qChangeRate=0,
+            if (s.type_name == "Bus") THEN
+              IF (s.@volt >= 500) THEN
+                  pChangeRate = abs(s.@current_p-s.@beforeone_p)/600*100
+                ELSE IF (s.@volt >= 330 AND s.@volt < 500) THEN
+                  pChangeRate = abs(s.@current_p-s.@beforeone_p)/396*100
+                ELSE IF (s.@volt >= 220 AND s.@volt < 300) THEN
+                  pChangeRate = abs(s.@current_p-s.@beforeone_p)/264*100
+                ELSE
+                  pChangeRate = abs(s.@current_p-s.@beforeone_p)/132*100
+                END,
+              IF (s.@volt >= 500) THEN
+                  qChangeRate = abs(s.@current_q-s.@beforeone_q)/600*100
+                ELSE IF (s.@volt >= 330 AND s.@volt < 500) THEN
+                  qChangeRate = abs(s.@current_q-s.@beforeone_q)/396*100
+                ELSE IF (s.@volt >= 220 AND s.@volt < 300) THEN
+                  qChangeRate = abs(s.@current_q-s.@beforeone_q)/264*100
+                ELSE
+                  qChangeRate = abs(s.@current_q-s.@beforeone_q)/132*100
+                END
+            ELSE IF (s.type_name == "Unit") THEN
+              IF (s.@p_rate != 0) THEN
+                  pChangeRate = abs(s.@current_p-s.@beforeone_p)/s.@p_rate*100
+              END,
+              IF (s.@p_rate != 0) THEN
+                  qChangeRate = abs(s.@current_q-s.@beforeone_q)/s.@p_rate*100
+              END
+            ELSE
+              IF (s.@volt >= 500) THEN
+                  pChangeRate = abs(s.@current_p-s.@beforeone_p)/1082*100
+                ELSE IF (s.@volt >= 330 AND s.@volt < 500) THEN
+                  pChangeRate = abs(s.@current_p-s.@beforeone_p)/686*100
+                ELSE IF (s.@volt >= 220 AND s.@volt < 300) THEN
+                  pChangeRate = abs(s.@current_p-s.@beforeone_p)/305*100
+                ELSE
+                  pChangeRate = abs(s.@current_p-s.@beforeone_p)/114*100
+                END,
+              IF (s.@volt >= 500) THEN
+                  qChangeRate = abs(s.@current_q-s.@beforeone_q)/1082*100
+                ELSE IF (s.@volt >= 330 AND s.@volt < 500) THEN
+                  qChangeRate = abs(s.@current_q-s.@beforeone_q)/686*100
+                ELSE IF (s.@volt >= 220 AND s.@volt < 300) THEN
+                  qChangeRate = abs(s.@current_q-s.@beforeone_q)/305*100
+                ELSE
+                  qChangeRate = abs(s.@current_q-s.@beforeone_q)/114*100
+                END
+            END,
+            IF (pChangeRate > 5 OR qChangeRate > 5) THEN
+              @@count_all += 1,
+					    if (s.type_name == "Load") then
+						    @@count_Load += 1
+					    else if (s.type_name == "Bus") then
+						    @@count_Bus += 1
+					    else if (s.type_name == "Unit") then
+						    @@count_Unit += 1
+					    else if (s.type_name == "AClinedot") then 
+						    @@count_AClinedot += 1
+					    else if (s.type_name == "CP") then
+						    @@count_CP += 1
+					    else if (s.type_name == "CS") then
+						    @@count_CS += 1
+					    else if (s.type_name == "trans2") then
+						    @@count_trans2 += 1
+					    else if (s.type_name == "trans3") then
+						    @@count_trans3 += 1
+					    end
+            END,
+            IF searchTime == "" THEN
+              IF s.previous_time>=time THEN
+                IF (pChangeRate > 5 OR qChangeRate > 5) THEN
+                  @@meas += meas_get(s.id, s.@devtype, s.strid, s.@subname, s.devName, s.off, s.@beforeone_p, s.@beforeone_q, s.@current_p, s.@current_q, s.PFlag, s.QFlag, pChangeRate, qChangeRate,s.@volt),
+                  @@meas_all += meas_get(s.id, s.@devtype, s.strid, s.@subname, s.devName, s.off, s.@beforeone_p, s.@beforeone_q, s.@current_p, s.@current_q, s.PFlag, s.QFlag, pChangeRate, qChangeRate,s.@volt)
+                END
+              END
+            ELSE
+              IF s.previous_time==searchTime THEN
+                IF (pChangeRate > 5 OR qChangeRate > 5) THEN
+                  @@meas += meas_get(s.id, s.@devtype, s.strid, s.@subname, s.devName, s.off, s.@beforeone_p, s.@beforeone_q, s.@current_p, s.@current_q, s.PFlag, s.QFlag, pChangeRate, qChangeRate,s.@volt),
+                  @@meas_all += meas_get(s.id, s.@devtype, s.strid, s.@subname, s.devName, s.off, s.@beforeone_p, s.@beforeone_q, s.@current_p, s.@current_q, s.PFlag, s.QFlag, pChangeRate, qChangeRate,s.@volt)
+                END
+              END
+            END;
+            
+
+  if return_all then
+    print @@meas_all;
+  else
+    print @@meas;
+  END;
+  
+  PRINT @@count_all;
+  PRINT @@count_Unit;
+  PRINT @@count_Bus;
+  PRINT @@count_AClinedot;
+  PRINT @@count_trans2;
+  PRINT @@count_trans3;
+  PRINT @@count_CP;
+  PRINT @@count_CS;
+  PRINT @@count_Load;
+}

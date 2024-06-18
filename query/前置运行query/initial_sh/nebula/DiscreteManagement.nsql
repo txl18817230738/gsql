@@ -1,0 +1,10 @@
+'''
+use ems_v1 match (s:discrete)-[:discrete_disManage]-(t)
+LET
+statusM = t.statusM,
+flagM = t.flagM
+SET
+s.statusM = statusM,
+s.flagM = flagM,
+s.updateFlag = 0
+'''

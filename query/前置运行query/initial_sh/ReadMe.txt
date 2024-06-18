@@ -1,0 +1,1 @@
+nebula 文件中每一个nsql会有一个注释，对应Tigergraph的gsql语句所在位置

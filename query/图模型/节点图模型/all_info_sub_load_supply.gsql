@@ -1,0 +1,111 @@
+create query all_info_sub_load_supply (SET<string> strId, STRING pring_flag="1", STRING cur_sub="") for graph gsql_EMS {
+  typedef tuple <string name, string volt, double p, double p_cal> info;
+  SetAccum<info> @load;
+  
+  SumAccum<double> @cal_P  = 0;
+  SumAccum<double> @cal_Q  = 0;
+  SumAccum<double> @Pld = 0;
+  SumAccum<double> @Qld = 0;
+  SumAccum<double> @sumG  = 0;
+  SumAccum<double> @sumB  = 0;
+  SumAccum<double> @total_load_P = 0;
+  SumAccum<double> @total_load_Q = 0;
+
+  SumAccum<double> @@total_load_p  = 0;
+  SumAccum<double> @@total_load_cal_p  = 0;
+
+  SumAccum<double> @@total_load_self_p  = 0;
+  SumAccum<double> @@total_load_self_cal_p  = 0;
+  SumAccum<INT> @island;
+  
+  sub = {Substation.*};
+  sub = select s from sub:s where s.strid in strId;
+  
+  loads(ANY) = SELECT t FROM sub:s - (connected_Sub_Load:e) ->:t; 
+  T_load = SELECT t FROM loads:s - (topo_load:e) - TopoND:t;
+  T_load = SELECT s 
+	  from T_load: s -(topo_connect:e)->TopoND:t 
+	  accum 
+        double newG = 0,
+        double newB = 0,
+		double tap_ratio = abs(e.transformer_final_turns_ratio),
+		double tap_ratio_square = abs((e.transformer_final_turns_ratio)*(e.transformer_final_turns_ratio)),
+		
+		case when e.transformer_final_turns_ratio == 0 then
+  		    s.@sumG += e.G, 
+            s.@sumB += -1*e.B + e.hB,
+			s.@cal_P += s.SE_Vm*t.SE_Vm * (-1*e.G*cos(s.SE_Va-t.SE_Va) + e.B * sin((s.SE_Va-t.SE_Va))),
+			s.@cal_Q += s.SE_Vm*t.SE_Vm * (-1*e.G*sin(s.SE_Va-t.SE_Va) - e.B * cos(s.SE_Va-t.SE_Va))
+		when e.transformer_final_turns_ratio > 0 then
+			s.@sumG += e.G,
+            s.@sumB += -1*e.B + e.hB, // sqrt
+			newG = e.G*abs(tap_ratio),
+			newB = e.B*abs(tap_ratio),
+			s.@cal_P += s.SE_Vm*t.SE_Vm * (-1*newG*cos(s.SE_Va-t.SE_Va) + newB * sin(s.SE_Va-t.SE_Va)),
+			s.@cal_Q += s.SE_Vm*t.SE_Vm * (-1*newG*sin(s.SE_Va-t.SE_Va) - newB * cos(s.SE_Va-t.SE_Va)) 
+		else
+            s.@sumG += e.G*tap_ratio_square, 
+            s.@sumB += -1*e.B*tap_ratio_square + e.hB,	
+			newG = e.G*abs(tap_ratio),
+			newB = e.B*abs(tap_ratio),
+			s.@cal_P += s.SE_Vm*t.SE_Vm * (-1*newG*cos(s.SE_Va-t.SE_Va) + newB * sin(s.SE_Va-t.SE_Va)),
+			s.@cal_Q += s.SE_Vm*t.SE_Vm * (-1*newG*sin(s.SE_Va-t.SE_Va) - newB * cos(s.SE_Va-t.SE_Va))    
+        end
+ 		post-accum
+		    s.@cal_P += s.SE_Vm*s.SE_Vm*s.@sumG,
+			s.@cal_Q += (-1) * s.SE_Vm*s.SE_Vm*s.@sumB;
+  	T_load = SELECT t
+			FROM T_load:s - (topo_load:e) - l_oad:t
+			ACCUM
+			s.@total_load_P += 1,
+			s.@total_load_Q += 1;
+	T_load = SELECT s
+		    FROM T_load:s - (topo_load:e) - TopoND:t
+		    accum
+			IF (t.@cal_P < 0) THEN
+				s.@Pld = -1/(t.@total_load_P) * t.@cal_P * 100
+			END,
+			IF (t.@cal_Q < 0) THEN
+				s.@Qld = -1/(t.@total_load_Q) * t.@cal_Q * 100
+			END;		
+	T_load = SELECT s
+		 FROM T_load:s
+		 POST-ACCUM		
+		 IF (s.Pimeas != 0) THEN
+			IF ((abs(s.Pimeas - s.@Pld)/s.Pimeas) >= 0.1) THEN
+				s.@Pld = s.Pimeas - (abs(s.Pimeas - s.@Pld)/(s.Pimeas - s.@Pld)) * 0.05 * s.Pimeas
+			END
+		 END,
+		 IF (s.Qimeas != 0) THEN
+			IF ((abs(s.Qimeas - s.@Qld)/s.Qimeas) >= 0.1) THEN
+				s.@Qld = s.Qimeas - (abs(s.Qimeas - s.@Qld)/(s.Qimeas - s.@Qld)) * 0.05 * s.Qimeas
+			END
+		 END;
+		 
+  sub = SELECT s FROM sub:s - (connected_Sub_Load:e) ->:t
+        accum 
+		  s.@load += info(t.name, ToString(t.volt), t.Pimeas, t.@Pld),
+		  @@total_load_p += abs(t.Pimeas),
+                  @@total_load_cal_p += abs(t.@Pld);
+
+  if pring_flag == "1" then
+    print sub;
+  end;
+
+  print @@total_load_p;
+  print @@total_load_cal_p;
+
+  if cur_sub != "" then
+    loads(ANY) = SELECT t FROM sub:s - (connected_Sub_Load:e) ->:t
+                 WHERE s.strid == cur_sub;
+    N_load(ANY) = SELECT t FROM loads:s - (topo_load:e) - TopoND:t
+             WHERE t.island == 1 ACCUM s.@island = 1;
+    N_load = SELECT t FROM sub:s - (connected_Sub_Load:e) ->:t
+             WHERE s.strid == cur_sub and t.@island == 1
+             ACCUM @@total_load_self_p += t.Pimeas,
+                   @@total_load_self_cal_p += t.P;
+
+    print @@total_load_self_p;
+    print @@total_load_self_cal_p; 
+  end;
+}

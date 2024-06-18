@@ -1,0 +1,75 @@
+CREATE QUERY area_load_meas_analysis(string companyID="113715890758877224", bool return_all=true) FOR GRAPH gsql_EMS syntax v2 { 
+  TYPEDEF TUPLE<string area_name, string load_name, string load_id, string sub_name, string sub_id, double volt, double current, double beforeone, double beforetwo, double beforethree> info;
+   
+	HeapAccum<info>(10000000, area_name DESC, sub_name DESC, load_id DESC, load_name DESC) @@result_all;
+	HeapAccum<info>(50, area_name DESC, sub_name DESC, load_id DESC, load_name DESC) @@result_part;
+	SetAccum<string> @@Comp_ID;
+  
+  SumAccum<string> @area_name;
+  SumAccum<string> @sub_name;
+  SumAccum<string> @sub_id;
+  SumAccum<double> @current;
+  SumAccum<double> @beforeone;
+  SumAccum<double> @beforetwo;
+  SumAccum<double> @beforethree;
+  
+  T0 = {TopoND.*};
+	sub = {Substation.*};
+	comp = {gridcom.*};
+
+
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  
+  
+  //区域 厂站 负荷
+  com_load = select t2 from comp:s-(connected_grid_sub:e1)-:t1 -(connected_Sub_Load>:e2)-l_oad:t2-(topo_load:e)-:t where s.id in @@Comp_ID and t.island ==1
+              ACCUM
+                t2.@area_name = s.name,
+                t2.@sub_name = t1.name,
+                t2.@sub_id = t1.strid;
+  
+  load_mease_set = select s from com_load:s -(Load_meas_history:e)-:t 
+              ACCUM
+                int currentindex = t.today.size(),
+                if(currentindex < 1) THEN
+                    s.@current = 0,
+                    s.@beforeone =0,
+                    s.@beforetwo =0,
+                    s.@beforethree =0
+                else if(currentindex <2) THEN
+                    s.@beforeone =0,
+                    s.@beforetwo =0,
+                    s.@beforethree =0,
+                    s.@current = t.today.get(currentindex-1).p
+                else if(currentindex <3) THEN
+                    s.@beforetwo =0,
+                    s.@beforethree =0,
+                    s.@current = t.today.get(currentindex-1).p,
+                    s.@beforeone = t.today.get(currentindex -2).p
+                else if(currentindex <4) THEN
+                    s.@beforethree =0,
+                    s.@current = t.today.get(currentindex -1).p,
+                    s.@beforeone = t.today.get(currentindex -2).p,
+                    s.@beforetwo = t.today.get(currentindex -3).p
+                else 
+                    s.@current = t.today.get(currentindex -1).p,
+                    s.@beforeone = t.today.get(currentindex -2).p,
+                    s.@beforetwo = t.today.get(currentindex -3).p,
+                    s.@beforethree = t.today.get(currentindex -4).p
+                end;
+  
+  Result_set = select s from load_mease_set:s 
+              ACCUM 
+                @@result_all += info(s.@area_name,s.name,s.strid,s.@sub_name,s.@sub_id,s.volt,s.@current,s.@beforeone,s.@beforetwo,s.@beforethree),
+                @@result_part += info(s.@area_name,s.name,s.strid,s.@sub_name,s.@sub_id,s.volt,s.@current,s.@beforeone,s.@beforetwo,s.@beforethree);
+  if return_all then
+    print @@result_all;
+  else
+    print @@result_part;
+  end;
+}

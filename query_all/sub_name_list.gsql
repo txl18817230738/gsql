@@ -1,0 +1,9 @@
+create query sub_name_list() for graph gsql_EMS{
+    SetAccum<STRING> @@sub_set;
+    subSet = {Substation.*};
+    subSet = select s from subSet:s 
+             where s.subtype != "虚拟T接站"
+             accum @@sub_set+=s.name;
+     
+    print @@sub_set;
+}

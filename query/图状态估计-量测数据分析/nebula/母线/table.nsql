@@ -1,0 +1,4 @@
+"""
+use ems match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:connected_Sub_Bus]->(t:`BUS`)<-[e:topo_bus]-(t2:TopoND) filter where startid.id = "113715890758877224" and t.island = 1
+return t.name, t.Substation, s.strid, t2.TOPOID, t2.Ri_V as voltWeight, t2.Ri_vP as bus_P_weight, t2.Ri_vQ as bus_Q_weight, t.volt, t.Pimeas as bus_v, t2.ZJP, t2.ZJQ
+"""

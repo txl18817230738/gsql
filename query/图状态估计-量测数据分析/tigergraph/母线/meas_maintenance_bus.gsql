@@ -1,0 +1,202 @@
+create query meas_maintenance_bus (string companyID="113715890758877224", bool return_all=true)
+for graph gsql_EMS {
+	
+	TYPEDEF TUPLE<string bus_name, string sub_name, string sub_id, int topoid, double bus_V_weight, double bus_P_weight, double bus_Q_weight, double volt, double bus_v, int ZJP, int ZJQ>  bus_SE_weight_list;
+	SetAccum<string> @@Comp_ID;
+  SumAccum<string> @sub_id;
+	SumAccum<INT> @@count_all;
+  SumAccum<double> @Pimeas_v;
+  OrAccum<bool> @isbus;
+  HeapAccum<bus_SE_weight_list>(10000000, bus_name DESC, sub_name DESC, volt DESC) @@bus_SE_all;
+	HeapAccum<bus_SE_weight_list>(50, bus_name DESC, sub_name DESC, volt DESC) @@bus_SE_part;
+	
+	
+	SumAccum<INT> @@count_P0;
+	SumAccum<INT> @@count_P0Q0;
+	SumAccum<INT> @@count_P1Q1;
+  
+  SumAccum<INT> @@count_500;
+  SumAccum<INT> @@count_500_P0;
+  SumAccum<INT> @@count_500_P0Q0;
+  SumAccum<INT> @@count_500_P1Q1;
+ 
+  
+  SumAccum<INT> @@count_220;
+  SumAccum<INT> @@count_220_P0;
+  SumAccum<INT> @@count_220_P0Q0;
+  SumAccum<INT> @@count_220_P1Q1;
+  
+  
+  SumAccum<INT> @@count_110;
+  SumAccum<INT> @@count_110_P0;
+  SumAccum<INT> @@count_110_P0Q0;
+  SumAccum<INT> @@count_110_P1Q1;
+  
+  
+  SumAccum<INT> @@count_35;
+  SumAccum<INT> @@count_35_P0;
+  SumAccum<INT> @@count_35_P0Q0;
+  SumAccum<INT> @@count_35_P1Q1;
+  
+  SumAccum<INT> @@count_10;
+  SumAccum<INT> @@count_10_P0;
+  SumAccum<INT> @@count_10_P0Q0;
+  SumAccum<INT> @@count_10_P1Q1;
+  
+  SumAccum<INT> @@count_other;
+  SumAccum<INT> @@count_other_P0;
+  SumAccum<INT> @@count_other_P0Q0;
+  SumAccum<INT> @@count_other_P1Q1;
+	
+	
+	sub = {Substation.*};
+    comp = {gridcom.*};
+
+    start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID; 
+        
+ 
+   TBusSet = select t from sub:s - (connected_Sub_Bus:e) ->:t
+        accum t.@sub_id = s.strid;
+
+   TBus = select s
+             from TBusSet:s - (topo_bus:e) -:t
+             where t.island == 1
+             accum 
+						string P_result = "无实测",
+						@@bus_SE_all += bus_SE_weight_list(s.name, s.Substation, s.@sub_id, t.TOPOID, t.Ri_V, t.Ri_vP, t.Ri_vQ, s.volt, s.Pimeas, t.ZJP, t.ZJQ),
+						@@bus_SE_part += bus_SE_weight_list(s.name, s.Substation, s.@sub_id, t.TOPOID, t.Ri_V, t.Ri_vP, t.Ri_vQ, s.volt, s.Pimeas, t.ZJP, t.ZJQ),
+						@@count_all += 1,
+						double volt = s.volt,
+				  if volt >= 500 then
+                  @@count_500 += 1,
+                  if t.ZJP == 1 and t.ZJQ == 0 then
+                    @@count_500_P0+=1,
+                    @@count_P0+=1
+                  else if t.ZJP == 1 and t.ZJQ == 1 then
+                    @@count_500_P0Q0 +=1,
+                    @@count_P0Q0+=1
+                  else if t.ZJP == 0 and t.ZJQ == 0 then
+                    @@count_500_P1Q1 +=1,
+                    @@count_P1Q1+=1            
+                  end            
+                
+                else if volt >= 220 then
+                  @@count_220+=1,
+                  if t.ZJP == 1 and t.ZJQ == 0 then
+                    @@count_220_P0+=1,
+                    @@count_P0+=1
+                  else if t.ZJP == 1 and t.ZJQ == 1 then
+                    @@count_220_P0Q0 +=1,
+                    @@count_P0Q0+=1
+                  else if t.ZJP == 0 and t.ZJQ == 0 then
+                    @@count_220_P1Q1 +=1,
+                    @@count_P1Q1+=1            
+                  end  
+                  
+                else if volt >= 110 then
+                  @@count_110+=1,
+                  if t.ZJP == 1 and t.ZJQ == 0 then
+                    @@count_110_P0+=1,
+                    @@count_P0+=1
+                  else if t.ZJP == 1 and t.ZJQ == 1 then
+                    @@count_110_P0Q0 +=1,
+                    @@count_P0Q0+=1
+                  else if t.ZJP == 0 and t.ZJQ == 0 then
+                    @@count_110_P1Q1 +=1,
+                    @@count_P1Q1+=1            
+                  end
+                  
+                else if volt >= 34.5 then
+                  @@count_35+=1,
+                  if t.ZJP == 1 and t.ZJQ == 0 then
+                    @@count_35_P0+=1,
+                    @@count_P0+=1
+                  else if t.ZJP == 1 and t.ZJQ == 1 then
+                    @@count_35_P0Q0 +=1,
+                    @@count_P0Q0+=1
+                  else if t.ZJP == 0 and t.ZJQ == 0 then
+                    @@count_35_P1Q1 +=1,
+                    @@count_P1Q1+=1            
+                  end
+  
+                else if volt >= 10 then
+                  @@count_10+=1,
+                  if t.ZJP == 1 and t.ZJQ == 0 then
+                    @@count_10_P0+=1,
+                    @@count_P0+=1
+                  else if t.ZJP == 1 and t.ZJQ == 1 then
+                    @@count_10_P0Q0 +=1,
+                    @@count_P0Q0+=1
+                  else if t.ZJP == 0 and t.ZJQ == 0 then
+                    @@count_10_P1Q1 +=1,
+                    @@count_P1Q1+=1            
+                  end
+                  
+                else
+                  @@count_other+=1,
+                  if t.ZJP == 1 and t.ZJQ == 0 then
+                    @@count_other_P0+=1,
+                    @@count_P0+=1
+                  else if t.ZJP == 1 and t.ZJQ == 1 then
+                    @@count_other_P0Q0 +=1,
+                    @@count_P0Q0+=1
+                  else if t.ZJP == 0 and t.ZJQ == 0 then
+                    @@count_other_P1Q1 +=1,
+                    @@count_P1Q1+=1            
+                  end
+                end;
+						
+				
+	if return_all then
+    print @@bus_SE_all;
+  else
+    print @@bus_SE_part;
+  end;
+ 
+  print @@count_P0;
+	print @@count_P0Q0;
+	print @@count_P1Q1;
+  
+  print @@count_500;
+  print @@count_500_P0;
+  print @@count_500_P0Q0;
+  print @@count_500_P1Q1;
+ 
+  
+  print @@count_220;
+  print @@count_220_P0;
+  print @@count_220_P0Q0;
+  print @@count_220_P1Q1;
+  
+  
+  print @@count_110;
+  print @@count_110_P0;
+  print @@count_110_P0Q0;
+  print @@count_110_P1Q1;
+  
+  
+  print @@count_35;
+  print @@count_35_P0;
+  print @@count_35_P0Q0;
+  print @@count_35_P1Q1;
+  
+  print @@count_10;
+  print @@count_10_P0;
+  print @@count_10_P0Q0;
+  print @@count_10_P1Q1;
+  
+  print @@count_other;
+  print @@count_other_P0;
+  print @@count_other_P0Q0;
+  print @@count_other_P1Q1;
+  
+  print @@count_all;
+  
+  
+}

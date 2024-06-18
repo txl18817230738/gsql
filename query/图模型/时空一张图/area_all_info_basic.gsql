@@ -1,0 +1,479 @@
+CREATE QUERY area_all_info_basic(string companyID="113715890758877224") FOR GRAPH gsql_EMS {
+  TYPEDEF TUPLE <string id, string strname, string name, string volt, string str_type, double p_rate, double total_meas, double total_cal, double total_overload, double total_cal_overload, string overload_type> info;
+  TYPEDEF TUPLE <double volt, double p_rate, double p, double cal_p, double q, double cal_q> heap_info;
+  TYPEDEF TUPLE <string name, double p_rate, string volt, string device_type, double p, double cal_p, double mis_p, double q,  double cal_q, double mis_q, string flag> info2;
+  HeapAccum<heap_info>(100000000, volt desc) @trans_volt_info;
+  
+  HeapAccum<info>(100000000, total_overload DESC, name ASC, strname ASC) @@result;
+  HeapAccum<info>(50, total_overload DESC, name ASC, strname ASC) @@result_part;
+  
+  SetAccum<string> @@Comp_ID;
+  SumAccum<double> @@total_unit_p;
+  SumAccum<double> @@total_load_p;
+  SumAccum<double> @@total_unit_pest;
+  SumAccum<double> @@total_load_pest;
+  SumAccum<double> @@total_gen;
+  SumAccum<double> @@total_load;
+  
+  SumAccum<double> @@water_total_p;
+  SumAccum<double> @@water_total_p_rate;
+  SumAccum<double> @@fire_total_p;
+  SumAccum<double> @@fire_total_p_rate;
+  SumAccum<double> @@wind_total_p;
+  SumAccum<double> @@wind_total_p_rate;
+  SumAccum<double> @@load_total_p;
+  SumAccum<double> @@load_total_p_rate;
+  SumAccum<double> @@other_total_p;
+  SumAccum<double> @@other_total_p_rate;
+  SumAccum<double> @@nuclear_total_p;
+  SumAccum<double> @@nuclear_total_p_rate;
+  SumAccum<double> @@storage_total_p;
+  SumAccum<double> @@storage_total_p_rate;
+  SumAccum<double> @@distributed_total_p;
+  SumAccum<double> @@distributed_total_p_rate;
+  
+  SumAccum<double> @@total_p_500;
+  SumAccum<double> @@total_p_rate_500;
+  SumAccum<double> @@total_p_220;
+  SumAccum<double> @@total_p_rate_220;
+  SumAccum<double> @@total_p_110;
+  SumAccum<double> @@total_p_rate_110;
+  SumAccum<double> @@total_p_35;
+  SumAccum<double> @@total_p_rate_35;
+  SumAccum<double> @@total_p_10;
+  SumAccum<double> @@total_p_rate_10;
+  
+  SumAccum<INT> @@total_acline;
+  SumAccum<INT> @@total_acline_20;
+  SumAccum<INT> @@total_acline_20_80;
+  SumAccum<INT> @@total_acline_80_100;
+  SumAccum<INT> @@total_acline_100;
+  
+  SumAccum<INT> @@total_bus;
+  SumAccum<INT> @@total_bus_normal;
+  SumAccum<INT> @@total_bus_lower;
+  SumAccum<INT> @@total_bus_higher;
+
+  SumAccum<double> @@total_exchange;
+  SumAccum<double> @@total_loss;
+  SumAccum<double> @@total_input;
+  SumAccum<double> @@total_output;
+  
+  
+  SetAccum<string> @subtype;
+  SetAccum<double> @sub_p;
+  SetAccum<double> @sub_p_rate;
+  MapAccum<string, double> @@trans_Map;
+  ListAccum<info2> @trans;
+  
+  
+  MapAccum<string, double> @@mLineP;
+  MapAccum<string, double> @@LineP;
+  MapAccum<string, double> @@LineP_res;
+  MapAccum<string, double> @@mLineQ;
+  MapAccum<string, double> @@LineQ;
+  MapAccum<string, double> @@LineQ_res;
+  SumAccum<double> @S_rate = 0; 
+  
+  sub = {Substation.*};
+  comp = {gridcom.*};
+
+  start_comp = select s from comp:s where s.id == companyID 
+    accum 
+      @@Comp_ID+= s.id,
+      @@total_exchange += (s.input_p - s.output_p),
+      @@total_input += s.input_p,
+      @@total_output += s.output_p,
+      @@nuclear_total_p += s.nuclear_p,
+      // @@distributed_total_p = s.distributed_p,
+      @@storage_total_p += s.storage_p,
+      @@total_gen += s.total_gen,
+      @@total_loss += s.total_loss,
+      @@total_load += s.total_load,
+      @@water_total_p += s.water_p,
+      @@fire_total_p += s.fire_p,
+      @@wind_total_p += s.wind_p,
+      @@load_total_p += s.solar_p,
+      @@other_total_p += s.otherpower_p,
+      @@nuclear_total_p += s.nuclear_p,
+      @@storage_total_p += s.storage_p,
+      @@distributed_total_p += s.distributed_p;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID; 
+  
+  equips(ANY) = SELECT t FROM sub:s - ((connected_Sub_Unit|connected_Sub_Trans_two|connected_Sub_Trans_three|connected_Sub_Load|connected_Sub_Aclinedot|connected_Sub_Bus):e) ->:t
+                ACCUM t.@subtype = s.subtype;
+  
+  T_bus = SELECT t FROM equips:s - (topo_bus:e) - TopoND:t
+          WHERE t.island == 1;
+  T_bus = SELECT s FROM T_bus:s - (topo_connect:e) - TopoND:t
+          where s.island == 1 and t.island == 1
+          post-accum
+          @@total_bus+=1,
+          if (s.PF_Vm >= s.up_V) then @@total_bus_higher+=1
+          else if (s.PF_Vm <= s.lo_V) then @@total_bus_lower+=1
+          else @@total_bus_normal+=1
+          end;
+  
+  T_unit = SELECT s FROM equips:s - (topo_unit:e) - TopoND:t
+           WHERE t.island == 1 and s.Gentype != "虚拟机组" and s.Gentype != "交换机组"
+           ACCUM 
+           //@@total_unit_p += s.Pimeas,
+           if (s.Pimeas >= 0) then
+               @@total_unit_p += s.Pimeas
+           else
+               @@total_load_p += abs(s.Pimeas)
+           end,
+           if (s.P > 0) then
+               @@total_unit_pest += s.P
+           else if (s.P < 0) then
+               @@total_load_pest += - s.P
+           end,
+           if s.@subtype.contains("风电场") then
+               @@wind_total_p_rate += abs(s.P_rate)
+           else if s.@subtype.contains("火电厂") then
+               @@fire_total_p_rate += abs(s.P_rate)
+           else if s.@subtype.contains("光伏站") then
+               @@load_total_p_rate += abs(s.P_rate)
+           else if s.@subtype.contains("水电厂") or s.@subtype.contains("小水电") then
+               @@water_total_p_rate += abs(s.P_rate)
+           else
+               @@other_total_p_rate += abs(s.P_rate)
+           end;
+
+
+                  
+  T_load = SELECT s FROM equips:s - (topo_load:e) - TopoND:t
+           WHERE t.island == 1
+           post-accum 
+             if (s.Pimeas >= 0) then
+               @@total_load_p += s.Pimeas
+             else
+               @@total_unit_p += abs(s.Pimeas)
+             end,
+             if (s.P > 0) then
+               @@total_load_pest += s.P
+             else if (s.P < 0) then
+               @@total_unit_pest += abs(s.P)
+             end;
+           //@@total_load_p += s.Pimeas,
+           //@@total_load_pest += s.P;
+
+
+    
+  T_aclinedot = SELECT t FROM equips:s - (topo_aclinedot:e) - TopoND:t
+                WHERE t.island == 1;
+  T_aclinedot = select s 
+    from T_aclinedot:s -(topo_connect:e)->TopoND:t
+    WHERE s.island == 1 and t.island == 1
+    accum
+    double tap_ratio = abs(e.transformer_final_turns_ratio),
+    double tap_ratio_square = abs((e.transformer_final_turns_ratio)*(e.transformer_final_turns_ratio)),            
+    case when (e.transformer_final_turns_ratio == 0) then
+        e.P_TLPF = s.SE_Vm * s.SE_Vm * e.G - s.SE_Vm * t.SE_Vm * (e.G*cos(s.SE_Va - t.SE_Va) + (-e.B)*sin(s.SE_Va - t.SE_Va)),
+        e.Q_TLPF = - s.SE_Vm * s.SE_Vm * (-e.B) - s.SE_Vm * t.SE_Vm * (e.G*sin(s.SE_Va - t.SE_Va) - (-e.B)*cos(s.SE_Va - t.SE_Va))
+    when (e.transformer_final_turns_ratio > 0) then
+        e.P_TLPF = s.SE_Vm * s.SE_Vm * e.G - s.SE_Vm * t.SE_Vm * ((e.G*tap_ratio)*cos(s.SE_Va - t.SE_Va) + (-e.B*tap_ratio)*sin(s.SE_Va - t.SE_Va)),
+        e.Q_TLPF = - s.SE_Vm * s.SE_Vm * (-e.B) - s.SE_Vm * t.SE_Vm * ((e.G*tap_ratio)*sin(s.SE_Va - t.SE_Va) - (-e.B*tap_ratio)*cos(s.SE_Va - t.SE_Va))
+    else
+        e.P_TLPF = s.SE_Vm * s.SE_Vm * e.G * tap_ratio_square - s.SE_Vm * t.SE_Vm * ((e.G*tap_ratio)*cos(s.SE_Va - t.SE_Va) + (-e.B*tap_ratio)*sin(s.SE_Va - t.SE_Va)),
+        e.Q_TLPF = - s.SE_Vm * s.SE_Vm * (-e.B * tap_ratio_square) - s.SE_Vm * t.SE_Vm * ((e.G*tap_ratio)*sin(s.SE_Va - t.SE_Va) - (-e.B*tap_ratio)*cos(s.SE_Va - t.SE_Va))
+    end;    
+  T_aclinedot = SELECT s   
+         FROM T_aclinedot:s-(topo_connect:e)->TopoND:t
+         where s.island == 1 and t.island == 1
+         ACCUM
+         double p_rate = e.line_Q1,
+         if (e.R.size() > 0) then
+            p_rate = e.line_Q1*100/e.R.size()
+         end,   
+         if abs(p_rate) == 999900 then
+            p_rate = 0
+         end,      
+         FOREACH i in range [0, e.X.size()-1] DO        
+            IF e.device_type =="AC传输线" THEN
+                double meas_p = e.M_P_TLPF_list.get(i)*100,
+                double meas_q = e.M_Q_TLPF_list.get(i)*100,
+                double total_meas = sqrt(meas_p*meas_p+meas_q*meas_q),
+                double meas_overload = 0,
+                if abs(p_rate) >= 0.5 then
+                  meas_overload = abs(total_meas*100/p_rate)
+                end,
+                @@total_acline+=1,
+                if meas_overload >= 0 and meas_overload<=20 then
+                  @@total_acline_20+=1
+                else if meas_overload > 20 and meas_overload<=80 then
+                  @@total_acline_20_80+=1
+                else if meas_overload > 80 and meas_overload<=100 then
+                  @@total_acline_80_100+=1
+                else if meas_overload > 100 then
+                  @@total_acline_100+=1
+                end
+            END
+        END;
+  
+  
+  T_trans2 = SELECT t FROM equips:s - (topo_Tx_Two:e) - TopoND:t
+             WHERE t.island == 1
+             post-accum
+             @@trans_Map += (s.name -> s.S);
+             
+  T_trans2 = select t 
+    from T_trans2:s -(topo_connect:e)->TopoND:t
+    WHERE s.island == 1 and t.island == 1
+    accum
+    double tap_ratio = abs(e.transformer_final_turns_ratio),
+    double tap_ratio_square = abs((e.transformer_final_turns_ratio)*(e.transformer_final_turns_ratio)),            
+    case when (e.transformer_final_turns_ratio == 0) then
+        e.P_TLPF = s.SE_Vm * s.SE_Vm * e.G - s.SE_Vm * t.SE_Vm * (e.G*cos(s.SE_Va - t.SE_Va) + (-e.B)*sin(s.SE_Va - t.SE_Va)),
+        e.Q_TLPF = - s.SE_Vm * s.SE_Vm * (-e.B) - s.SE_Vm * t.SE_Vm * (e.G*sin(s.SE_Va - t.SE_Va) - (-e.B)*cos(s.SE_Va - t.SE_Va))
+    when (e.transformer_final_turns_ratio > 0) then
+        e.P_TLPF = s.SE_Vm * s.SE_Vm * e.G - s.SE_Vm * t.SE_Vm * ((e.G*tap_ratio)*cos(s.SE_Va - t.SE_Va) + (-e.B*tap_ratio)*sin(s.SE_Va - t.SE_Va)),
+        e.Q_TLPF = - s.SE_Vm * s.SE_Vm * (-e.B) - s.SE_Vm * t.SE_Vm * ((e.G*tap_ratio)*sin(s.SE_Va - t.SE_Va) - (-e.B*tap_ratio)*cos(s.SE_Va - t.SE_Va))
+    else
+        e.P_TLPF = s.SE_Vm * s.SE_Vm * e.G * tap_ratio_square - s.SE_Vm * t.SE_Vm * ((e.G*tap_ratio)*cos(s.SE_Va - t.SE_Va) + (-e.B*tap_ratio)*sin(s.SE_Va - t.SE_Va)),
+        e.Q_TLPF = - s.SE_Vm * s.SE_Vm * (-e.B * tap_ratio_square) - s.SE_Vm * t.SE_Vm * ((e.G*tap_ratio)*sin(s.SE_Va - t.SE_Va) - (-e.B*tap_ratio)*cos(s.SE_Va - t.SE_Va))
+    end;
+    
+  T_trans2_1 = select s
+        from T_trans2:s -(topo_connect:e)->TopoND:t
+        WHERE e.reverse == -1 and s.island == 1 and t.island == 1
+        accum
+        FOREACH i in range [0, e.X.size()-1] DO
+            @@mLineP += (e.edge_name.get(i) -> e.M_P_TLPF_list.get(i)*100),
+            case when (e.transformer_final_turns_ratio == 0) then
+                @@LineP += ( e.edge_name.get(i) -> (s.SE_Vm * s.SE_Vm * e.G_list.get(i) - s.SE_Vm * t.SE_Vm * (e.G_list.get(i)*cos(s.SE_Va - t.SE_Va) + (-e.B_list.get(i)*sin(s.SE_Va - t.SE_Va))))*100) // To calculate the active power based on the G/B on each branch rather using the average value
+            else
+                @@LineP += (e.edge_name.get(i) -> e.P_TLPF/e.X.size()*100)
+            end,
+        IF e.M_P_TLPF_list.get(i) != 0 THEN
+                case when(e.transformer_final_turns_ratio == 0) then
+                    @@LineP_res += (e.edge_name.get(i) -> ((s.SE_Vm * s.SE_Vm * e.G_list.get(i) - s.SE_Vm * t.SE_Vm * (e.G_list.get(i)*cos(s.SE_Va - t.SE_Va) + (-e.B_list.get(i)*sin(s.SE_Va - t.SE_Va))))-e.M_P_TLPF_list.get(i))*100)
+                else
+                    @@LineP_res += (e.edge_name.get(i) -> (e.P_TLPF/e.X.size()-e.M_P_TLPF_list.get(i))*100)
+                end
+       ELSE
+        @@LineP_res += (e.edge_name.get(i) -> 0)
+       END,
+       @@mLineQ += (e.edge_name.get(i) -> e.M_Q_TLPF_list.get(i)*100),
+       if (e.transformer_final_turns_ratio == 0) then
+                @@LineQ += (e.edge_name.get(i) -> (- s.SE_Vm * s.SE_Vm * (-e.B_list.get(i)) - s.SE_Vm * t.SE_Vm * (e.G_list.get(i)*sin(s.SE_Va - t.SE_Va) - (-e.B_list.get(i))*cos(s.SE_Va - t.SE_Va)))*100) // To calculate the active power based on the G/B on each branch rather using the average value
+            else
+                @@LineQ += (e.edge_name.get(i) -> e.Q_TLPF/e.X.size()*100)
+            end,
+       IF e.M_Q_TLPF_list.get(i) != 0 THEN
+                case when (e.transformer_final_turns_ratio == 0) then
+                    @@LineQ_res += (e.edge_name.get(i) -> ((- s.SE_Vm * s.SE_Vm * (-e.B_list.get(i)) - s.SE_Vm * t.SE_Vm * (e.G_list.get(i)*sin(s.SE_Va - t.SE_Va) - (-e.B_list.get(i))*cos(s.SE_Va - t.SE_Va)))-e.M_Q_TLPF_list.get(i))*100)
+                else
+                    @@LineQ_res += (e.edge_name.get(i) -> (e.Q_TLPF/e.X.size()-e.M_Q_TLPF_list.get(i))*100)
+                end
+           ELSE
+        @@LineQ_res += (e.edge_name.get(i) -> 0)
+       END
+    END;
+
+  T_trans2 = SELECT s   
+         FROM T_trans2:s-(topo_connect:e)->TopoND:t
+         where e.reverse == 1 and s.island == 1 and t.island == 1
+         ACCUM             
+         FOREACH i in range [0, e.X.size()-1] DO
+           double P_res = 0,
+           double Q_res = 0,
+           IF(e.M_P_TLPF_list.get(i) != 0) THEN
+                if (e.transformer_final_turns_ratio == 0) then
+                    P_res = ((s.SE_Vm * s.SE_Vm * e.G_list.get(i) - s.SE_Vm * t.SE_Vm * (e.G_list.get(i)*cos(s.SE_Va - t.SE_Va) + (-e.B_list.get(i)*sin(s.SE_Va - t.SE_Va))))-e.M_P_TLPF_list.get(i))*100
+                else
+                    P_res = (e.P_TLPF/e.X.size()-e.M_P_TLPF_list.get(i))*100
+                end
+            ELSE
+                P_res = 0
+            END,
+            IF(e.M_Q_TLPF_list.get(i) != 0) THEN
+                if (e.transformer_final_turns_ratio == 0) then
+                    Q_res = ((- s.SE_Vm * s.SE_Vm * (-e.B_list.get(i)) - s.SE_Vm * t.SE_Vm * (e.G_list.get(i)*sin(s.SE_Va - t.SE_Va) - (-e.B_list.get(i))*cos(s.SE_Va - t.SE_Va)))-e.M_Q_TLPF_list.get(i))*100
+                else
+                    Q_res = (e.Q_TLPF/e.X.size()-e.M_Q_TLPF_list.get(i))*100
+                end
+            ELSE
+                Q_res = 0
+            END,
+            IF e.device_type =="双绕组变压器" THEN            
+              if (e.transformer_final_turns_ratio == 0) then
+                s.@trans+= info2(e.edge_name.get(i),  0,e.volt, e.device_type,e.M_P_TLPF_list.get(i)*100, (s.SE_Vm * s.SE_Vm * e.G_list.get(i) - s.SE_Vm * t.SE_Vm * (e.G_list.get(i)*cos(s.SE_Va - t.SE_Va) + (-e.B_list.get(i)*sin(s.SE_Va - t.SE_Va))))*100, P_res,e.M_Q_TLPF_list.get(i)*100, (- s.SE_Vm * s.SE_Vm * (-e.B_list.get(i)) - s.SE_Vm * t.SE_Vm * (e.G_list.get(i)*sin(s.SE_Va - t.SE_Va) - (-e.B_list.get(i))*cos(s.SE_Va - t.SE_Va)))*100, Q_res,"首"),
+                s.@trans+= info2(e.edge_name.get(i), 0, e.volt, e.device_type,@@mLineP.get(e.edge_name.get(i)), @@LineP.get(e.edge_name.get(i)), @@LineP_res.get(e.edge_name.get(i)),@@mLineQ.get(e.edge_name.get(i)), @@LineQ.get(e.edge_name.get(i)), @@LineQ_res.get(e.edge_name.get(i)),"末")
+              else
+                s.@trans+= info2(e.edge_name.get(i), 0, e.volt, e.device_type,e.M_P_TLPF_list.get(i)*100, e.P_TLPF/e.X.size()*100, P_res,e.M_Q_TLPF_list.get(i)*100, e.Q_TLPF/e.X.size()*100, Q_res,"首"),
+                s.@trans+= info2(e.edge_name.get(i), 0, e.volt, e.device_type,@@mLineP.get(e.edge_name.get(i)), @@LineP.get(e.edge_name.get(i)), @@LineP_res.get(e.edge_name.get(i)),@@mLineQ.get(e.edge_name.get(i)), @@LineQ.get(e.edge_name.get(i)), @@LineQ_res.get(e.edge_name.get(i)),"末")
+              end
+            END
+         END;
+             
+  T_trans3 = SELECT t FROM equips:s - (topo_Tx_Three:e) - TopoND:t
+            WHERE t.island == 1
+            post-accum
+            @@trans_Map += (s.name -> s.S);
+            
+  T_trans3 = select s 
+    from T_trans3:s -(topo_connect:e)->TopoND:t
+    WHERE s.island == 1 and t.island == 1
+    accum
+    double tap_ratio = abs(e.transformer_final_turns_ratio),
+    double tap_ratio_square = abs((e.transformer_final_turns_ratio)*(e.transformer_final_turns_ratio)),            
+    case when (e.transformer_final_turns_ratio == 0) then
+        e.P_TLPF = s.SE_Vm * s.SE_Vm * e.G - s.SE_Vm * t.SE_Vm * (e.G*cos(s.SE_Va - t.SE_Va) + (-e.B)*sin(s.SE_Va - t.SE_Va)),
+        e.Q_TLPF = - s.SE_Vm * s.SE_Vm * (-e.B) - s.SE_Vm * t.SE_Vm * (e.G*sin(s.SE_Va - t.SE_Va) - (-e.B)*cos(s.SE_Va - t.SE_Va))
+    when (e.transformer_final_turns_ratio > 0) then
+        e.P_TLPF = s.SE_Vm * s.SE_Vm * e.G - s.SE_Vm * t.SE_Vm * ((e.G*tap_ratio)*cos(s.SE_Va - t.SE_Va) + (-e.B*tap_ratio)*sin(s.SE_Va - t.SE_Va)),
+        e.Q_TLPF = - s.SE_Vm * s.SE_Vm * (-e.B) - s.SE_Vm * t.SE_Vm * ((e.G*tap_ratio)*sin(s.SE_Va - t.SE_Va) - (-e.B*tap_ratio)*cos(s.SE_Va - t.SE_Va))
+    else
+        e.P_TLPF = s.SE_Vm * s.SE_Vm * e.G * tap_ratio_square - s.SE_Vm * t.SE_Vm * ((e.G*tap_ratio)*cos(s.SE_Va - t.SE_Va) + (-e.B*tap_ratio)*sin(s.SE_Va - t.SE_Va)),
+        e.Q_TLPF = - s.SE_Vm * s.SE_Vm * (-e.B * tap_ratio_square) - s.SE_Vm * t.SE_Vm * ((e.G*tap_ratio)*sin(s.SE_Va - t.SE_Va) - (-e.B*tap_ratio)*cos(s.SE_Va - t.SE_Va))
+    end;    
+  T_trans3 = SELECT s   
+         FROM T_trans3:s-(topo_connect:e)->TopoND:t
+         where e.reverse == 1 and s.island == 1 and t.island == 1
+         ACCUM        
+         FOREACH i in range [0, e.X.size()-1] DO
+             double P_res = 0,
+             double Q_res = 0,    
+             IF(e.M_P_TLPF_list.get(i) != 0) THEN
+                if (e.transformer_final_turns_ratio == 0) then
+                    P_res = ((s.SE_Vm * s.SE_Vm * e.G_list.get(i) - s.SE_Vm * t.SE_Vm * (e.G_list.get(i)*cos(s.SE_Va - t.SE_Va) + (-e.B_list.get(i)*sin(s.SE_Va - t.SE_Va))))-e.M_P_TLPF_list.get(i))*100
+                else
+                    P_res = (e.P_TLPF/e.X.size()-e.M_P_TLPF_list.get(i))*100
+                end
+            ELSE
+                P_res = 0
+            END,
+            IF(e.M_Q_TLPF_list.get(i) != 0) THEN
+                if (e.transformer_final_turns_ratio == 0) then
+                    Q_res = ((- s.SE_Vm * s.SE_Vm * (-e.B_list.get(i)) - s.SE_Vm * t.SE_Vm * (e.G_list.get(i)*sin(s.SE_Va - t.SE_Va) - (-e.B_list.get(i))*cos(s.SE_Va - t.SE_Va)))-e.M_Q_TLPF_list.get(i))*100
+                else
+                    Q_res = (e.Q_TLPF/e.X.size()-e.M_Q_TLPF_list.get(i))*100
+                end
+            ELSE
+                Q_res = 0
+            END,    
+            IF e.device_type =="三绕组变压器" THEN       
+              if (e.transformer_final_turns_ratio == 0) then
+                s.@trans+= info2(e.edge_name.get(i), 0, e.volt,e.device_type, e.M_P_TLPF_list.get(i)*100, (s.SE_Vm * s.SE_Vm * e.G_list.get(i) - s.SE_Vm * t.SE_Vm * (e.G_list.get(i)*cos(s.SE_Va - t.SE_Va) + (-e.B_list.get(i)*sin(s.SE_Va - t.SE_Va))))*100, P_res,e.M_Q_TLPF_list.get(i)*100, (- s.SE_Vm * s.SE_Vm * (-e.B_list.get(i)) - s.SE_Vm * t.SE_Vm * (e.G_list.get(i)*sin(s.SE_Va - t.SE_Va) - (-e.B_list.get(i))*cos(s.SE_Va - t.SE_Va)))*100, Q_res, "")    
+              else
+                s.@trans += info2(e.edge_name.get(i), 0, e.volt,e.device_type,e.M_P_TLPF_list.get(i)*100, e.P_TLPF/e.X.size()*100, P_res,e.M_Q_TLPF_list.get(i)*100, e.Q_TLPF/e.X.size()*100, Q_res, "")
+              end
+            END    
+       END;    
+       
+  sub = select s from sub:s -(topoid_subid:e)->TopoND:t
+        accum
+        foreach x in t.@trans DO
+          s.@trans += x
+        end;
+        
+  sub = select s from sub:s
+        ACCUM
+          IF s.subtype=="变电站" then
+            foreach t in s.@trans DO
+              double cur_p_rate = 0,
+              if @@trans_Map.containsKey(t.name) then
+                cur_p_rate = abs(@@trans_Map.get(t.name))
+              end,
+              if t.flag=="" then
+                s.@trans_volt_info += heap_info(str_to_double(t.volt), cur_p_rate, t.p, t.cal_p, t.q, t.cal_q)
+              else
+                double volt1 = 0,
+                double volt2 = 0,
+                TransferTwoPortVolt(t.volt, volt1, volt2),
+                if t.flag=="首" then
+                  s.@trans_volt_info += heap_info(volt1, cur_p_rate, t.p, t.cal_p, t.q, t.cal_q)
+                else 
+                  s.@trans_volt_info += heap_info(volt2, cur_p_rate, t.p, t.cal_p, t.q, t.cal_q)
+                end
+               end
+            end
+          END;
+             
+  sub = select s from sub:s
+        ACCUM
+          IF s.subtype=="变电站" then
+            double top_volt = 0,
+            if s.@trans_volt_info.size() > 0 then
+              top_volt = s.@trans_volt_info.top().volt
+            end,
+            FOREACH h in s.@trans_volt_info DO
+              if h.volt == top_volt then
+                if s.volt >= 500 then
+                    @@total_p_rate_500 += abs(h.p_rate),
+                    @@total_p_500 += sqrt(h.p*h.p + h.q*h.q)
+                else if s.volt == 220 or s.volt == 230 then
+                    @@total_p_rate_220 += abs(h.p_rate),
+                    @@total_p_220 += sqrt(h.p*h.p + h.q*h.q)
+                else if s.volt == 110 or s.volt == 115 then
+                    @@total_p_rate_110 += abs(h.p_rate),
+                    @@total_p_110 += sqrt(h.p*h.p + h.q*h.q)
+                else if s.volt == 35 then
+                    @@total_p_rate_35 += abs(h.p_rate),
+                    @@total_p_35 += sqrt(h.p*h.p + h.q*h.q)
+                else if s.volt == 10 then
+                    @@total_p_rate_10 += abs(h.p_rate),
+                    @@total_p_10 += sqrt(h.p*h.p + h.q*h.q)
+                end
+              end
+            end
+          END;
+          
+  print @@total_unit_p;
+  print @@total_load_p;
+  print @@total_load;
+  print @@total_gen;
+  
+  print @@water_total_p;
+  print @@water_total_p_rate;
+  print @@fire_total_p;
+  print @@fire_total_p_rate;
+  print @@wind_total_p;
+  print @@wind_total_p_rate;
+  print @@load_total_p;
+  print @@load_total_p_rate;
+  print @@other_total_p;
+  print @@other_total_p_rate;
+  print @@nuclear_total_p;
+  print @@nuclear_total_p_rate;
+  print @@storage_total_p;
+  print @@storage_total_p_rate;
+  print @@distributed_total_p;
+  print @@distributed_total_p_rate;
+  
+  
+  print @@total_p_500;
+  print @@total_p_rate_500;
+  print @@total_p_220;
+  print @@total_p_rate_220;
+  print @@total_p_110;
+  print @@total_p_rate_110;
+  print @@total_p_35;
+  print @@total_p_rate_35;
+  print @@total_p_10;
+  print @@total_p_rate_10;
+  
+  print @@total_acline;
+  print @@total_acline_20;
+  print @@total_acline_20_80;
+  print @@total_acline_80_100;
+  print @@total_acline_100;
+  
+  print @@total_bus;
+  print @@total_bus_normal;
+  print @@total_bus_lower;
+  print @@total_bus_higher;
+ 
+  print @@total_unit_pest;
+  print @@total_load_pest;        
+  print @@total_exchange;
+  print @@total_loss;
+  print @@total_input;
+  print @@total_output;
+}

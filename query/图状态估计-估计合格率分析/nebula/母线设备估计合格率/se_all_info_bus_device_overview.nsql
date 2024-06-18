@@ -1,0 +1,35 @@
+se_all_info_bus_device_overview
+"""
+use ems_v1 
+match (p:parameters)
+let
+error_limit_P = p.error_limit_P,
+error_limit_Q = p.error_limit_Q,
+error_limit_v_220above = s.backup4,
+error_limit_v_220below = s.backup5,
+error_limit_v_baddata = s.backup3
+match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:connected_Sub_Bus]->(t:`BUS`)<-(Meas_Bus)-(m:meas) filter where startid.id = "113715890758877224"
+let
+p_meas_flag = m.P_PseudoFlag,
+q_meas_flag = m.Q_PseudoFlag,
+sub_id = s.strid
+match (b:`BUS`)<-[topo_bus]-(td:`TopoND`) where td.island=1 and b.off=0
+let
+V = case when b.V is not NULL then b.V else 0.0 end,
+base_value = case when b.base_value is not NULL then b.base_value else 1.0 end,
+Pimeas = case when b.Pimeas is not NULL then b.Pimeas else 0.0 end
+let
+volt_est_pu = case when abs(base_value) > 0.001 then V/base_value else 0.0 end,
+volt_meas_pu = case when abs(base_value) > 0.001 then Pimeas/base_value else 0.0 end
+let
+volt_residual_pu_abs = case when abs(base_value) > 0.001 then abs(volt_est_pu-volt_meas_pu) else 0.0 end,
+volt_residual_pct = case when base_value >= 500 then abs(Pimeas-V)/600*100 when base_value >= 330 and base_value < 500 then abs(Pimeas-V)/396*100 when base_value >= 220 and base_value < 330 then abs(Pimeas-V)/264*100 when base_value >= 110 and base_value < 220 then abs(Pimeas-V)/132*100 when base_value >= 66 and base_value < 110 then abs(Pimeas-V)/79.2*100 else abs(Pimeas-V)/42*100 end
+match (bus:`BUS`) where bus.island = 1 and bus.off = 0 and volt_residual_pct < error_limit_v_baddata
+let
+
+count_v_abovelimit = case when p_meas_flag = 0 and bus.volt >= 220 and volt_residual_pct > error_limit_v_220above then 1 when p_meas_flag = 0 and bus.volt < 220 and volt_residual_pct > error_limit_v_220below then 1 else 0 end,
+
+count_v_belowlimit = case when p_meas_flag = 0 and bus.volt >= 220 and volt_residual_pct <= error_limit_v_220above then 1 when p_meas_flag = 0 and bus.volt < 220 and volt_residual_pct <= error_limit_v_220below then 1 else 0 end
+
+return case when bus.volt >= 500.0 then "500kV" when bus.volt >= 220.0 then "220kV"  when bus.volt >= 110.0 then "110kV" when bus.volt >= 34.5 then "35kV" when bus.volt >= 10.0 then "10kV" else "other" end as voltageLevel, count(*) as total, sum(count_v_abovelimit) as count_v_abovelimit_total, sum(count_v_belowlimit) as count_v_belowlimit_total group by voltageLevel Next return voltageLevel, total, count_v_abovelimit_total, count_v_belowlimit_total
+"""

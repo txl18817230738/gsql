@@ -1,0 +1,61 @@
+CREATE QUERY line_sensitive_analysis(bool return_all=true) FOR GRAPH gsql_EMS { 
+  TYPEDEF TUPLE < string line_name, double volt, string from_sub, string from_sub_id, string to_sub, string to_sub_id, string from_bus, string to_bus, int s_exId, int t_exId, string e_index, double line_P, double limit_P> line_list;
+    HeapAccum<line_list>(1000000,  volt DESC, line_name DESC) @@result_all;
+    HeapAccum<line_list>(50, volt DESC, line_name DESC) @@result_part;
+    SumAccum<INT> @@count_all;
+    SumAccum<int> @island;
+    SumAccum<string> @bus_name;
+    SumAccum<string> @sub_name;
+    SumAccum<string> @sub_id;
+    SumAccum<string> @area;
+    SumAccum<int> @exId;
+    SetAccum<string> @@Comp_ID;
+    SumAccum<double> @P_error_pct;
+    SumAccum<double> @Q_error_pct;
+    SumAccum<double> @cal_Vm = 0;
+    SumAccum<double> @cal_Vm_pu = 0;
+    SumAccum<double> @loadfactor;
+
+	
+	sub = {Substation.*};
+  comp = {gridcom.*};
+  AClineSet = {ACline_dot.*};
+  T0 = {TopoND.*};	
+  
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t 
+            accum 
+                t.@area = s.name;
+	
+  AclineSet = SELECT t FROM sub:s - (connected_Sub_Aclinedot:e) ->:t
+                accum
+                t.@sub_name = s.name,
+                t.@sub_id = s.strid,
+                t.@area = s.@area;
+  
+  
+  
+	// calculate the measured total generation in each TopoND
+	// select the generators with measurements and eliminate those without measurements
+	T_ACline = SELECT t from T0:s - (topo_aclinedot:e) -:t
+			where s.island == 1
+			accum
+                          t.@island = s.island,
+                          t.@exId = s.exId,
+			  t.@bus_name = s.bus_name;
+			
+       T_ACline = select s from T_ACline:s - (aclinedot_aclinedot:e)-:t
+                  where s.@island == 1 and t.@island == 1 and e.volt >= 500
+                  accum
+                      double normalLimit = sqrt(3)*e.volt*e.Ih/1000,
+                      @@result_all += line_list(e.name, e.volt, s.@sub_name, s.@sub_id, t.@sub_name, t.@sub_id, s.@bus_name, t.@bus_name, s.@exId, t.@exId, convertToString(e.id), s.P_pf, normalLimit),
+                      @@result_part += line_list(e.name, e.volt, s.@sub_name, s.@sub_id, t.@sub_name, t.@sub_id, s.@bus_name, t.@bus_name, s.@exId, t.@exId, convertToString(e.id), s.P_pf, normalLimit);
+
+			
+  if return_all then
+    print @@result_all;
+  else
+    print @@result_part;
+  end;
+
+}

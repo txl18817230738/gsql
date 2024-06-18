@@ -1,0 +1,10 @@
+"""
+use ems match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:connected_Sub_Compensator_S]->(t:`C_S`) where startid.gridid = "113715890758877224"
+let
+ qimeas = case when t.Qimeas is not NULL then t.Qimeas else 0.0 end
+let
+ less_0_q_meas = case when qimeas < 0.0 then 1 else 0 end,
+ equal_0_q_meas = case when qimeas = 0.0 then 1 else 0 end,
+ large_0_q_meas = case when qimeas > 0.0 then 1 else 0 end
+ return case when t.volt >= 500.0 then "500" when t.volt >= 220.0 and t.volt < 500.0 then "220" when t.volt >= 110.0 and t.volt < 220.0 then "110" when t.volt >= 35.0 and t.volt < 110.0 then "35" when t.volt >= 10.0 and t.volt < 35.0 then "10" else "other" end as voltLevel, count(*) as total, sum(less_0_q_meas) as less_0_total, sum(equal_0_q_meas) as equal_0_total, sum(large_0_q_meas) as large_0_total group by voltLevel Next return voltLevel, total, less_0_total, equal_0_total, large_0_total
+ """

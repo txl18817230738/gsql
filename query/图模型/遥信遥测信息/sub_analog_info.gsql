@@ -1,0 +1,94 @@
+CREATE QUERY sub_analog_info (string subID) FOR GRAPH gsql_EMS{
+
+  TYPEDEF TUPLE<id string, cnid string, o_trans_id string, windingType string, volt double, type_name string, strid string, strName string, devName string, off uint, f_usable uint, P_previous double, Q_previous double, P double, Q double, PManual double, QManual double, PPseudo double, QPseudo double, PBias double, QBias double, PBias_day double, QBias_day double, PBias_month double, QBias_month double, PBias_year double, QBias_year double, PVari double, QVari double, PVari_day double, QVari_day double, PVari_month double, QVari_month double, PVari_year double, QVari_year double, PNum int, QNum int, PFlag int, QFlag int, P_ManualFlag int, Q_ManualFlag int, P_PseudoFlag int, Q_PseudoFlag int, meas_A double, meas_B double, new_P double> meas_get;
+
+  HeapAccum<meas_get>(1000000000, id ASC) @@meas;
+  SumAccum<INT> @@count_all;
+  SumAccum<INT> @@count_Unit;
+  SumAccum<INT> @@count_Bus;
+  SumAccum<INT> @@count_AClinedot;
+  SumAccum<INT> @@count_trans2;
+  SumAccum<INT> @@count_trans3;
+  SumAccum<INT> @@count_CP;
+  SumAccum<INT> @@count_CS;
+  SumAccum<INT> @@count_Load;
+  SumAccum<double> @volt;
+  SumAccum<string> @cnid;
+  SumAccum<string> @o_trans_id;
+  SumAccum<string> @windingType;
+  SumAccum<DOUBLE> @newP;
+
+  busSet = {BUS.*};
+  busSet = select s from busSet:s - (connected_Bus_CN:e) - CN:t
+           accum s.@cnid = t.strid;
+
+  trans2Set = {two_port_transformer.*};
+  trans2Set = select s from trans2Set:s - ((txI_txJ_transformerline|txJ_txI_transformerline):e) - two_port_transformer:t
+              accum s.@o_trans_id = t.strid;
+  
+  trans3Set = {three_port_transformer.*};
+  trans3Set = select s from trans3Set:s - (neutral_three:e) - neutral_point:t
+              accum s.@o_trans_id = t.strid;
+
+  measSet = {meas.*};
+  measSet = SELECT s FROM measSet:s - ((Meas_AClinedot | Meas_CP | Meas_Bus | Meas_Load | Meas_trans2 | Meas_trans3 | Meas_Unit ):e) -:t
+            accum s.@volt = t.volt, s.@cnid = t.@cnid, s.@o_trans_id = t.@o_trans_id,s.@newP = t.Pimeas,
+                  if e.type=="Meas_trans2" or e.type=="Meas_trans3" then
+                    s.@windingType=t.WindingType
+                  end;
+  measSet = SELECT s FROM measSet:s - (Meas_sub:e) ->:t
+            where s.id != "" and t.strid == subID
+            ACCUM
+            @@count_all+=1,
+            if s.type_name == "Unit" then
+              @@meas += meas_get(s.id, s.@cnid, s.@o_trans_id, s.@windingType, s.@volt, "发电机", s.strid, t.name, s.devName, s.off, s.f_usable, s.P_previous, s.Q_previous, s.P, s.Q, s.PManual, s.QManual, s.PPseudo, s.QPseudo, s.PBias, s.QBias, s.PBias_day, s.QBias_day, s.PBias_month, s.QBias_month, s.PBias_year, s.QBias_year, s.PVari, s.QVari, s.PVari_day, s.QVari_day, s.PVari_month, s.QVari_month, s.PVari_year, s.QVari_year, s.PNum, s.QNum, s.PFlag, s.QFlag, s.P_ManualFlag, s.Q_ManualFlag, s.P_PseudoFlag, s.Q_PseudoFlag, s.meas_A, s.meas_B, s.@newP),
+              @@count_Unit+=1
+            else if s.type_name == "Bus" then
+              @@meas += meas_get(s.id, s.@cnid, s.@o_trans_id, s.@windingType, s.@volt, "母线", s.strid, t.name, s.devName, s.off, s.f_usable, s.P_previous, s.Q_previous, s.P, s.Q, s.PManual, s.QManual, s.PPseudo, s.QPseudo, s.PBias, s.QBias, s.PBias_day, s.QBias_day, s.PBias_month, s.QBias_month, s.PBias_year, s.QBias_year, s.PVari, s.QVari, s.PVari_day, s.QVari_day, s.PVari_month, s.QVari_month, s.PVari_year, s.QVari_year, s.PNum, s.QNum, s.PFlag, s.QFlag, s.P_ManualFlag, s.Q_ManualFlag, s.P_PseudoFlag, s.Q_PseudoFlag, s.meas_A, s.meas_B, s.@newP),
+              @@count_Bus+=1
+            else if s.type_name == "AClinedot" then
+              @@meas += meas_get(s.id, s.@cnid, s.@o_trans_id, s.@windingType, s.@volt, "线端", s.strid, t.name, s.devName, s.off, s.f_usable, s.P_previous, s.Q_previous, s.P, s.Q, s.PManual, s.QManual, s.PPseudo, s.QPseudo, s.PBias, s.QBias, s.PBias_day, s.QBias_day, s.PBias_month, s.QBias_month, s.PBias_year, s.QBias_year, s.PVari, s.QVari, s.PVari_day, s.QVari_day, s.PVari_month, s.QVari_month, s.PVari_year, s.QVari_year, s.PNum, s.QNum, s.PFlag, s.QFlag, s.P_ManualFlag, s.Q_ManualFlag, s.P_PseudoFlag, s.Q_PseudoFlag, s.meas_A, s.meas_B, s.@newP),
+              @@count_AClinedot+=1
+            else if s.type_name == "trans2" then
+              @@meas += meas_get(s.id, s.@cnid, s.@o_trans_id, s.@windingType, s.@volt, "双绕组", s.strid, t.name, s.devName, s.off, s.f_usable, s.P_previous, s.Q_previous, s.P, s.Q, s.PManual, s.QManual, s.PPseudo, s.QPseudo, s.PBias, s.QBias, s.PBias_day, s.QBias_day, s.PBias_month, s.QBias_month, s.PBias_year, s.QBias_year, s.PVari, s.QVari, s.PVari_day, s.QVari_day, s.PVari_month, s.QVari_month, s.PVari_year, s.QVari_year, s.PNum, s.QNum, s.PFlag, s.QFlag, s.P_ManualFlag, s.Q_ManualFlag, s.P_PseudoFlag, s.Q_PseudoFlag, s.meas_A, s.meas_B, s.@newP),
+              @@count_trans2+=1
+            else if s.type_name == "trans3" then
+              @@meas += meas_get(s.id, s.@cnid, s.@o_trans_id, s.@windingType, s.@volt, "三绕组", s.strid, t.name, s.devName, s.off, s.f_usable, s.P_previous, s.Q_previous, s.P, s.Q, s.PManual, s.QManual, s.PPseudo, s.QPseudo, s.PBias, s.QBias, s.PBias_day, s.QBias_day, s.PBias_month, s.QBias_month, s.PBias_year, s.QBias_year, s.PVari, s.QVari, s.PVari_day, s.QVari_day, s.PVari_month, s.QVari_month, s.PVari_year, s.QVari_year, s.PNum, s.QNum, s.PFlag, s.QFlag, s.P_ManualFlag, s.Q_ManualFlag, s.P_PseudoFlag, s.Q_PseudoFlag, s.meas_A, s.meas_B, s.@newP),
+              @@count_trans3+=1
+            else if s.type_name == "CP" then
+              @@meas += meas_get(s.id, s.@cnid, s.@o_trans_id, s.@windingType, s.@volt, "有功补偿器", s.strid, t.name, s.devName, s.off, s.f_usable, s.P_previous, s.Q_previous, s.P, s.Q, s.PManual, s.QManual, s.PPseudo, s.QPseudo, s.PBias, s.QBias, s.PBias_day, s.QBias_day, s.PBias_month, s.QBias_month, s.PBias_year, s.QBias_year, s.PVari, s.QVari, s.PVari_day, s.QVari_day, s.PVari_month, s.QVari_month, s.PVari_year, s.QVari_year, s.PNum, s.QNum, s.PFlag, s.QFlag, s.P_ManualFlag, s.Q_ManualFlag, s.P_PseudoFlag, s.Q_PseudoFlag, s.meas_A, s.meas_B, s.@newP),
+              @@count_CP+=1
+            else if s.type_name == "CS" then
+              @@meas += meas_get(s.id, s.@cnid, s.@o_trans_id, s.@windingType, s.@volt, "无功补偿器", s.strid, t.name, s.devName, s.off, s.f_usable, s.P_previous, s.Q_previous, s.P, s.Q, s.PManual, s.QManual, s.PPseudo, s.QPseudo, s.PBias, s.QBias, s.PBias_day, s.QBias_day, s.PBias_month, s.QBias_month, s.PBias_year, s.QBias_year, s.PVari, s.QVari, s.PVari_day, s.QVari_day, s.PVari_month, s.QVari_month, s.PVari_year, s.QVari_year, s.PNum, s.QNum, s.PFlag, s.QFlag, s.P_ManualFlag, s.Q_ManualFlag, s.P_PseudoFlag, s.Q_PseudoFlag, s.meas_A, s.meas_B, s.@newP),
+              @@count_CS+=1
+            else if s.type_name == "Load" then
+              @@meas += meas_get(s.id, s.@cnid, s.@o_trans_id, s.@windingType, s.@volt, "负荷", s.strid, t.name, s.devName, s.off, s.f_usable, s.P_previous, s.Q_previous, s.P, s.Q, s.PManual, s.QManual, s.PPseudo, s.QPseudo, s.PBias, s.QBias, s.PBias_day, s.QBias_day, s.PBias_month, s.QBias_month, s.PBias_year, s.QBias_year, s.PVari, s.QVari, s.PVari_day, s.QVari_day, s.PVari_month, s.QVari_month, s.PVari_year, s.QVari_year, s.PNum, s.QNum, s.PFlag, s.QFlag, s.P_ManualFlag, s.Q_ManualFlag, s.P_PseudoFlag, s.Q_PseudoFlag, s.meas_A, s.meas_B, s.@newP),
+              @@count_Load+=1
+            end;
+  PRINT @@meas;
+  PRINT @@count_all;
+  PRINT @@count_Unit;
+  PRINT @@count_Bus;
+  PRINT @@count_AClinedot;
+  PRINT @@count_trans2;
+  PRINT @@count_trans3;
+  PRINT @@count_CP;
+  PRINT @@count_CS;
+  PRINT @@count_Load;
+  
+  substation = {Substation.*};
+  substation = select s from substation:s where s.strid == subID;
+  print substation;
+  
+  pg = SELECT t FROM substation:s - (powergrid_substation:e) - powergrid:t;
+  print pg;
+  
+  company = SELECT t FROM substation:s - (connected_grid_sub:e) - gridcom:t;
+  print company;
+  
+  maint = SELECT t FROM substation:s - (connected_maintorg_sub:e) - maintorg:t;
+  print maint;
+
+  dccompany = SELECT t FROM substation:s - (connected_dcc_sub:e) - dcc:t;
+  print dccompany;
+}

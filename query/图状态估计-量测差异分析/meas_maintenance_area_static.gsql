@@ -1,0 +1,193 @@
+CREATE QUERY meas_maintenance_area_static(string companyID="113715890758877224") FOR GRAPH gsql_EMS { 
+  SetAccum<string> @@Comp_ID;
+  SumAccum<double> @@count_all;
+  SumAccum<double> @@count_AClinedot;
+  SumAccum<double> @@count_ACline;
+  SumAccum<double> @@count_AClinedotP;
+  SumAccum<double> @@count_AClinedotQ;
+  SumAccum<double> @@aclinePCoverage;
+  SumAccum<double> @@aclineQCoverage;
+  
+  SumAccum<double> @@count_unit;
+  SumAccum<double> @@count_unit_SVG;
+  SumAccum<double> @@count_unitP;
+  SumAccum<double> @@count_unitQ;
+  SumAccum<double> @@unitPCoverage;
+  SumAccum<double> @@unitQCoverage;
+  
+  SumAccum<double> @@count_load;
+  SumAccum<double> @@count_loadP;
+  SumAccum<double> @@count_loadQ;
+  SumAccum<double> @@loadPCoverage;
+  SumAccum<double> @@loadQCoverage;
+  
+  SumAccum<double> @@count_twoport;
+  SumAccum<double> @@count_twoportP;
+  SumAccum<double> @@count_twoportQ;
+  SumAccum<double> @@twoportPCoverage;
+  SumAccum<double> @@twoportQCoverage;
+    
+  SumAccum<double> @@count_threeport;
+  SumAccum<double> @@count_threeportP;
+  SumAccum<double> @@count_threeportQ;
+  SumAccum<double> @@threeportPCoverage;
+  SumAccum<double> @@threeportQCoverage;
+  
+  
+  SumAccum<double> @@count_CP;
+  SumAccum<double> @@count_CPQ;
+  SumAccum<double> @@CPQCoverage;//电容电抗器量测覆盖率
+  
+  SumAccum<double> @@count_bus;
+  SumAccum<double> @@count_busV;
+  SumAccum<double> @@busVCoverage;//母线量测覆盖率
+  
+  SumAccum<double> @@totalNum;
+  SumAccum<double> @@meaNum;
+  SumAccum<double> @@mes_coverage;
+  SumAccum<double> @@totalUnitP =0;//总发电量 兆瓦
+  SumAccum<double> @@totalUnitP_positive =0;//总发电量 兆瓦
+  SumAccum<double> @@totalUnitP_negtive =0;//总发电量 兆瓦
+  SumAccum<double> @@totalLoadP =0;//总负荷量 兆瓦
+  SumAccum<double> @@totalLoadP_positive =0;//总负荷量 兆瓦
+  SumAccum<double> @@totalLoadP_negtive =0;//总负荷量 兆瓦
+  SumAccum<int> @@count_sub;//厂站数量
+  SumAccum<int> @@count_area =23;//区域数量
+  SumAccum<double> @@count_CS;//串补数量
+  SumAccum<double> @@count_CSQ;//串补量测
+  SumAccum<int> @island; 
+  OrAccum<bool> @isonisland;
+  
+  comp = {gridcom.*};
+  comp_stat = {gridcom_stat.*};
+  sub = {Substation.*};
+
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+  
+  
+    Tsub_comp = select t from comp:s-(connected_grid_sub:e)->:t
+         where s.id in @@Comp_ID;
+    Tsub_topo = select s from Tsub_comp:s -(topoid_subid:e) -:t where t.island ==1
+            ACCUM 
+                 s.@isonisland +=true;
+    Tsub = select s from Tsub_topo:s where s.@isonisland == true;
+
+  // Gen:unit
+    TGenSet = select t from Tsub:s - (connected_Sub_Unit:e) ->:t;
+
+    TGen = SELECT s
+             FROM TGenSet:s - (topo_unit:e) -:t
+             where t.island == 1 and s.Gentype != "虚拟机组" and s.Gentype != "交换机组" and s.off==0
+             POST-ACCUM
+             if (s.Pimeas >= 0) then
+               @@totalUnitP += s.Pimeas,
+               @@totalUnitP_positive += s.Pimeas
+             else
+               @@totalLoadP += abs(s.Pimeas),
+               @@totalUnitP_negtive += s.Pimeas
+             end;
+             
+             
+
+// Load
+   TLoadSet = select t from Tsub:s - (connected_Sub_Load:e) ->:t;
+
+   TLoad = select s
+             from TLoadSet:s - (topo_load:e) -:t
+             where t.island == 1
+             post-accum
+             if (s.Pimeas >= 0) then
+               @@totalLoadP += s.Pimeas,
+               @@totalLoadP_positive += s.Pimeas
+             else
+               @@totalUnitP += abs(s.Pimeas),
+               @@totalLoadP_negtive += s.Pimeas
+             end;
+
+T0 = select s from comp_stat:s where s.id ==companyID
+            ACCUM 
+                @@count_sub += s.count_sub,
+                @@count_AClinedot += s.count_acline,
+                @@count_unit += s.count_unit,
+                @@count_unit_SVG += s.count_unit_SVG,
+                @@count_unitP += s.count_unitP,
+                @@count_unitQ += s.count_unitQ,
+                @@count_load += s.count_load,
+                @@count_twoport += s.count_trans2,
+                @@count_threeport += s.count_trans3,
+                @@count_CP += s.count_CP,
+                @@count_CS += s.count_CS,
+                @@count_bus += s.count_bus_section,
+               double measNum = s.count_AClinedotP + s.count_AClinedotQ + s.count_unitP + s.count_unitQ + s.count_loadP + s.count_loadQ + s.count_twoportP + s.count_twoportQ + s.count_threeportP + s.count_threeportQ + s.count_CPQ + s.count_busV,
+               double count_all = s.count_acline*2 + s.count_unit*2 - s.count_unit_SVG + s.count_load*2 + s.count_trans2*2 + s.count_trans3*2 + s.count_CP + s.count_bus_section,
+
+               if (count_all != 0) then
+                 @@mes_coverage += measNum /count_all
+               end,
+               if(s.count_acline !=0) THEN
+                 @@aclinePCoverage += s.count_AClinedotP/s.count_acline,
+                 @@aclineQCoverage += s.count_AClinedotQ/s.count_acline
+               end,
+               if(s.count_unit !=0) then
+                 @@unitPCoverage += s.count_unitP / s.count_unit,
+                 @@unitQCoverage += s.count_unitQ / s.count_unit
+               end,
+               if(s.count_load !=0) THEN
+                 @@loadPCoverage += s.count_loadP / s.count_load,
+                 @@loadQCoverage += s.count_loadQ / s.count_load
+               end,
+               if(s.count_trans2 !=0) THEN
+                 @@twoportPCoverage += s.count_twoportP / s.count_trans2,
+                 @@twoportQCoverage +=  s.count_twoportQ / s.count_trans2
+               end,
+               if(s.count_trans3 !=0) THEN
+                 @@threeportPCoverage += s.count_threeportP / s.count_trans3,
+                 @@threeportQCoverage += s.count_threeportQ / s.count_trans3
+               end,
+               if(s.count_CP !=0) THEN
+                 @@CPQCoverage += s.count_CPQ / s.count_CP
+               end,
+               if(s.count_bus_section !=0) THEN
+                 @@busVCoverage += s.count_busV / s.count_bus_section
+               end;
+ 
+ 
+  print @@count_area;
+  print @@count_sub;
+  //TODO区域数量
+  print @@count_AClinedot;
+  print @@count_unit;
+  print @@count_load;
+  print @@count_twoport;
+  print @@count_threeport;
+  print @@count_CP;
+  print @@count_CS;
+  print @@count_bus;
+  print @@aclinePCoverage;
+  print @@aclineQCoverage;
+  print @@unitPCoverage;
+  print @@unitQCoverage;
+  print @@loadPCoverage;
+  print @@loadQCoverage;
+  print @@twoportPCoverage;
+  print @@twoportQCoverage;
+  print @@threeportPCoverage;
+  print @@threeportQCoverage;
+  print @@CPQCoverage;
+  print @@busVCoverage;
+  
+  print @@totalUnitP;
+  print @@totalLoadP;
+  print @@mes_coverage;
+  
+  print @@count_unit, @@count_unit_SVG, @@count_unitP, @@count_unitQ; 
+
+  print @@totalUnitP_positive;
+  print @@totalUnitP_negtive;
+  print @@totalLoadP_positive;
+  print @@totalLoadP_negtive;
+}

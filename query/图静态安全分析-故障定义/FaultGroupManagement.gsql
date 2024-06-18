@@ -1,0 +1,40 @@
+CREATE QUERY FaultGroupManagement(int groupid) FOR GRAPH gsql_EMS{
+ typedef tuple<string faultgroupid, string groupname, string describe, int faultnumber, int screen_flag, int analysis_flag> faultgroup;
+ typedef tuple<string faultid, string faultname, string faulttype, string groupname, int decesion_flag, int fastscreen_flag, int detailedanalysis_flag> fault;
+
+ HeapAccum<faultgroup>(1000, faultgroupid asc) @@faultgroup_result;
+ HeapAccum<fault>(10000000, faultid asc) @@fault_result;
+ SumAccum<int> @faultnumber;
+
+  Tfault = {Fault.*};
+  Tfaultgroup = {FaultGroup.*};
+  Tunit = {unit.*};
+  Tacline = {ACline_dot.*};
+  Ttwoport = {two_port_transformer.*};
+  Tthreeport = {three_port_transformer.*};
+  Tbus = {BUS.*};
+  Tsub = {Substation.*};
+
+   faultSet = select s from Tfault:s
+        where s.groupname == "复杂故障"
+        post-accum
+            insert into faultgroup_fault values(5,s.id);
+
+   FaultgroupSet = select s from Tfaultgroup:s-(faultgroup_fault:e)-:t
+        accum
+           s.@faultnumber += 1
+        post-accum
+           s.faultnumber = s.@faultnumber;
+  
+  faultgroupSet = select s from Tfaultgroup:s
+        post-accum
+            @@faultgroup_result += faultgroup(convertToString(s.id), s.groupname, s.describe, s.faultnumber, s.screen_flag, s.analysis_flag);
+
+  faultSet = select s from Tfault:s-(faultgroup_fault)-:t
+            where t.id == groupid and s.Fault_activation_flag==1
+        accum
+            @@fault_result += fault(convertToString(s.id), s.name, s.faulttype, t.groupname, s.decesion_flag, s.fastscreen_flag, s.detailedanalysis_flag);
+
+  print @@faultgroup_result;
+  print @@fault_result;
+}

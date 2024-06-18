@@ -1,0 +1,72 @@
+CREATE QUERY se_graph_mainInterface(string timestamp, string companyID) FOR GRAPH gsql_EMS syntax v2{
+  ListAccum<carbon_hist_info> @@total_se_load_list;
+  ListAccum<carbon_hist_info> @@total_se_gen_list;
+  ListAccum<carbon_hist_info> @@total_meas_load_list;
+  ListAccum<carbon_hist_info> @@total_meas_gen_list;
+  SumAccum<double> @@last_total_se_load;
+  SumAccum<double> @@last_total_se_gen;
+  SumAccum<double> @@last_total_meas_load;
+  SumAccum<double> @@last_total_meas_gen;
+  SetAccum<string> @@Comp_ID;
+ 
+  comp = {gridcom.*};
+  area = select s from comp:s where s.id == companyID;
+
+  SE_gen_set = select t from area:s-(comp_history_total_gen:e) - :t
+    ACCUM
+      FOREACH x in t.today DO
+        IF isOneDay(timestamp, x.t) THEN
+            @@total_se_gen_list+=x
+        END
+      END;
+
+  SE_load_set = select t from area:s-(comp_history_total_load:e) - :t
+    ACCUM
+      FOREACH x in t.today DO
+        IF isOneDay(timestamp, x.t) THEN
+            @@total_se_load_list+=x
+        END
+      END;
+
+  meas_gen_set = select t from area:s-(com_history_gen_p_meas:e) - :t
+    ACCUM
+      FOREACH x in t.today DO
+        IF isOneDay(timestamp, x.t) THEN
+            @@total_meas_gen_list+=x
+        END
+      END;
+
+  meas_load_set(ANY) = select t from area:s-(com_history_load_p_meas:e) - :t
+    ACCUM
+      FOREACH x in t.today DO
+        IF isOneDay(timestamp, x.t) THEN
+            @@total_meas_load_list+=x
+        END
+      END;
+	  
+  int last_se_gen_num = @@total_se_gen_list.size() -1;
+  int last_se_load_num = @@total_se_load_list.size() -1;
+  int last_meas_gen_num = @@total_meas_gen_list.size()-1;
+  int last_meas_load_num = @@total_meas_load_list.size()-1;
+  
+  @@last_total_se_gen = @@total_se_gen_list.get(last_se_gen_num).v;
+  @@last_total_se_load = @@total_se_load_list.get(last_se_load_num).v;
+  @@last_total_meas_load = @@total_meas_load_list.get(last_meas_load_num).v;
+  @@last_total_meas_gen = @@total_meas_gen_list.get(last_meas_gen_num).v;
+ 
+  print @@total_se_gen_list;
+  print @@total_se_load_list;
+  print @@total_meas_gen_list;
+  print @@total_meas_load_list;
+  print area[area.name,area.total_gen,area.total_load,area.total_gen_meas,area.total_load_meas] where area.id == companyID;
+  
+  print @@last_total_se_gen;
+  print @@last_total_se_load;
+  print @@last_total_meas_load;
+  print @@last_total_meas_gen;
+  
+  // name, se_gen, se_load, meas_gen, meas_load
+  
+  
+  
+}

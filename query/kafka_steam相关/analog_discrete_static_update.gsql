@@ -1,0 +1,147 @@
+CREATE QUERY analog_discrete_static_update(int dayNum, int PQNum, string curTime) FOR GRAPH gsql_EMS{
+
+  SumAccum<double> @P_est = 0;
+  SumAccum<double> @Q_est = 0;
+  SumAccum<double> @meas_B = 0;
+  SumAccum<double> @meas_A = 0;
+  MapAccum<INT, double> @@acline_P_est;
+  MapAccum<INT, double> @@acline_Q_est;
+
+  statusSet = {status.*};
+  statusSet = SELECT s FROM statusSet:s
+              post-accum
+             // s.curIter = s.curIter + PQNum;
+		s.curIter = PQNum;  
+
+  aclinedotSet = {ACline_dot.*};
+  analogSet = {meas.*};
+  T0 = {TopoND.*};
+
+
+  AclineSet = SELECT s
+            FROM analogSet:s - (Meas_AClinedot:e) -> :t
+            ACCUM
+            if (t.name == "四川.蜀州/500kV.雅蜀一线") then
+                log(true, "aclinedot", t.name, t.@P_est, t.@Q_est)
+            end, 
+            s.@P_est = t.P,
+            s.@Q_est = t.Q;
+
+//finish setting aclines
+
+//get estimationed values for buses
+
+
+  BusSet = SELECT s
+            FROM analogSet:s - (Meas_Bus:e) -> :t
+            ACCUM
+            s.@P_est = t.V;
+
+
+//finish setting buses
+// get SE value for Gen
+  GenSet = select s from analogSet:s - (Meas_Unit:e) ->:t
+           accum
+           s.@P_est = t.P,
+           s.@Q_est = t.Q;
+
+// get SE value for load
+  LoadSet = select s from analogSet:s - (Meas_Load:e) ->:t
+           accum
+           s.@P_est = t.P,
+           s.@Q_est = t.Q;
+
+// get SE value for CP
+  CPSet = select s from analogSet:s - (Meas_CP:e) ->:t
+           accum
+           s.@Q_est = t.Q;
+
+// get SE value for twoport
+  TwoportSet = select s from analogSet:s - (Meas_trans2:e) ->:t
+           accum
+           s.@P_est = t.P,
+           s.@Q_est = t.Q;
+
+// get SE value for threeport
+  ThreeSet = select s from analogSet:s - (Meas_trans3:e) ->:t
+           accum
+           s.@P_est = t.P,
+           s.@Q_est = t.Q;
+
+// end setting SE values
+
+
+  analogSet = SELECT s FROM analogSet:s
+              post-accum
+              s.PNum = s.PNum + PQNum,
+              s.QNum = s.QNum + PQNum,
+              double cur_PBias=get_analog_bias(s.PNum, s.PBias, s.P - s.@P_est),
+              double cur_QBias=get_analog_bias(s.QNum, s.QBias, s.Q - s.@Q_est),
+              double cur_PVari=get_analog_vari(s.PNum, s.PVari, s.PBias, cur_PBias, s.P - s.@P_est),
+              double cur_QVari=get_analog_vari(s.QNum, s.QVari, s.QBias, cur_QBias, s.Q - s.@Q_est),
+                  s.PBias = cur_PBias,
+                  s.QBias = cur_QBias,
+                  s.PVari = cur_PVari,
+                  s.QVari = cur_QVari,
+              if (s.devName == "四川.蜀州/500kV.雅蜀一线") then
+                  log(true, "getBias", s.devName, s.P, s.@P_est, cur_PBias, s.PBias, s.Q, s.@Q_est, cur_QBias, s.QBias)
+              end,
+              if s.PNum % dayNum == 0 then
+                 s.PBias_day = s.PBias,
+                 s.QBias_day = s.QBias,
+                 s.PVari_day = s.PVari,
+                 s.QVari_day = s.QVari
+              end,
+              if s.PNum % (dayNum * 30) == 0 then
+                 s.PBias_month = s.PBias,
+                 s.QBias_month = s.QBias,
+                 s.PVari_month = s.PVari,
+                 s.QVari_month = s.QVari
+              end,
+              if s.PNum % (dayNum * 30 * 365) == 0 then
+                 s.PBias_year = s.PBias,
+                 s.QBias_year = s.QBias,
+                 s.PVari_year = s.PVari,
+                 s.QVari_year = s.QVari
+              end;
+
+  analogPreviousSet = SELECT s FROM analogSet:s
+              where s.P_previous != s.P or s.Q_previous != s.Q
+              post-accum
+              s.P_previous = s.P,
+              s.Q_previous = s.Q,
+	      s.previous_time = curTime;
+
+
+  discreteSet = {discrete.*};
+  discretePreviousSet = SELECT s FROM discreteSet:s
+                where s.status_previous != s.status
+                post-accum
+                s.status_previous = s.status,
+                s.previous_time = curTime;
+
+//set meas_A
+
+ # BusSet = SELECT s
+   #         FROM analogSet:s - (Meas_Bus:e) -> :t
+   #         ACCUM
+   #         if (s.P < 0) then
+   #            s.@meas_A = -1
+   #        end
+   #         POST-ACCUM
+   #            s.meas_A = s.@meas_A;
+
+
+//set meas_B
+# AclineSet = SELECT s
+ #           FROM analogSet:s - (Meas_AClinedot:e) -> :t
+  #          ACCUM
+  #          if (abs(s.QBias) > 10) then
+  #              s.@meas_B = s.QBias
+  #          end
+  #          POST-ACCUM
+  #              s.meas_B = s.@meas_B;
+
+ 
+
+}

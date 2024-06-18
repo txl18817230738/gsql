@@ -1,0 +1,26 @@
+CREATE QUERY company_dashboard_sub_equip(string companyID="1407374883553283") FOR GRAPH gsql_EMS { 
+    SumAccum<INT> @@two_port_transformer;
+    SumAccum<INT> @@three_port_transformer;
+    SumAccum<INT> @@AClinedot;
+    SumAccum<INT> @@Unit;
+    SumAccum<INT> @@Load;
+	
+    comp_stat = {gridcom_stat.*};
+    Tgrdicom_stat = select s from comp_stat:s where s.id == companyID 
+           ACCUM 
+              @@two_port_transformer += s.count_trans2,
+              @@three_port_transformer += s.count_trans3,
+              @@AClinedot += s.count_acline,
+              @@Unit += s.count_unit,
+              @@Load += s.count_load;
+              
+
+ 
+	PRINT @@two_port_transformer;
+	PRINT @@three_port_transformer;
+	PRINT @@AClinedot;
+	PRINT @@Unit;
+	PRINT @@Load;
+        //PRINT @@Comp_ID;
+        //PRINT sub;
+}

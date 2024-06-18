@@ -1,0 +1,122 @@
+//Line 58-62
+'''
+use ems_v1 match (s:TransformWinding)<-[:PowerTransFormer_TransformWinding]-(p:PowerTransFormer)-[:PowerTransFormer_TransformWinding]->(t:TransformWinding) where p.winding_count = 2
+and (s.volt = 35 or s.volt = 34.5) and (t.volt = 10 or t.volt = 10.5 or t.volt = 11.5) or s.Substation = "清远.110kV富强站"
+SET
+s.off = 1,
+t.off = 1
+'''
+
+//Line 64-70
+'''
+use ems_v1 match (s:TransformWinding)<-[:PowerTransFormer_TransformWinding]-(p:PowerTransFormer)-[:PowerTransFormer_TransformWinding]->(t:TransformWinding) where p.winding_count = 2
+LET
+off = case when (abs(s.Pimeas) > 0.01 or abs(s.Qimeas) > 0.01) or (abs(t.Pimeas) > 0.01 or abs(t.Qimeas) > 0.01) then 0 end
+SET
+s.off = off,
+t.off = off
+'''
+
+//Line 72-76
+'''
+use ems_v1 match (s:TransformWinding)<-[:PowerTransFormer_TransformWinding]-(p:PowerTransFormer)-[:PowerTransFormer_TransformWinding]->(t:TransformWinding) where p.winding_count = 2
+and (s.volt = 35 or s.volt = 34.5 or s.volt = 10 or s.volt = 10.5 or s.volt = 11.5) and t.volt < 10
+SET
+s.off = 1,
+t.off = 1
+'''
+
+//Line 80-84
+'''
+use ems_v1 match (s:TransformWinding)<-[:PowerTransFormer_TransformWinding]-(p:PowerTransFormer)-[:PowerTransFormer_TransformWinding]->(t:TransformWinding) where p.winding_count = 2
+and (s.volt = 35 or s.volt = 34.5) and (t.volt = 35 or t.volt = 34.5)
+SET
+s.off = 1,
+t.off = 1
+'''
+
+//Line 86-90
+'''
+use ems_v1 match (s:TransformWinding)<-[:PowerTransFormer_TransformWinding]-(p:PowerTransFormer)-[:PowerTransFormer_TransformWinding]->(t:TransformWinding) where p.winding_count = 2
+and (s.volt = 10 or s.volt = 10.5 or s.volt = 11.5) and (t.volt = 10 or t.volt = 10.5 or t.volt = 11.5)
+SET
+s.off = 1,
+t.off = 1
+'''
+
+//Line 92-96
+'''
+use ems_v1 match (s:TransformWinding)<-[:PowerTransFormer_TransformWinding]-(p:PowerTransFormer)-[:PowerTransFormer_TransformWinding]->(t:TransformWinding) where p.winding_count = 2
+and (s.volt = 6.3) and (t.volt = 6.3)
+SET
+s.off = 1,
+t.off = 1
+'''
+
+//Line 98-102
+'''
+use ems_v1 match (s:TransformWinding)<-[:PowerTransFormer_TransformWinding]-(p:PowerTransFormer)-[:PowerTransFormer_TransformWinding]->(t:TransformWinding) where p.winding_count = 2
+and ((s.volt <= 1) or (t.volt <= 1))
+SET
+s.off = 1,
+t.off = 1
+'''
+
+//Line 104-107
+'''
+use ems_v1 match (s:TransformWinding)<-[:PowerTransFormer_TransformWinding]-(p:PowerTransFormer) where p.winding_count = 2
+and s.Xstar > 0.2
+SET
+s.off = 1
+'''
+
+//Line 109-113
+'''
+use ems_v1 match (s:PowerTransFormer)-[:PowerTransFormer_TransformWinding]->(t:TransformWinding) where s.winding_count = 2 and s.Substation = '东莞.铁松站'
+SET
+t.Rstar = 0.0005,
+t.Xstar = 0.0025
+'''
+
+//Line 116-119
+'''
+use ems_v1 match (p:PowerTransFormer)-[:PowerTransFormer_TransformWinding]->(s:TransformWinding) where p.winding_count = 2 and (s.name = "澄海站.1站用变-高" or s.name = "澄海站.2站用变-高")
+SET
+s.off = 1
+'''
+
+//Line 187-190
+'''
+use ems_v1 match (p:PowerTransFormer)-[:PowerTransFormer_TransformWinding]->(s:TransformWinding) where p.winding_count = 3 and s.Xstar > 0.2
+SET
+s.off = 1
+'''
+
+
+//Line 192-196
+'''
+use ems_v1 match (p:PowerTransFormer)-[:PowerTransFormer_TransformWinding]->(s:TransformWinding) where p.winding_count = 3
+and s.name = "掌洲站.1主变-高" or s.name = "掌洲站.1主变-中" or s.name = "掌洲站.1主变-低" or s.Substation = "清远.110kV富强站" or s.Substation = "韶关A厂"
+SET
+s.off = 1
+'''
+
+
+//Line 209-213(测试了下，没生效)
+'''
+use ems_v1 match (s:ACline_dot)<-[AClineSegment_connect_ACline_dot]-(a:AClineSegment)-[AClineSegment_connect_ACline_dot]->(t:ACline_dot) where
+s.Subname = "清远.110kV富强站" or t.Subname = "清远.110kV富强站" or s.name = "葵银乙线葵T1" or s.name = "葵银乙线银T3" or s.name = "葵银乙铁线铁T3"
+SET
+s.off = 1
+'''
+
+//Line 221-229
+'''
+use ems_v1 match (s:l_oad)
+LET
+off = case when (s.name = "马窝换流站.1站用变" or s.name = "马窝换流站.2站用变") then 1 end
+SET
+s.off = off
+'''
+
+

@@ -1,0 +1,265 @@
+CREATE QUERY area_load_est_analysis(string companyID="113715890758877224", bool return_all=true) FOR GRAPH gsql_EMS syntax v2{ 
+  TYPEDEF TUPLE<string area_name, string load_name, string load_id, string sub_name, string sub_id, double volt, double current, double beforeone, double beforetwo, double beforethree, double current_p, double beforeone_p, double beforetwo_p, double beforethree_p> info;
+   //SumAccum<INT> @@count_all;
+	
+	//SumAccum<string> @sub_id;
+	HeapAccum<info>(10000000, area_name DESC, sub_name DESC, load_id DESC, load_name DESC) @@result_all;
+	HeapAccum<info>(50, area_name DESC, sub_name DESC, load_id DESC, load_name DESC) @@result_part;
+	SetAccum<string> @@Comp_ID;
+  
+  SumAccum<string> @area_name;
+  SumAccum<string> @sub_name;
+  SumAccum<string> @sub_id;
+  SumAccum<double> @current;
+  SumAccum<double> @beforeone;
+  SumAccum<double> @beforetwo;
+  SumAccum<double> @beforethree;
+  SumAccum<double> @current_p;
+  SumAccum<double> @beforeone_p;
+  SumAccum<double> @beforetwo_p;
+  SumAccum<double> @beforethree_p;
+
+  SumAccum<double> @@neg_meas;
+  SumAccum<double> @@pos_meas;
+  SumAccum<double> @@neg_est;
+  SumAccum<double> @@pos_est;
+
+  SumAccum<double> @@v_500_neg_meas;
+  SumAccum<double> @@v_500_pos_meas;
+  SumAccum<double> @@v_500_neg_est;
+  SumAccum<double> @@v_500_pos_est;
+
+  SumAccum<double> @@v_220_neg_meas;
+  SumAccum<double> @@v_220_pos_meas;
+  SumAccum<double> @@v_220_neg_est;
+  SumAccum<double> @@v_220_pos_est;
+
+  SumAccum<double> @@v_110_neg_meas;
+  SumAccum<double> @@v_110_pos_meas;
+  SumAccum<double> @@v_110_neg_est;
+  SumAccum<double> @@v_110_pos_est;
+
+  SumAccum<double> @@v_35_neg_meas;
+  SumAccum<double> @@v_35_pos_meas;
+  SumAccum<double> @@v_35_neg_est;
+  SumAccum<double> @@v_35_pos_est;
+
+  SumAccum<double> @@v_10_neg_meas;
+  SumAccum<double> @@v_10_pos_meas;
+  SumAccum<double> @@v_10_neg_est;
+  SumAccum<double> @@v_10_pos_est;
+
+  SumAccum<double> @@other_neg_meas;
+  SumAccum<double> @@other_pos_meas;
+  SumAccum<double> @@other_neg_est;
+  SumAccum<double> @@other_pos_est;
+  
+  T0 = {TopoND.*};
+	sub = {Substation.*};
+	comp = {gridcom.*};
+
+
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  //sub = select t from comp:s-(connected_grid_sub:e)-:t where s.id in @@Comp_ID; 
+  
+  
+  //区域 厂站 负荷
+  com_load = select t2 from comp:s-(connected_grid_sub:e1)-:t1 -(connected_Sub_Load>:e2)-l_oad:t2-(topo_load:e)-:t where s.id in @@Comp_ID and t.island ==1
+              ACCUM
+                t2.@area_name = s.name,
+                t2.@sub_name = t1.name,
+                t2.@sub_id = t1.strid;
+  
+  load_mease_set = select s from com_load:s -(Load_meas_history:e)-:t 
+              ACCUM
+                int currentindex = t.today.size(),
+                double volt = s.volt,
+                if(currentindex < 1) THEN
+                    s.@current = 0,
+                    s.@beforeone =0,
+                    s.@beforetwo =0,
+                    s.@beforethree =0,
+                    s.@current_p = 0,
+                    s.@beforeone_p =0,
+                    s.@beforetwo_p =0,
+                    s.@beforethree_p =0
+                else if(currentindex <2) THEN
+                    s.@beforeone =0,
+                    s.@beforeone_p =0,
+                    s.@beforetwo =0,
+                    s.@beforethree =0,
+                    s.@beforetwo_p =0,
+                    s.@beforethree_p =0,
+                    s.@current = t.today.get(currentindex-1).est_p,
+                    s.@current_p = t.today.get(currentindex-1).p
+                else if(currentindex <3) THEN
+                    s.@beforetwo =0,
+                    s.@beforethree =0,
+                    s.@beforetwo_p =0,
+                    s.@beforethree_p =0,
+                    s.@current = t.today.get(currentindex-1).est_p,
+                    s.@beforeone = t.today.get(currentindex -2).est_p,
+                    s.@current_p = t.today.get(currentindex-1).p,
+                    s.@beforeone_p = t.today.get(currentindex -2).p
+                else if(currentindex <4) THEN
+                    s.@beforethree =0,
+                    s.@beforethree_p =0,
+                    s.@current = t.today.get(currentindex -1).est_p,
+                    s.@beforeone = t.today.get(currentindex -2).est_p,
+                    s.@current_p = t.today.get(currentindex -1).p,
+                    s.@beforeone_p = t.today.get(currentindex -2).p,
+                    s.@beforetwo = t.today.get(currentindex -3).est_p,
+                    s.@beforetwo_p = t.today.get(currentindex -3).p
+                else 
+                    s.@current = t.today.get(currentindex -1).est_p,
+                    s.@beforeone = t.today.get(currentindex -2).est_p,
+                    s.@current_p = t.today.get(currentindex -1).p,
+                    s.@beforeone_p = t.today.get(currentindex -2).p,
+                    s.@beforetwo = t.today.get(currentindex -3).est_p,
+                    s.@beforetwo_p = t.today.get(currentindex -3).p,
+                    s.@beforethree = t.today.get(currentindex -4).est_p,
+                    s.@beforethree_p = t.today.get(currentindex -4).p
+                end,
+                if volt >= 500 then
+                  if s.Pimeas <0 then
+                    @@neg_meas += s.Pimeas,
+                    @@v_500_neg_meas += s.Pimeas
+                  else
+                    @@pos_meas += s.Pimeas,
+                    @@v_500_pos_meas += s.Pimeas
+                  end,
+                  if s.P <0 then
+                    @@neg_est += s.P,
+                    @@v_500_neg_est += s.P
+                  else
+                    @@pos_est += s.P,
+                    @@v_500_pos_est += s.P
+                  end
+                else if volt >= 220 then
+                  if s.Pimeas <0 then
+                    @@neg_meas += s.Pimeas,
+                    @@v_220_neg_meas += s.Pimeas
+                  else
+                    @@pos_meas += s.Pimeas,
+                    @@v_220_pos_meas += s.Pimeas
+                  end,
+                  if s.P <0 then
+                    @@neg_est += s.P,
+                    @@v_220_neg_est += s.P
+                  else
+                    @@pos_est += s.P,
+                    @@v_220_pos_est += s.P
+                  end
+                else if volt >= 110 then
+                  if s.Pimeas <0 then
+                    @@neg_meas += s.Pimeas,
+                    @@v_110_neg_meas += s.Pimeas
+                  else
+                    @@pos_meas += s.Pimeas,
+                    @@v_110_pos_meas += s.Pimeas
+                  end,
+                  if s.P <0 then
+                    @@neg_est += s.P,
+                    @@v_110_neg_est += s.P
+                  else
+                    @@pos_est += s.P,
+                    @@v_110_pos_est += s.P
+                  end
+                else if volt >= 34.5 then
+                  if s.Pimeas <0 then
+                    @@neg_meas += s.Pimeas,
+                    @@v_35_neg_meas += s.Pimeas
+                  else
+                    @@pos_meas += s.Pimeas,
+                    @@v_35_pos_meas += s.Pimeas
+                  end,
+                  if s.P <0 then
+                    @@neg_est += s.P,
+                    @@v_35_neg_est += s.P
+                  else
+                    @@pos_est += s.P,
+                    @@v_35_pos_est += s.P
+                  end
+                else if volt >= 10 then
+                  if s.Pimeas <0 then
+                    @@neg_meas += s.Pimeas,
+                    @@v_10_neg_meas += s.Pimeas
+                  else
+                    @@pos_meas += s.Pimeas,
+                    @@v_10_pos_meas += s.Pimeas
+                  end,
+                  if s.P <0 then
+                    @@neg_est += s.P,
+                    @@v_10_neg_est += s.P
+                  else
+                    @@pos_est += s.P,
+                    @@v_10_pos_est += s.P
+                  end
+                else
+                  if s.Pimeas <0 then
+                    @@neg_meas += s.Pimeas,
+                    @@other_neg_meas += s.Pimeas
+                  else
+                    @@pos_meas += s.Pimeas,
+                    @@other_pos_meas += s.Pimeas
+                  end,
+                  if s.P <0 then
+                    @@neg_est += s.P,
+                    @@other_neg_est += s.P
+                  else
+                    @@pos_est += s.P,
+                    @@other_pos_est += s.P
+                  end
+                end;
+  
+  Result_set = select s from load_mease_set:s 
+              ACCUM 
+                @@result_all += info(s.@area_name,s.name,s.strid,s.@sub_name,s.@sub_id,s.volt,s.@current,s.@beforeone,s.@beforetwo,s.@beforethree,s.@current_p,s.@beforeone_p,s.@beforetwo_p,s.@beforethree_p),
+                @@result_part += info(s.@area_name,s.name,s.strid,s.@sub_name,s.@sub_id,s.volt,s.@current,s.@beforeone,s.@beforetwo,s.@beforethree,s.@current_p,s.@beforeone_p,s.@beforetwo_p,s.@beforethree_p);
+  if return_all then
+    print @@result_all;
+  else
+    print @@result_part;
+  end;
+
+  
+  print @@neg_meas;
+  print @@pos_meas;
+  print @@neg_est;
+  print @@pos_est;
+
+  print @@v_500_neg_meas;
+  print @@v_500_pos_meas;
+  print @@v_500_neg_est;
+  print @@v_500_pos_est;
+
+  print @@v_220_neg_meas;
+  print @@v_220_pos_meas;
+  print @@v_220_neg_est;
+  print @@v_220_pos_est;
+
+  print @@v_110_neg_meas;
+  print @@v_110_pos_meas;
+  print @@v_110_neg_est;
+  print @@v_110_pos_est;
+
+  print @@v_35_neg_meas;
+  print @@v_35_pos_meas;
+  print @@v_35_neg_est;
+  print @@v_35_pos_est;
+
+  print @@v_10_neg_meas;
+  print @@v_10_pos_meas;
+  print @@v_10_neg_est;
+  print @@v_10_pos_est;
+
+  print @@other_neg_meas;
+  print @@other_pos_meas;
+  print @@other_neg_est;
+  print @@other_pos_est;
+}

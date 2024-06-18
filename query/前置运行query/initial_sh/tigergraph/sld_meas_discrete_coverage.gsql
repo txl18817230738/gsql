@@ -1,0 +1,69 @@
+CREATE QUERY sld_meas_discrete_coverage() FOR GRAPH gsql_EMS syntax v2{
+      SetAccum<STRING> @@Comp_ID;
+  SetAccum<STRING> @@SubComp_ID;
+  SumAccum<DOUBLE> @@count_meas;
+  SumAccum<DOUBLE> @@count_all;
+  SumAccum<DOUBLE> @@total_coverage;
+  OrAccum<BOOL> @is_meas;
+  MapAccum<STRING,DOUBLE> @@total_coverage_map;
+  SumAccum<DOUBLE> @coverage;
+
+
+  comp = {gridcom.*};
+
+  start_comp = select s from comp:s where s.parent_id == "";
+
+  sub_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+
+  foreach compID in @@Comp_ID do
+     start_comp = select s from comp:s where s.id == compID accum @@SubComp_ID += s.id;
+    WHILE(start_comp.size()>0) DO
+      start_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@SubComp_ID+= t.id;
+    END;
+
+    Tsub = select t from comp:s-(connected_grid_sub:e)-:t
+         where s.id in @@SubComp_ID;
+
+    @@count_all = Tsub.size();
+
+    subs = select s from Tsub:s - ((connected_Sub_Aclinedot>|connected_Sub_Unit>|connected_Sub_Load>|connected_Sub_Trans_two>|connected_Sub_Trans_three>|connected_Sub_Bus>|connected_Sub_Compensator_P>|connected_Sub_Compensator_S>|connected_Sub_Breaker>):e1) -:t1 -((Meas_AClinedot|Meas_Unit|Meas_Load|Meas_trans2|Meas_trans3|Meas_Bus|Meas_CP|Meas_CS|Meas_Breaker):e) -:t
+              ACCUM
+                s.@is_meas +=true;
+
+    T0 = select s from subs:s
+              ACCUM
+                if(s.@is_meas ==true) then
+                    @@count_meas +=1
+                end;
+
+
+    if(@@count_all ==0) then
+      @@total_coverage = 0;
+    else
+      @@total_coverage = @@count_meas / @@count_all;
+    end;
+
+    @@total_coverage_map += (compID -> @@total_coverage);
+
+    @@count_meas=0;
+    @@count_all=0;
+    @@total_coverage=0;
+    @@SubComp_ID.clear();
+  END;
+
+
+  Tcomp = select s from comp:s where s.parent_id =="";
+
+  area_comp = select t from Tcomp:s -(gridcom_gridcom:e)-:t where t.id !=s.parent_id;
+
+  Result = select s from area_comp:s
+            accum
+	            if s.id!="" then
+            	  s.@coverage = @@total_coverage_map.get(s.id)
+	            end
+	          POST-ACCUM
+              s.parameter1=s.@coverage;
+
+  PRINT Result;
+  //PRINT @@total_coverage_map;
+}

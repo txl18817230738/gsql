@@ -1,0 +1,57 @@
+CREATE QUERY fault_statistics_calc(/* Parameters here */) FOR GRAPH gsql_EMS syntax v2{ 
+  
+  SumAccum<int> @line1Num;
+  SumAccum<int> @line2Num;
+  SumAccum<int> @line3Num;
+  SumAccum<int> @vioNum_high;
+  SumAccum<int> @vioNum_low;
+  
+  SumAccum<double> @line_q_one;
+  
+  faultSet = {Fault.*};
+  topoSet = {TopoND.*};
+  aclinedotSet = {ACline_dot.*};
+  trans2Set = {two_port_transformer.*};
+  trans3Set = {three_port_transformer.*};
+  
+  //1.从节点开关图根据设备属性计算lineQ1
+  aclineSet_result = select s from aclinedotSet:s -(aclinedot_aclinedot>:e) -:t
+                      ACCUM
+                          s.@line_q_one = sqrt(3)*e.volt*e.Ih/1000;
+  trans2Set_result = select s from trans2Set:s -(txI_txJ_transformerline>:e) -:t 
+                      ACCUM
+                          s.@line_q_one = s.S;
+  trans3Set_result = select s from trans3Set:s -(neutral_three:e)-:t
+                      ACCUM
+                          s.@line_q_one = s.S;
+  
+  //2.统计容量越限数量，并赋值到Fault节点的对应属性上
+  equip(ANY) = select t from faultSet:s -((fault_aclinedot_overlimit|fault_twoport_overlimit|fault_threeport_overlimit):e) -:t where t.@line_q_one>0 
+        ACCUM
+            double value = e.OverLimit_value + t.@line_q_one,
+            double over_one_value = 1.1 * t.@line_q_one,
+            double over_two_value = 1.2 * t.@line_q_one,
+            if(value < over_one_value) then 
+                s.@line1Num +=1 
+            else if(value < over_two_value) then 
+                s.@line2Num +=1 
+            else 
+                s.@line3Num +=1 
+            end
+        POST-ACCUM
+            s.linevioQ1 = s.@line1Num,
+            s.linevioQ2 = s.@line2Num,
+            s.linevioQ3 = s.@line3Num,
+            s.linevio = s.@line1Num + s.@line2Num + s.@line3Num;
+  //3.统计电压越限情况,并赋值到Fault节点对应的属性上
+  busSet = select t from faultSet:s -(fault_bus_overlimit:e) -:t 
+          ACCUM 
+            if e.OverLimit_value > 0 then 
+                  s.@vioNum_high +=1 
+            else 
+                  s.@vioNum_low +=1 
+            end
+          POST-ACCUM 
+                s.volvio = s.@vioNum_high + s.@vioNum_low;
+print "fault stastics cal update";               
+}

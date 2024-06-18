@@ -1,0 +1,163 @@
+CREATE QUERY BD_connectingtype_other(/* Parameters here */) FOR GRAPH gsql_EMS syntax v2{ 
+  SumAccum<string> @devname;
+  SumAccum<string> @type;
+  SumAccum<int> @updateflag = 0; 
+
+  cpSet ={C_P.*};
+  sub ={Substation.*};
+  breakerSet = {Breaker.*};
+  disconnectorSet = {Disconnector.*};
+  
+  trans2Set ={two_port_transformer.*};
+  trans3Set ={three_port_transformer.*};
+  
+  aclinedotSet = {ACline_dot.*};
+  
+  busSet = {BUS.*};
+
+
+  bus0 = select t from sub:s-(connected_Sub_Bus>:e)-:t;
+
+  // mode one : the path of bus to bus has disconnector ,breaker,disconnector   D-B-D-bus
+  T4 = select s from bus0:s -(connected_Bus_CN:e1)-CN:t1-(connected_Disconnector_CN:e2)-Disconnector:t2-(connected_Disconnector_CN:e3)-CN:t3-(connected_Breaker_CN:e4)-Breaker:t4-(connected_Breaker_CN:e5)-CN:t5-(connected_Disconnector_CN:e6)-Disconnector:t6-(connected_Disconnector_CN:e7)-CN:t7-(connected_Bus_CN:e8)-BUS:t8
+      ACCUM
+          t2.@updateflag = 1,
+          t4.@updateflag = 1,
+          t6.@updateflag = 1,
+          t2.@devname = s.name,
+          t4.@devname = s.name,
+          t6.@devname = s.name,
+          t2.@type ="bus_split",
+          t4.@type ="bus_split",
+          t6.@type ="bus_split";
+
+  ACline0 = select t from sub:s-(connected_Sub_Aclinedot>:e)-:t;
+ 
+  // mode one : the path of aclinedot to bus/trans has disconnector ,breaker,disconnector   D-B-D-(bus/trans)
+  T1 = select s from ACline0:s -(aclinedot_cn:e1)-CN:t1-(connected_Disconnector_CN:e2)-Disconnector:t2-(connected_Disconnector_CN:e3)-CN:t3-(connected_Breaker_CN:e4)-Breaker:t4-(connected_Breaker_CN:e5)-CN:t5-(connected_Disconnector_CN:e6)-Disconnector:t6
+      ACCUM 
+          t2.@updateflag = 1,
+          t4.@updateflag = 1,
+          t6.@updateflag = 1,
+          t2.@devname = s.name,
+          t4.@devname = s.name,
+          t6.@devname = s.name,
+          t2.@type ="ACline_open",
+          t4.@type ="ACline_open",
+          t6.@type ="ACline_open";
+
+  // mode two : the path of aclinedot to bus/trans has disconnector ,breaker,disconnector   D-(bus/trans)
+  T11 = select s from ACline0:s -(aclinedot_cn:e1)-CN:t1-(connected_Disconnector_CN:e2)-Disconnector:t2
+      ACCUM
+          t2.@updateflag = 1,
+          t2.@devname = s.name,
+          t2.@type ="ACline_open";
+
+  // mode three : the path of aclinedot to bus/trans has disconnector ,breaker,disconnector   D-D-B-D(bus/trans)
+  T12 = select s from ACline0:s -(aclinedot_cn:e1)-CN:t1-(connected_Disconnector_CN:e2)-Disconnector:t2-(connected_Disconnector_CN:e3)-CN:t3-(connected_Disconnector_CN:e4)-Disconnector:t4-(connected_Disconnector_CN:e5)-CN:t5-(connected_Breaker_CN:e6)-Breaker:t6-(connected_Breaker_CN:e7)-CN:t7-(connected_Disconnector_CN:e8)-Disconnector:t8
+      ACCUM
+          t2.@updateflag = 1,
+          t4.@updateflag = 1,
+          t6.@updateflag = 1,
+          t8.@updateflag = 1,
+          t2.@devname = s.name,
+          t4.@devname = s.name,
+          t6.@devname = s.name,
+          t8.@devname = s.name,
+          t2.@type ="ACline_open",
+          t4.@type ="ACline_open",
+          t6.@type ="ACline_open",
+          t8.@type ="ACline_open";
+
+ // mode four : the path of aclinedot to bus/trans has disconnector ,breaker,disconnector   D-D-(bus/trans)
+  T13 = select s from ACline0:s -(aclinedot_cn:e1)-CN:t1-(connected_Disconnector_CN:e2)-Disconnector:t2-(connected_Disconnector_CN:e3)-CN:t3-(connected_Disconnector_CN:e4)-Disconnector:t4
+      ACCUM
+          t2.@updateflag = 1,
+          t4.@updateflag = 1,
+          t2.@devname = s.name,
+          t4.@devname = s.name,
+          t2.@type ="ACline_open",
+          t4.@type ="ACline_open";
+
+  trans2 = select t from sub:s-(connected_Sub_Trans_two>:e)-:t;
+
+  // mode one : the path of trans to bus has disconnector ,breaker,disconnector   D-B-D-bus
+  T2 = select s from trans2:s -(CN_tx_two:e1)-CN:t1-(connected_Disconnector_CN:e2)-Disconnector:t2-(connected_Disconnector_CN:e3)-CN:t3-(connected_Breaker_CN:e4)-Breaker:t4-(connected_Breaker_CN:e5)-CN:t5-(connected_Disconnector_CN:e6)-Disconnector:t6-(connected_Disconnector_CN:e7)-CN:t7-(connected_Bus_CN:e8)-BUS:t8
+      ACCUM
+          t2.@updateflag = 1,
+          t4.@updateflag = 1,
+          t6.@updateflag = 1,
+          t2.@devname = s.name,
+          t4.@devname = s.name,
+          t6.@devname = s.name,
+          t2.@type ="trans_open",
+          t4.@type ="trans_open",
+          t6.@type ="trans_open";
+
+// mode two: B-D-bus
+  T21 = select s from trans2:s -(CN_tx_two:e1)-CN:t1-(connected_Breaker_CN:e2)-Breaker:t2-(connected_Breaker_CN:e3)-CN:t3-(connected_Disconnector_CN:e4)-Disconnector:t4-(connected_Disconnector_CN:e5)-CN:t5-(connected_Bus_CN:e6)-BUS:t6
+      ACCUM
+          t2.@updateflag = 1,
+          t4.@updateflag = 1,
+          t2.@devname = s.name,
+          t4.@devname = s.name,
+          t2.@type ="trans_open",
+          t4.@type ="trans_open";
+
+  // mode three : the path of trans to bus has disconnector ,breaker,disconnector   D-bus
+  T22 = select s from trans2:s -(CN_tx_two:e1)-CN:t1-(connected_Disconnector_CN:e2)-Disconnector:t2-(connected_Disconnector_CN:e3)-CN:t3-(connected_Bus_CN:e4)-BUS:t4
+      ACCUM
+          t2.@updateflag = 1,
+          t2.@devname = s.name,
+          t2.@type ="trans_open";
+
+
+  trans3 = select t from sub:s-(connected_Sub_Trans_three>:e)-:t;
+
+  // mode one : the path of trans to bus has disconnector ,breaker,disconnector   D-B-D-bus
+  T3 = select s from trans3:s -(CN_tx_three:e1)-CN:t1-(connected_Disconnector_CN:e2)-Disconnector:t2-(connected_Disconnector_CN:e3)-CN:t3-(connected_Breaker_CN:e4)-Breaker:t4-(connected_Breaker_CN:e5)-CN:t5-(connected_Disconnector_CN:e6)-Disconnector:t6-(connected_Disconnector_CN:e7)-CN:t7-(connected_Bus_CN:e8)-BUS:t8
+      ACCUM
+          t2.@updateflag = 1,
+          t4.@updateflag = 1,
+          t6.@updateflag = 1,
+          t2.@devname = s.name,
+          t4.@devname = s.name,
+          t6.@devname = s.name,
+          t2.@type ="trans_open",
+          t4.@type ="trans_open",
+          t6.@type ="trans_open";
+
+// mode two: B-D-bus
+  T31 = select s from trans3:s -(CN_tx_three:e1)-CN:t1-(connected_Breaker_CN:e2)-Breaker:t2-(connected_Breaker_CN:e3)-CN:t3-(connected_Disconnector_CN:e4)-Disconnector:t4-(connected_Disconnector_CN:e5)-CN:t5-(connected_Bus_CN:e6)-BUS:t6
+      ACCUM
+          t2.@updateflag = 1,
+          t4.@updateflag = 1,
+          t2.@devname = s.name,
+          t4.@devname = s.name,
+          t2.@type ="trans_open",
+          t4.@type ="trans_open";
+
+  // mode three : the path of trans to bus has disconnector ,breaker,disconnector   D-bus
+  T32 = select s from trans3:s -(CN_tx_three:e1)-CN:t1-(connected_Disconnector_CN:e2)-Disconnector:t2-(connected_Disconnector_CN:e3)-CN:t3-(connected_Bus_CN:e4)-BUS:t4
+      ACCUM
+          t2.@updateflag = 1,
+          t2.@devname = s.name,
+          t2.@type ="trans_open";
+
+  breakerAndDisconnectorSet = breakerSet UNION disconnectorSet;
+  T_result =  select s from breakerAndDisconnectorSet:s
+                where s.@updateflag == 1
+                POST-ACCUM
+                     s.connecting_type = s.@type,
+                     s.connecting_dev = s.@devname;
+
+
+
+//  T0 = select t from T1:s -(connected_Aclinedot_Sub>:e)-:t;
+
+  //print T0[T0.id,T0.name];            
+  print T1.size();
+  print T2.size();
+  print T3.size();
+  print T4.size();
+}

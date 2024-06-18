@@ -1,0 +1,280 @@
+CREATE QUERY area_meas_analysis_chart(string companyID="113715890758877224",string time,BOOL isTimeGroup=TRUE) FOR GRAPH gsql_EMS syntax v2 { 
+TYPEDEF TUPLE<strName STRING, unitNum int, busNum int, aclinedotNum int, trans2Num int, trans3Num int, cpNum int, csNum int, loadNum int> meas_chart_sub;
+TYPEDEF TUPLE<previous_time string, unitNum int, busNum int, aclinedotNum int, trans2Num int, trans3Num int, cpNum int, csNum int, loadNum int> meas_chart_time;
+  
+HeapAccum<meas_chart_sub>(5000, strName ASC) @@measChartSub;
+HeapAccum<meas_chart_time>(5000, previous_time ASC) @@measChartTime;
+  
+MapAccum<STRING,INT> @@count_unit_Sub_Map;
+MapAccum<STRING,INT> @@count_bus_Sub_Map;
+MapAccum<STRING,INT> @@count_aclinedot_Sub_Map;
+MapAccum<STRING,INT> @@count_trans2_Sub_Map;
+MapAccum<STRING,INT> @@count_trans3_Sub_Map;
+MapAccum<STRING,INT> @@count_cp_Sub_Map;
+MapAccum<STRING,INT> @@count_cs_Sub_Map;
+MapAccum<STRING,INT> @@count_load_Sub_Map;
+  
+MapAccum<STRING,INT> @@count_unit_Time_Map;
+MapAccum<STRING,INT> @@count_bus_Time_Map;
+MapAccum<STRING,INT> @@count_aclinedot_Time_Map;
+MapAccum<STRING,INT> @@count_trans2_Time_Map;
+MapAccum<STRING,INT> @@count_trans3_Time_Map;
+MapAccum<STRING,INT> @@count_cp_Time_Map;
+MapAccum<STRING,INT> @@count_cs_Time_Map;
+MapAccum<STRING,INT> @@count_load_Time_Map;
+
+SumAccum<string> @subname;
+SumAccum<string> @devtype;
+SumAccum<string> @gridcom_name;
+SetAccum<string> @@Comp_ID;
+SetAccum<STRING> @@subNames;
+SumAccum<DOUBLE> @volt;
+SetAccum<STRING> @@times;
+SumAccum<DOUBLE> @p_rate;
+  
+SumAccum<double> @current_p;
+SumAccum<double> @beforeone_p;
+SumAccum<double> @current_q;
+SumAccum<double> @beforeone_q;
+
+  comp = {gridcom.*};
+  measSet = {meas.*};
+  
+  area = select s from comp:s where s.id == companyID;
+  
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+  
+  subSet = select t from comp:s-(connected_grid_sub:e)-:t where s.id in @@Comp_ID; 
+
+  Tsub = select s from subSet:s - (connected_grid_sub:e) -:t
+            accum
+            s.@gridcom_name = t.name;
+
+  Tsub = select s from Tsub:s - (connected_grid_sub:e) -:t
+            accum
+            s.@gridcom_name = t.name;
+  
+  measSet = SELECT s FROM measSet:s - (Meas_Unit:e) -:t 
+            ACCUM s.@p_rate=t.P_rate;
+
+  MeasT = SELECT s FROM measSet:s - (Meas_sub:e) -:t
+            where s.id != "" and s.type_name != "Substation" and t.name != "" AND s.previous_time>=time
+            ACCUM
+            s.@subname = t.name,
+            @@times += s.previous_time,
+            s.@volt = t.volt
+            POST-ACCUM
+            if (s.type_name == "Load") then
+                s.@devtype = "负荷"
+            else if (s.type_name == "Bus") then
+                s.@devtype = "母线"
+            else if (s.type_name == "Unit") then
+                s.@devtype = "机组"
+            else if (s.type_name == "AClinedot") then 
+                s.@devtype = "线端"
+            else if (s.type_name == "CP") then
+                s.@devtype = "并补"
+            else if (s.type_name == "CS") then
+                s.@devtype = "串补"
+            else if (s.type_name == "trans2") then
+                s.@devtype = "双绕组变压器"
+            else if (s.type_name == "trans3") then
+                s.@devtype = "三绕组变压器"
+            else if (s.type_name == "two_tap") then
+                s.@devtype = "双绕组变压器档位"
+            else if (s.type_name == "three_tap") then
+                s.@devtype = "三绕组变压器档位"
+            else if (s.type_name == "breaker") then
+                s.@devtype = "开关"
+            else if (s.type_name == "disconnector") then
+                s.@devtype = "断路器"
+            end;
+
+    MeasT = select s from MeasT:s - (meas_meas_history:e)- :t
+            ACCUM
+                int currentindex = t.today.size(),
+                if(currentindex < 1) THEN
+                    s.@current_p = 0,
+                    s.@beforeone_p =0,
+                    s.@current_q = 0,
+                    s.@beforeone_q =0
+                else if(currentindex <2) THEN
+                    s.@beforeone_p =0,
+                    s.@current_p = t.today.get(currentindex-1).p,
+                    s.@beforeone_q =0,
+                    s.@current_q = t.today.get(currentindex-1).q
+                else if(currentindex <3) THEN
+                    s.@current_p = t.today.get(currentindex-1).p,
+                    s.@beforeone_p = t.today.get(currentindex -2).p,
+                    s.@current_q = t.today.get(currentindex-1).q,
+                    s.@beforeone_q = t.today.get(currentindex -2).q
+                else 
+                    s.@current_p = t.today.get(currentindex -1).p,
+                    s.@beforeone_p = t.today.get(currentindex -2).p,
+                    s.@current_q = t.today.get(currentindex -1).q,
+                    s.@beforeone_q = t.today.get(currentindex -2).q
+                end;
+
+  MeasT = select s from MeasT:s
+            ACCUM
+          @@subNames += s.@subname,
+          DOUBLE pChangeRate=0,
+            DOUBLE qChangeRate=0,
+            if (s.type_name == "Bus") THEN
+              IF (s.@volt >= 500) THEN
+                  pChangeRate = abs(s.@current_p-s.@beforeone_p)/600*100
+                ELSE IF (s.@volt >= 330 AND s.@volt < 500) THEN
+                  pChangeRate = abs(s.@current_p-s.@beforeone_p)/396*100
+                ELSE IF (s.@volt >= 220 AND s.@volt < 300) THEN
+                  pChangeRate = abs(s.@current_p-s.@beforeone_p)/264*100
+                ELSE
+                  pChangeRate = abs(s.@current_p-s.@beforeone_p)/132*100
+                END,
+              IF (s.@volt >= 500) THEN
+                  qChangeRate = abs(s.@current_q-s.@beforeone_q)/600*100
+                ELSE IF (s.@volt >= 330 AND s.@volt < 500) THEN
+                  qChangeRate = abs(s.@current_q-s.@beforeone_q)/396*100
+                ELSE IF (s.@volt >= 220 AND s.@volt < 300) THEN
+                  qChangeRate = abs(s.@current_q-s.@beforeone_q)/264*100
+                ELSE
+                  qChangeRate = abs(s.@current_q-s.@beforeone_q)/132*100
+                END
+            ELSE IF (s.type_name == "Unit") THEN
+              IF (s.@p_rate != 0) THEN
+                  pChangeRate = abs(s.@current_p-s.@beforeone_p)/s.@p_rate*100
+              END,
+              IF (s.@p_rate != 0) THEN
+                  qChangeRate = abs(s.@current_q-s.@beforeone_q)/s.@p_rate*100
+              END
+            ELSE
+              IF (s.@volt >= 500) THEN
+                  pChangeRate = abs(s.@current_p-s.@beforeone_p)/1082*100
+                ELSE IF (s.@volt >= 330 AND s.@volt < 500) THEN
+                  pChangeRate = abs(s.@current_p-s.@beforeone_p)/686*100
+                ELSE IF (s.@volt >= 220 AND s.@volt < 300) THEN
+                  pChangeRate = abs(s.@current_p-s.@beforeone_p)/305*100
+                ELSE
+                  pChangeRate = abs(s.@current_p-s.@beforeone_p)/114*100
+                END,
+              IF (s.@volt >= 500) THEN
+                  qChangeRate = abs(s.@current_q-s.@beforeone_q)/1082*100
+                ELSE IF (s.@volt >= 330 AND s.@volt < 500) THEN
+                  qChangeRate = abs(s.@current_q-s.@beforeone_q)/686*100
+                ELSE IF (s.@volt >= 220 AND s.@volt < 300) THEN
+                  qChangeRate = abs(s.@current_q-s.@beforeone_q)/305*100
+                ELSE
+                  qChangeRate = abs(s.@current_q-s.@beforeone_q)/114*100
+                END
+            END,
+          IF (pChangeRate > 5 OR qChangeRate > 5) THEN
+            if (s.type_name == "Load") then
+						  IF(@@count_load_Sub_Map.containsKey(s.@subname)) THEN
+                @@count_load_Sub_Map+=(s.@subname->0)
+              ELSE
+                @@count_load_Sub_Map+=(s.@subname->1)
+              END,
+              IF(@@count_load_Time_Map.containsKey(s.previous_time)) THEN
+                @@count_load_Time_Map+=(s.previous_time->0)
+              ELSE
+                @@count_load_Time_Map+=(s.previous_time->1)
+              END
+					  else if (s.type_name == "Bus") then
+						  IF(@@count_bus_Sub_Map.containsKey(s.@subname)) THEN
+                @@count_bus_Sub_Map+=(s.@subname->0)
+              ELSE
+                @@count_bus_Sub_Map+=(s.@subname->1)
+              END,
+              IF(@@count_bus_Time_Map.containsKey(s.previous_time)) THEN
+                @@count_bus_Time_Map+=(s.previous_time->0)
+              ELSE
+                @@count_bus_Time_Map+=(s.previous_time->1)
+              END
+					  else if (s.type_name == "Unit") then
+						  IF(@@count_unit_Sub_Map.containsKey(s.@subname)) THEN
+                @@count_unit_Sub_Map+=(s.@subname->0)
+              ELSE
+                @@count_unit_Sub_Map+=(s.@subname->1)
+              END,
+              IF(@@count_unit_Time_Map.containsKey(s.previous_time)) THEN
+                @@count_unit_Time_Map+=(s.previous_time->0)
+              ELSE
+                @@count_unit_Time_Map+=(s.previous_time->1)
+              END
+					  else if (s.type_name == "AClinedot") then 
+					  	IF(@@count_aclinedot_Sub_Map.containsKey(s.@subname)) THEN
+                @@count_aclinedot_Sub_Map+=(s.@subname->0)
+              ELSE
+                @@count_aclinedot_Sub_Map+=(s.@subname->1)
+              END,
+              IF(@@count_aclinedot_Time_Map.containsKey(s.previous_time)) THEN
+                @@count_aclinedot_Time_Map+=(s.previous_time->0)
+              ELSE
+                @@count_aclinedot_Time_Map+=(s.previous_time->1)
+              END
+				  	else if (s.type_name == "CP") then
+					  	IF(@@count_cp_Sub_Map.containsKey(s.@subname)) THEN
+                @@count_cp_Sub_Map+=(s.@subname->0)
+              ELSE
+                @@count_cp_Sub_Map+=(s.@subname->1)
+              END,
+              IF(@@count_cp_Time_Map.containsKey(s.previous_time)) THEN
+                @@count_cp_Time_Map+=(s.previous_time->0)
+              ELSE
+                @@count_cp_Time_Map+=(s.previous_time->1)
+              END
+					  else if (s.type_name == "CS") then
+						  IF(@@count_cs_Sub_Map.containsKey(s.@subname)) THEN
+                @@count_cs_Sub_Map+=(s.@subname->0)
+              ELSE
+                @@count_cs_Sub_Map+=(s.@subname->1)
+              END,
+              IF(@@count_cs_Time_Map.containsKey(s.previous_time)) THEN
+                @@count_cs_Time_Map+=(s.previous_time->0)
+              ELSE
+                @@count_cs_Time_Map+=(s.previous_time->1)
+              END
+					  else if (s.type_name == "trans2") then
+						  IF(@@count_trans2_Sub_Map.containsKey(s.@subname)) THEN
+                @@count_trans2_Sub_Map+=(s.@subname->0)
+              ELSE
+                @@count_trans2_Sub_Map+=(s.@subname->1)
+              END,
+              IF(@@count_trans2_Time_Map.containsKey(s.previous_time)) THEN
+                @@count_trans2_Time_Map+=(s.previous_time->0)
+              ELSE
+                @@count_trans2_Time_Map+=(s.previous_time->1)
+              END
+					  else if (s.type_name == "trans3") then
+						  IF(@@count_trans3_Sub_Map.containsKey(s.@subname)) THEN
+                @@count_trans3_Sub_Map+=(s.@subname->0)
+              ELSE
+                @@count_trans3_Sub_Map+=(s.@subname->1)
+              END,
+              IF(@@count_trans3_Time_Map.containsKey(s.previous_time)) THEN
+                @@count_trans3_Time_Map+=(s.previous_time->0)
+              ELSE
+                @@count_trans3_Time_Map+=(s.previous_time->1)
+              END
+					  end
+          END;
+
+  IF(isTimeGroup) THEN
+    FOREACH x IN @@times DO
+      @@measChartTime += meas_chart_time(x,@@count_unit_Time_Map.get(x),@@count_bus_Time_Map.get(x),@@count_aclinedot_Time_Map.get(x),@@count_trans2_Time_Map.get(x),@@count_trans3_Time_Map.get(x),@@count_cp_Time_Map.get(x),@@count_cs_Time_Map.get(x),@@count_load_Time_Map.get(x));
+    END;
+  ELSE
+    FOREACH x IN @@subNames DO
+      @@measChartSub += meas_chart_sub(x,@@count_unit_Sub_Map.get(x),@@count_bus_Sub_Map.get(x),@@count_aclinedot_Sub_Map.get(x),@@count_trans2_Sub_Map.get(x),
+        @@count_trans3_Sub_Map.get(x),@@count_cp_Sub_Map.get(x),@@count_cs_Sub_Map.get(x),@@count_load_Sub_Map.get(x));
+    END;
+  END;
+  
+  
+  PRINT @@measChartTime;
+  PRINT @@measChartSub;
+  print area[area.name] where area.id == companyID;
+}

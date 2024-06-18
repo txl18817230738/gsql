@@ -1,0 +1,326 @@
+//Line 48-53
+'''
+use ems_v1 match (s:BaseVoltage)-[:(basevoltage_aclinedot|basevoltage_bus|basevoltage_load|basevoltage_cp|basevoltage_cs|basevoltage_unit|basevoltage_breaker|basevoltage_dis|basevoltage_transformwinding)]->(t:ACline_dot)
+let
+volt = s.nomkV
+SET
+t.volt = volt,
+t.base_value = volt
+'''
+
+//Line 63-85
+'''
+use ems_v1 match (s:AClineSegment)-[:AClineSegment_connect_ACline_dot]->(t:ACline_dot)
+let
+volt = t.volt,
+X = case when s.X is not NULL then s.X else 0.0 end,
+R = case when s.R is not NULL then s.R else 0.0 end,
+B = case when s.B is not NULL then s.B else 0.0 end
+let
+line_R = case when volt > 0 and X/(volt*volt/100)>0.001 then abs(R)/(volt*volt/100) when volt > 0 and X/(volt*volt/100)<=0.001 then 0.0001 else 0.0 end,
+line_X = case when volt > 0 and X/(volt*volt/100)>0.001 then X/(volt*volt/100) when volt > 0 and X/(volt*volt/100)<=0.001 then 0.001 else 0.0 end,
+line_B = case when volt > 0 and B/(525*525/100)>0.001 then B/(525*525/100) when volt > 0 and B/(525*525/100)<=0.001 then 0.001 else 0.0 end
+SET
+s.volt = volt,
+s.line_R = line_R,
+s.line_X = line_X,
+s.line_B = line_B
+'''
+
+
+//Line 88-96
+'''
+use ems_v1 match (s:AClineSegment)-[:AClineSegment_connect_ACline_dot]->(t:ACline_dot)
+let
+line_R = case when s.line_R is not NULL then s.line_R else 0.0 end,
+line_X = case when s.line_X is not NULL then s.line_X else 0.0 end,
+line_B = case when s.line_B is not NULL then s.line_B else 0.0 end,
+B = case when s.B is not NULL then s.B else 0.0 end
+let
+line_R_new = case when line_R > (0.5*line_X) then line_X/10 else line_R end,
+line_B_new = case when line_B > 10 then line_B/10 else line_B end,
+B_new = case when line_B > 10 then B/10 else B end
+SET
+s.line_R = line_R_new,
+s.line_B = line_B_new,
+s.B = B_new
+'''
+
+//Line 121-132
+'''
+use ems_v1 match (s:ACline_dot)-[:connected_Aclinedot_Sub]-(t:Substation)
+LET
+subname = t.name,
+name = s.name || '.' || t.name
+SET
+s.Subname = subname,
+s.name = name
+'''
+
+
+//Line 128-148
+'''
+use ems_v1 match (t:TransformWinding)
+let
+S = case when t.S is not NULL then t.S else 0.0 end
+let
+S_new = case when S < 0.1 then 0.1 else S end
+SET
+t.S = S_new
+'''
+
+//Line 153-192 (需要对照一下，目前看query，感觉有点繁琐甚至重复)
+'''
+use ems_v1 match (s:TransformWinding)-[:TransformWinding_PowerTransFormer]->(p:PowerTransFormer)<-[:TransformWinding_PowerTransFormer]-(t:TransformWinding) where p.winding_count = 2
+let
+X_s = case when s.X is not NULL then s.X else 0.0 end,
+X_t = case when t.X is not NULL then t.X else 0.0 end,
+volt_s = case when s.volt is not NULL then s.volt else 0.0 end,
+volt_t = case when t.volt is not NULL then t.volt else 0.0 end,
+R_s = case when s.R is not NULL then s.R else 0.0 end,
+R_t = case when t.R is not NULL then t.R else 0.0 end
+
+let
+Rstar_s = case when X_s > 0.01 and volt_s > 0.0 and abs(R_s)/(volt_s*volt_s/100) > 0.0001 then abs(R_s)/(volt_s*volt_s/100) when X_s < 0.01 + 0.00001 and volt_t > 0.0 and abs(R_t)/(volt_t*volt_t/100) > 0.0001 then abs(R_t)/(volt_t*volt_t/100) else 0.0001 end,
+Xstar_s = case when X_s > 0.01 and volt_s > 0.0 and X_s/(volt_s*volt_s/100) > 0.001 then X_s/(volt_s*volt_s/100) when X_s < 0.01 + 0.00001 and volt_t > 0.0 and (X_t/(volt_t*volt_t/100) >0.001) then X_t/(volt_t*volt_t/100) else 0.001 end,
+Rstar_t = case when X_t > 0.01 and volt_t > 0.0 and abs(R_t)/(volt_t*volt_t/100) > 0.0001 then abs(R_t)/(volt_t*volt_t/100) when X_t < 0.01 + 0.00001 and volt_s > 0.0 and abs(R_s)/(volt_s*volt_s/100) > 0.0001 then abs(R_s)/(volt_s*volt_s/100) else 0.0001 end,
+Xstar_t = case when X_t > 0.01 and volt_t > 0.0 and X_t/(volt_t*volt_t/100) > 0.001 then X_t/(volt_t*volt_t/100) when X_t < 0.01 + 0.00001 and volt_s > 0.0 and (X_s/(volt_s*volt_s/100) >0.001) then X_s/(volt_s*volt_s/100) else 0.001 end
+
+let
+Xstar_s_new = case when Xstar_s>0.1 then Xstar_s/10 else Xstar_s end,
+Rstar_s_new = case when Xstar_s>0.1 then Rstar_s/10 else Rstar_s end,
+Xstar_t_new = case when Xstar_t>0.1 then Xstar_t/10 else Xstar_t end,
+Rstar_t_new = case when Xstar_t>0.1 then Rstar_t/10 else Rstar_t end
+
+SET
+s.t = 1,
+t.t = 1,
+s.Xstar = Xstar_s_new,
+s.Rstar = Rstar_s_new,
+t.Xstar = Xstar_t_new,
+t.Rstar = Rstar_t_new
+'''
+
+//Line 257-263
+'''
+use ems_v1 match (p:PowerTransFormer)-[:PowerTransFormer_TransformWinding]->(s:TransformWinding)-[:connected_transformWinding_Sub]->(t:Substation) where p.winding_count = 2
+let
+transName = s.name,
+subName = t.name
+let
+name_new = transName || '.' || subName
+SET
+s.name = name_new,
+s.Substation = subName
+'''
+
+//Line 265-270
+'''
+use ems_v1 match (s:meas)-[:Meas_transformWinding]->(t:TransformWinding)
+let
+tap_meas = s.tap
+SET
+t.tap_meas = tap_meas
+'''
+
+
+//Line 276 - 284
+'''
+use ems_v1 match (p:PowerTransFormer)-[:PowerTransFormer_TransformWinding]->(s:TransformWinding) where p.winding_count = 2
+let
+tap_ratio = case when s.tap_meas>=s.lowStep and s.tap_meas<=s.highStep and p.volt>0.0 then (p.volt-(s.neutralStep-s.tap_meas)*s.stepVoltageIncrement)/p.volt else 1.0 end
+SET
+s.t = tap_ratio
+'''
+
+//Line 294-298
+'''
+use ems_v1 match (p:PowerTransFormer)-[:PowerTransFormer_TransformWinding]->(s:TransformWinding) where p.winding_count = 2
+let
+Rstar = case when s.Rstar > 0.8*s.Xstar then s.Xstar/10 else s.Rstar end
+SET
+s.Rstar = Rstar
+'''
+
+
+//Line 302-346
+'''
+use ems_v1 match (p:PowerTransFormer)-[:PowerTransFormer_TransformWinding]->(s:TransformWinding)-[:connected_transformWinding_Sub]->(t:Substation) where p.winding_count = 3
+let
+subName = t.name,
+transName = s.name,
+volt = case when t.volt is not NULL then t.volt else 0.0 end,
+trans_volt = case when s.volt is not NULL then s.volt else 0.0 end,
+R = case when s.R is not NULL then s.R else 0.0 end,
+X = case when s.X is not NULL then s.X else 0.0 end
+let
+Trans_voltlevel = case when volt = 500.0 or volt = 525.0 then 525.0 when volt = 220.0 or volt = 230.0 then 230.0 when volt = 110.0 or volt = 115.0 then 115.0 else volt end
+let
+Rstar = case when trans_volt > 0.0 and abs(R/(trans_volt*trans_volt/100)) >= 0.0001 then abs(R/(trans_volt*trans_volt/100)) when trans_volt > 0.0 and abs(R/(trans_volt*trans_volt/100)) < 0.0001 then 0.0001 else 0.0 end,
+Xstar = case when trans_volt > 0.0 and abs(X/(trans_volt*trans_volt/100)) >= 0.001 then X/(trans_volt*trans_volt/100) when trans_volt > 0.0 and abs(X/(trans_volt*trans_volt/100)) < 0.001 then 0.001 else 0.0 end
+let
+Rstar_new = case when Trans_voltlevel < 500.0 and Trans_voltlevel > 0.0 and abs(R/(525*525/100)) > 0.0001 then abs(R/(525*525/100)) when Trans_voltlevel < 500.0 and Trans_voltlevel > 0.0 and abs(R/(525*525/100)) <= 0.0001 then 0.0001 else 0.0 end,
+Xstar_new =case when Trans_voltlevel < 500.0 and Trans_voltlevel > 0.0 and abs(X/(525*525/100)) >= 0.001 then X/(525*525/100) when Trans_voltlevel < 500.0 and Trans_voltlevel > 0.0 and abs(X/(525*525/100)) < 0.001 then 0.001 else 0.0 end
+let
+Rstar_result = case when trans_volt > 0.0 and Trans_voltlevel >= 500.0 then Rstar when trans_volt > 0.0 and Trans_voltlevel < 500.0 then Rstar_new end,
+Xstar_result = case when trans_volt > 0.0 and Trans_voltlevel >= 500.0 then Xstar when trans_volt > 0.0 and Trans_voltlevel < 500.0 then Xstar_new end
+SET
+s.Substation = subName,
+s.name = transName || '.' || subName,
+s.t = 1,
+s.Rstar = Rstar_result,
+s.Xstar = Xstar_result
+'''
+
+//Line 350-357
+'''
+use ems_v1 match (p:PowerTransFormer)-[:PowerTransFormer_TransformWinding]->(s:TransformWinding) where p.winding_count = 3
+let
+Xstar = case when s.name = "基地站.1主变-高" then 0.01579 else s.Xstar end,
+Rstar = case when s.Rstar > 0.8*s.Xstar then s.Xstar/10 else s.Rstar end
+SET
+s.Xstar = Xstar,
+s.Rstar = Rstar
+'''
+
+//Line 384-390
+'''
+use ems_v1 match (s:l_oad)-[:connected_Load_Sub]->(t:Substation)
+let
+subName = t.name,
+subId = t.strid,
+loadName = s.name
+SET
+s.Substation = subName,
+s.name = loadName || '.' || subName
+'''
+
+//Line 393-418
+'''
+use ems_v1 match (s:`unit`)-[:connected_Unit_Sub]->(t:Substation) where s.id<200000000000000000
+let
+subName = t.name,
+subId = t.strid,
+unitName = s.name
+let
+unitType = case when t.subtype = "换流站" and right(s.name, 3) <> "SVG" and right(s.name,3) <> "COM" then "交换机组" when t.subtype = "风电场" then "风电机组" when t.subtype = "火电厂" then "火电机组" when t.subtype = "水电厂" or t.subtype = "小水电" then "水电机组" when t.subtype = "核电厂" then "核电机组" when t.subtype = "光伏站" or t.subtype = "储能站" then "光伏机组" when t.subtype = "抽蓄厂" then "抽蓄机组" else "其他机组" end
+SET
+s.Gentype = unitType,
+s.Substation = subName,
+s.name = unitName || '.' || subName
+'''
+
+//Line 429-435
+'''
+use ems_v1 match (s:BUS)-[:connected_Bus_Sub]->(t:Substation)
+let
+subName = t.name,
+subId = t.strId,
+busName = s.name
+SET
+s.Substation = subName,
+s.name = busName || '.' || subName
+'''
+
+//Line 438-444
+'''
+use ems_v1 match (s:C_P)-[:connected_Compensator_P_Sub]->(t:Substation)
+let
+subName = t.name,
+subId = t.strId,
+cpName = s.name
+SET
+s.Substation = subName,
+s.name = cpName || '.' || subName
+'''
+
+//Line 447-470
+'''
+use ems_v1 match (s:C_S)
+let
+Qrate = case when abs(s.Q_rate) < 0.001 then 1.0 else s.Q_rate end,
+Zk = case when abs(s.Zk) < 0.001 and s.volt >=500.0 then 20.0 when abs(s.Zk) < 0.001 and s.volt < 500.0 then 0.2 else s.Zk end
+let
+cs_ZK = abs(Zk/(s.volt*s.volt/Qrate))
+let
+cs_Zk_new = case when cs_ZK > 0.01 then 0.01 else cs_ZK end
+SET
+s.Zk = Zk,
+s.cs_ZK = cs_Zk_new
+'''
+
+
+//Line 472-478
+'''
+use ems_v1 match (s:C_S)-[:connected_Compensator_S_Sub]->(t:Substation)
+let
+subName = t.name,
+subId = t.strId,
+csName = s.name
+SET
+s.Substation = subName,
+s.name = csName || '.' || subName
+'''
+
+//Line 481-483
+'''
+use ems_v1 match (s:Breaker)
+set
+s.point = 1
+'''
+
+//Line 485-491
+'''
+use ems_v1 match (s:Breaker)-[:connected_Breaker_Sub]->(t:Substation)
+let
+subName = t.name,
+subId = t.strId,
+breakerName = s.name
+SET
+s.Substation = subName,
+s.name = breakerName || '.' || subName
+'''
+
+//Line 493-495
+'''
+use ems_v1 match (s:Disconnector)
+set
+s.point = 1
+'''
+
+//Line 497-503
+'''
+use ems_v1 match (s:Disconnector)-[:connected_Disconnector_Sub]->(t:Substation)
+let
+subName = t.name,
+subId = t.strId,
+disconnectorName = s.name
+SET
+s.Substation = subName,
+s.name = disconnectorName || '.' || subName
+'''
+
+//Line 506-510
+'''
+use ems_v1 match (s:meas)-[e:(Meas_Bus|Meas_AClinedot|Meas_Load|Meas_Unit|Meas_transformWinding|Meas_CP|Meas_CS)]->(t)
+LET
+name = t.name
+set
+s.devName = name
+'''
+
+//Line 513-517
+'''
+use ems_v1 match (s:discrete)-[e:(discrete_breaker|discrete_dis)]->(t)
+LET
+name = t.name
+set
+s.devName = name
+'''
+
+//Line 520-526
+'''
+use ems_v1 match (s:ACline_dot)-[:aclinedot_cn]->(t:CN)-[:stvl_cn]-(subvl:SubVL)
+insert
+(a:SubVL{id:subvl.ST_VL})-[:stvl_aclinedot]->(b:ACline_dot{id:s.id})
+'''

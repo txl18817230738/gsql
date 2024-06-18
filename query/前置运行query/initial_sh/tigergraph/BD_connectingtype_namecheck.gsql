@@ -1,0 +1,48 @@
+CREATE QUERY BD_connectingtype_namecheck(/* Parameters here */) FOR GRAPH gsql_EMS syntax v2{ 
+  SumAccum<string> @devname;
+  SumAccum<string> @cntype;
+  SumAccum<int> @updateflag = 0; 
+  SumAccum<int> @diff;
+
+  cpSet ={C_P.*};
+  sub ={Substation.*};
+  breakerSet = {Breaker.*};
+  disconnectorSet = {Disconnector.*};
+  
+  trans2Set ={two_port_transformer.*};
+  trans3Set ={three_port_transformer.*};
+  
+  aclinedotSet = {ACline_dot.*};
+  
+  busSet = {BUS.*};
+  
+breakerAndDisconnectorSet = breakerSet UNION disconnectorSet;
+  T_result =  select s from breakerAndDisconnectorSet:s
+            post-accum
+              case when (instr(s.name, "电容") != -1 or instr(s.name, "电抗") != -1 or instr(s.name, "互感") != -1 or instr(s.name, "滤波") != -1) and s.connecting_type != "CP_Switching" then
+                s.connecting_type = "CP_Switching"
+              when (instr(s.name, "发电") != -1 or instr(s.name, "机") != -1) and s.connecting_type != "unit_Switching" then
+                s.connecting_type = "unit_Switching"
+              // when (instr(s.name, "负荷") != -1) and s.connecting_type != "load_Swithcing" then
+              //  s.connecting_type = "load_Switching"
+              when (instr(s.name, "主变") != -1 or instr(s.name, "变压器") != -1 or instr(s.name, "接地变") != -1 or instr(s.name, "换流变") != -1) and s.connecting_type != "trans_open" then
+                s.connecting_type = "trans_open"
+              when (instr(s.name, "线路开关") != -1 or instr(s.name, "出线") != -1) and s.connecting_type != "ACline_open" then
+                s.connecting_type = "ACline_open"
+              when (instr(s.name, "联络") != -1  or instr(s.name, "分段") != -1) and s.connecting_type != "bus_split" then
+                s.connecting_type = "bus_split"
+              end;
+
+  T_result2 =  select s from breakerAndDisconnectorSet:s
+            post-accum
+              case when instr(s.name, "电厂") != -1 and s.connecting_type == "other" then
+                s.connecting_type = "unit_Switching"
+              end;
+  
+  T_result3 =  select s from breakerAndDisconnectorSet:s
+            post-accum
+              case when s.connecting_type == "other" then
+                s.connecting_type = "bus_split"
+              end;
+
+}

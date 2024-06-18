@@ -1,0 +1,21 @@
+CREATE QUERY dispatcher_powerflow_area_stastic(/* Parameters here */) FOR GRAPH gsql_EMS { 
+  TYPEDEF TUPLE<string area_name, double unit_pf, double input_power, double load_pf, double output_power, double loss> info;
+  HeapAccum<info>(100000, area_name DESC, loss DESC) @@result_all;
+  SumAccum<string> @area_name;
+  SumAccum<double> @loss;
+  
+
+	sub = {Substation.*};
+	comp = {gridcom.*};
+  comp_stat = {gridcom_stat.*};
+  
+  Tcomp_stat = select s from comp_stat:s -(gridcom_gridcom_stat:e) -:t 
+                  ACCUM
+                      s.@area_name = t.name,
+                      s.@loss = t.total_loss;
+  T0 = select s from Tcomp_stat:s where s.id !="113715890758877224"
+            ACCUM
+             // double loss = (s.total_gen_pf + s.area_input - s.total_load_pf - s.area_output),
+              @@result_all +=info(s.@area_name,s.total_gen_pf,s.area_input,s.total_load_pf,s.area_output,s.@loss);
+  print @@result_all;
+}

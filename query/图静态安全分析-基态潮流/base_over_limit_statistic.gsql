@@ -1,0 +1,12 @@
+create query base_over_limit_statistic() for graph gsql_EMS {
+	
+  MapAccum<string, int> @@count_baseOL_area;
+
+  comp = {gridcom.*};
+  
+  Tcom = select s from comp:s
+     post-accum
+        @@count_baseOL_area += (s.name -> s.Base_overlimit_count);
+                                                    
+  print @@count_baseOL_area;
+}

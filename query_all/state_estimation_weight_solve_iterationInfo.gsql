@@ -1,0 +1,295 @@
+create query state_estimation_weight_solve_iterationInfo()
+for graph gsql_EMS{
+	
+// ------------------------------------------------------------------------------------------------
+// 				Define variables and arrays
+// ------------------------------------------------------------------------------------------------
+ typedef tuple<int exId, int ep, double SE_Vm, double SE_Va> SE_vertex;
+ typedef tuple<int exId, int ei> SE_edge;
+ 
+ MaxAccum<double> @@PI = 3.1415926535898;					 
+ 
+ //string sort_result;
+ string cal_result;
+ string generate_HrPQ;
+ string generate_Parameter; 
+ SumAccum<double> @P = 0;
+ SumAccum<double> @Q = 0;
+ SumAccum<double> @sumB = 0; // store for each node the total B on all of its edges
+ SumAccum<double> @sumBedge = 0; // store for each node the total s.@B.get(t.exId)
+ SumAccum<double> @sumG = 0; // store for each node the total G on all of its edges
+ SumAccum<double> @sumBi = 0; // store for each node the total 1/X (BIJ) on all of its edges		
+ 
+ SumAccum<double> @deltaP = 0; // store each bus deltaP
+ SumAccum<double> @deltaQ = 0; // store each bus deltaQ
+ SumAccum<double> @deltaPcal = 0; // store each bus deltaP   testing
+ SumAccum<double> @deltaQcal = 0; // store each bus deltaQ   testing
+ 
+ SumAccum<double> @Vm = 0; // store each bus updated Vm
+ SumAccum<double> @Vs = 0; // store each bus updated Vs
+ SumAccum<double> @deltaVm = 0; // store each bus deltaVm, which is the comparison between Vm's measurement and calcualtion
+ SumAccum<double> @deltaVa = 0; // store each bus deltaVm, which is the comparison between Vm's measurement and calcualtion
+ SumAccum<double> @SE_Vm = 0;
+ SumAccum<double> @SE_Va = 0; 
+ ArrayAccum<SumAccum<double>> @@H_r_P[];  // store H_P matrix multiplies r_P
+ ArrayAccum<SumAccum<double>> @@H_r_Q[];  // store H_Q matrix multiplies r_Q
+ SumAccum<int> @@slackbus = 0;
+ MaxAccum<double> @@max_dVm = 100000;
+ MaxAccum<int> @@max_dVm_ID = 0;
+ MaxAccum<double> @@max_dVa = 100000;
+ MaxAccum<int> @@max_dVa_ID = 0;
+
+ ArrayAccum<SumAccum<double>> @@Va[];
+ ArrayAccum<SumAccum<double>> @@Vs[];
+ ArrayAccum<SumAccum<double>> @@Vm[];
+ ArrayAccum<SumAccum<double>> @@sumB[];
+ ArrayAccum<SumAccum<double>> @@sumBedge[];
+ ArrayAccum<SumAccum<double>> @@sumBi[];
+ ArrayAccum<SumAccum<double>> @@sumG[];
+ ArrayAccum<SumAccum<double>> @@Ri_vP[];
+ ArrayAccum<SumAccum<double>> @@Ri_vQ[];
+ ArrayAccum<SumAccum<double>> @@P[];
+ ArrayAccum<SumAccum<double>> @@Q[];
+ ArrayAccum<SumAccum<double>> @@Ri_V[];
+ ArrayAccum<SumAccum<double>> @@M_Vm[];
+
+ ArrayAccum<SumAccum<double>> @@G[];
+ ArrayAccum<SumAccum<double>> @@B[];
+ ArrayAccum<SumAccum<double>> @@xk_hB[];
+ ArrayAccum<SumAccum<int>> @@busType[];
+ ArrayAccum<SumAccum<double>> @@GenP[];
+ ArrayAccum<SumAccum<double>> @@GenQ[];
+ ArrayAccum<SumAccum<double>> @@LdP[];
+ ArrayAccum<SumAccum<double>> @@LdQ[];
+ ArrayAccum<SumAccum<double>> @@SE_Vm[];
+ ArrayAccum<SumAccum<double>> @@SE_Va[];
+ SumAccum<int> @alldgr = 0;
+ SumAccum<int> @@counter = 0;
+ SumAccum<string> @subid;
+ HeapAccum<SE_vertex>(1000000000, exId asc) @@SEvertex; 
+ HeapAccum<SE_edge>(1000000000, exId asc) @@SEedge;
+
+ // ********************************* Query Parameters Definition ************************
+ double tol_Vm = 0.001;
+ double tol_Va = 0.001;
+ double initial_Va = 0;
+ double initial_Vm = 1;
+ int IterLim = 100;
+ int flatstart = 1;
+ string outputfile;
+ ListAccum<int> @@nodeList;
+ string alert_max_change_Vm = "";
+ string alert_max_change_Va = "";
+ string alert_se_MaxIter = "";
+ string result = "";
+ 
+ // ************************************************************************************
+ // End of variable definition
+ // ************************************************************************************
+ log(true, "pointstart");
+ T0 = {TopoND.*}; //start from all vertices in the graph
+ T_params = {parameters.*}; // include the parameters vertex
+ T_status = {status.*};
+ Tsub = {Substation.*};
+ // ****************Get substation id *****************************
+ Tsub = select s from Tsub:s - (topoid_subid:e)-:t
+    accum
+      t.@subid = s.strid;
+
+ // ****************** Transfer parameters vertex attributes to this query's parameters ********************
+ 
+ T_params = SELECT s FROM T_params:s
+	    POST-ACCUM
+		// IF s.se_MaxChange_Vm <= 0.001 and s.se_MaxChange_Vm > 0 THEN
+			// tol_Vm = s.se_MaxChange_Vm,
+			// alert_max_change_Vm = "Threshold of deltaVm is well set. Good Job!"
+		// ELSE IF s.se_MaxChange_Vm > 0.001 THEN
+			// tol_Vm = 0.001,
+			// alert_max_change_Vm = "Threshold of deltaVm is set too large, it is recommended to reset it within the range of [0.0001, 0.001]."
+		// ELSE
+			// tol_Vm = 0.0001,
+			// alert_max_change_Vm = "Threshold of deltaVm is set as a non-positive value, it is recommended to reset it within the range of [0.0001, 0.001]."
+		// END,
+		// IF s.se_MaxChange_Va <= 0.001 and s.se_MaxChange_Va > 0 THEN
+			// tol_Va = s.se_MaxChange_Va,
+			// alert_max_change_Va = "Threshold of deltaVm is well set. Good Job!"
+		// ELSE IF s.se_MaxChange_Va > 0.001 THEN
+			// tol_Va = 0.001,
+			// alert_max_change_Va = "Threshold of deltaVm is set too large, it is recommended to reset it within the range of [0.0001, 0.001]."
+		// ELSE
+			// tol_Va = 0.0001,
+			// alert_max_change_Va = "Threshold of deltaVm is set as a non-positive value, it is recommended to reset it within the range of [0.0001, 0.001]."
+		// END,
+		// IF s.se_MaxIter > 100 THEN
+			// IterLim = s.se_MaxIter
+		// END,
+		
+		tol_Va = s.se_MaxChange_Va,
+		tol_Vm = s.se_MaxChange_Vm,
+		IterLim = s.se_MaxIter,
+	    initial_Va = s.initial_Va,
+	    initial_Vm = s.initial_Vm,
+	    flatstart = s.se_flatstart,
+	    outputfile = s.se_outputfile;
+		
+ print alert_max_change_Vm;
+ print alert_max_change_Va;
+
+ // // ********************************* Reallocate ArrayAccum Size ************************************
+  
+  T0 = SELECT s
+	  FROM T0:s//-(topo_connect:e)->TopoND:t
+	  WHERE s.island == 1 //and t.island == 1
+	  post-accum
+	  @@nodeList += s.TOPOID;
+  print @@nodeList.size();
+ 
+ @@Va.reallocate(@@nodeList.size()-1);
+ @@Vs.reallocate(@@nodeList.size());
+ @@Vm.reallocate(@@nodeList.size());
+ @@sumB.reallocate(@@nodeList.size());
+ @@sumBedge.reallocate(@@nodeList.size());
+ @@sumBi.reallocate(@@nodeList.size());
+ @@sumG.reallocate(@@nodeList.size());
+ @@P.reallocate(@@nodeList.size());
+ @@Q.reallocate(@@nodeList.size());
+ @@Ri_V.reallocate(@@nodeList.size());
+ @@Ri_vP.reallocate(@@nodeList.size());
+ @@Ri_vQ.reallocate(@@nodeList.size());
+ @@H_r_P.reallocate(@@nodeList.size()-1);
+ @@H_r_Q.reallocate(@@nodeList.size());
+
+ 
+ @@SE_Vm.reallocate(@@nodeList.size());
+ @@SE_Va.reallocate(@@nodeList.size());
+ 
+  // ****************** Transfer parameters vertex attributes to this query's parameters ********************
+     T0 = select s
+	  from T0:s-(topo_connect:e)->TopoND:t
+	  where s.island == 1 and t.island == 1
+	  post-accum
+        @@Ri_vP[s.exId-1] += s.Ri_vP,
+        @@Ri_vQ[s.exId-1] += s.Ri_vQ,
+        @@Ri_V[s.exId-1] += s.Ri_V,
+		@@SE_Vm[s.exId-1] += s.SE_Vm,
+		@@SE_Va[s.exId-1] += s.SE_Va;
+    generate_Parameter = Cal_Parameter_v7(@@Va, @@Vs, @@Vm, @@sumB, @@sumBedge, @@sumBi, @@sumG, @@P, @@Q, @@SE_Vm, @@SE_Va, @@slackbus, initial_Va, initial_Vm, flatstart);		
+
+// ************************************** Iteration *********************************************
+ while( @@max_dVm > tol_Vm or @@max_dVa > tol_Va) limit IterLim DO
+        @@counter += 1;
+	@@max_dVm = 0;
+	@@max_dVa = 0;
+	@@max_dVm_ID = 0;
+	@@max_dVa_ID = 0;
+	print @@counter;
+	// log(true, @@counter);
+	//************************************ P measurement update **************************************
+	// *************************************** Building H'*r *************************************************
+/*
+     FOREACH i IN RANGE [0,@@nodeList.size()-1] DO
+            @@Vm[i] = 1;
+     END;
+*/
+    generate_HrPQ = Cal_HrPQ_v7(@@Va, @@Vs, @@Vm, @@sumB, @@sumBedge, @@sumBi, @@sumG, @@P, @@Q, @@Ri_V, @@Ri_vP, @@Ri_vQ, @@H_r_P, @@H_r_Q, @@slackbus);		
+
+   // ************************************** Solve Gain P *********************************************
+   cal_result = SE_solve_GainP_static(@@Va, @@H_r_P, @@max_dVa, @@max_dVa_ID); 	//	needing another tuple to store Va, may not need @@GainP
+   cal_result = SE_solve_GainQ_static(@@Vm, @@H_r_Q, @@max_dVm, @@max_dVm_ID); 	//	needing another tuple to store Vm, may not need @@GainQ
+   
+   // ************************************** Update Va *****************************************
+
+		 
+	IF (@@max_dVa_ID+1 >= @@slackbus) THEN
+		@@max_dVa_ID = @@max_dVa_ID + 2;
+	ELSE
+		@@max_dVa_ID = @@max_dVa_ID + 1;
+	END;
+	@@max_dVm_ID = @@max_dVm_ID + 1;
+
+
+        print @@max_dVa, "ID: ", @@max_dVa_ID;
+		 
+	TTT = Select s from T0:s
+		WHERE s.exId == @@max_dVa_ID;
+		PRINT TTT[TTT.exId, TTT.bus_name, TTT.Sub, TTT.@subid,TTT.base_kV];
+
+        print @@max_dVm, "ID: ", @@max_dVm_ID;
+		 
+	TTT = Select s from T0:s
+		  WHERE s.exId == @@max_dVm_ID;
+		  PRINT TTT[TTT.exId, TTT.bus_name, TTT.Sub, TTT.@subid,TTT.base_kV];
+
+
+
+	     @@H_r_P.reallocate(@@nodeList.size()-1);
+		@@H_r_Q.reallocate(@@nodeList.size());
+
+
+ END;
+	   
+/*
+	T0 = SELECT s from T0:s-(topo_connect:e)-> TopoND:t
+	  WHERE s.island == 1
+	  ACCUM
+           @@SEedge += SE_edge(s.exId*100000 + t.exId, t.exId),
+	       s.@alldgr += 1
+	  POST-ACCUM
+              uint exId = 0,
+              exId = s.exId-1,
+	      s.@SE_Va = SE_getVs(exId, @@Vs),
+	      s.@SE_Vm = SE_getVm(exId, @@Vm),
+              s.SE_Va = s.@SE_Va,
+              s.SE_Vm = s.@SE_Vm,
+              @@SEvertex += SE_vertex(s.exId, s.@alldgr, s.@SE_Vm, s.@SE_Va);
+		  
+    AttrSave_SEVmVa(@@SEvertex, @@SEedge);
+*/
+    @@SEvertex.clear();
+    @@SEedge.clear();
+    @@Va.reallocate(@@nodeList.size()-1);
+    @@Vs.reallocate(@@nodeList.size());
+    @@Vm.reallocate(@@nodeList.size());
+    @@sumB.reallocate(@@nodeList.size());
+    @@sumBedge.reallocate(@@nodeList.size());
+    @@sumBi.reallocate(@@nodeList.size());
+    @@sumG.reallocate(@@nodeList.size());
+    @@P.reallocate(@@nodeList.size());
+    @@Q.reallocate(@@nodeList.size());
+    @@Ri_V.reallocate(@@nodeList.size());
+    @@Ri_vP.reallocate(@@nodeList.size());
+    @@Ri_vQ.reallocate(@@nodeList.size());
+    @@H_r_P.reallocate(@@nodeList.size()-1);
+    @@H_r_Q.reallocate(@@nodeList.size());
+    @@SE_Vm.reallocate(@@nodeList.size());
+    @@SE_Va.reallocate(@@nodeList.size());
+
+/*	   
+  T1_status =  SELECT s FROM T_status:s
+            POST-ACCUM
+			s.se_iteration = @@counter,
+			s.se_start_mode = flatstart,
+			s.se_convergence_Va = tol_Vm,
+			s.se_convergence_Vm = tol_Va,
+			s.se_method = "加权最小二乘法";
+*/		
+  T_params = SELECT s FROM T_params:s 
+			 POST-ACCUM
+			 IF s.se_MaxIter < @@counter THEN
+				 alert_se_MaxIter = "The value of Maximum iteration" + ToString(s.se_MaxIter) + "is smaller than the really needed iteration: " + ToString(@@counter)
+			 END;
+log(true, "pointend");			 
+   print @@counter, alert_se_MaxIter;
+   
+   IF cal_result ==  "Finished Vm Forward/Backward Substitution" or cal_result == "Finished Va Forward/Backward Substitution" THEN
+		cal_result = "State Estimation Completed";
+   ELSE
+	    cal_result = "State Estimation Failed";
+   END;
+  print generate_HrPQ;  
+  print cal_result;
+  //print @@counter;
+//  print T0.exId, T0.M_Vm, T0.Vm, T0.@Vm, T0.M_Va, T0.@Vs*180/@@PI TO_CSV "/home/tigergraph/EMS_query_update/SEoutput_v2.csv";
+
+	
+}

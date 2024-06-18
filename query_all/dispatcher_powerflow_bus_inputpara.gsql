@@ -1,0 +1,283 @@
+CREATE QUERY dispatcher_powerflow_bus_inputpara(string companyID="113715890758877224", bool return_all=true) FOR GRAPH gsql_EMS syntax v2 { 
+  TYPEDEF TUPLE <STRING bus_name, STRING area, STRING sub_name, STRING sub_id, STRING busType, DOUBLE LdP, DOUBLE LdQ, DOUBLE GenP, DOUBLE GenQ, DOUBLE base_kV, DOUBLE desired_volts, DOUBLE qUp, DOUBLE qLower> vertex_row;
+    
+  SumAccum<string> @area;
+  SumAccum<string> @sub_id;
+	SetAccum<string> @@Comp_ID;
+  HeapAccum<vertex_row>(50, bus_name DESC) @@result_part;
+  HeapAccum<vertex_row>(100000, bus_name DESC) @@result;
+  
+  SumAccum<INT> @@count_all;
+  
+  SumAccum<INT> @@count_pq;
+  SumAccum<INT> @@count_pv;
+  SumAccum<INT> @@count_balance;
+  SumAccum<INT> @@count_error;
+ 
+  
+  
+  SumAccum<INT> @@count_500;
+  SumAccum<INT> @@count_500_pq;
+  SumAccum<INT> @@count_500_pv;
+  SumAccum<INT> @@count_500_balance;
+  SumAccum<INT> @@count_500_error;
+  
+  
+  SumAccum<INT> @@count_220;
+  SumAccum<INT> @@count_220_pq;
+  SumAccum<INT> @@count_220_pv;
+  SumAccum<INT> @@count_220_balance;
+  SumAccum<INT> @@count_220_error;
+  
+  
+  
+  SumAccum<INT> @@count_110;
+  SumAccum<INT> @@count_110_pq;
+  SumAccum<INT> @@count_110_pv;
+  SumAccum<INT> @@count_110_balance;
+  SumAccum<INT> @@count_110_error;
+  
+  
+  SumAccum<INT> @@count_35;
+  SumAccum<INT> @@count_35_pq;
+  SumAccum<INT> @@count_35_pv;
+  SumAccum<INT> @@count_35_balance;
+  SumAccum<INT> @@count_35_error;
+  
+  
+  SumAccum<INT> @@count_10;
+  SumAccum<INT> @@count_10_pq;
+  SumAccum<INT> @@count_10_pv;
+  SumAccum<INT> @@count_10_balance;
+  SumAccum<INT> @@count_10_error;
+  
+  
+  SumAccum<INT> @@count_other;
+  SumAccum<INT> @@count_other_pq;
+  SumAccum<INT> @@count_other_pv;
+  SumAccum<INT> @@count_other_balance;
+  SumAccum<INT> @@count_other_error;
+  
+	
+	T0 = {TopoND.*};
+  sub = {Substation.*};
+	comp = {gridcom.*};
+   start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)-:t where s.id in @@Comp_ID
+                accum 
+                    t.@area =s.name;
+  
+  TopoSet_normal = select t from sub:s -(topoid_subid:e) -:t where t.island ==1
+                accum 
+                    t.@area = s.@area,
+                    t.@sub_id = s.strid;
+  TopoSet_neutral_add = select t from sub:s -(np_sub:e1)-neutral_point:t1-(topo_neutral:e)-:t where t.island==1;
+  
+  TopoSet = TopoSet_normal UNION TopoSet_neutral_add;
+  
+  T1 = SELECT s FROM TopoSet:s where s.island == 1 
+		  ACCUM
+             double GenP = 0,
+             double GenQ = 0,
+             double LdP = 0,
+             double LdQ = 0,
+           if (s.cal_P > 0.00001) then
+             GenP = s.cal_P * 100,
+             GenQ = s.cal_Q * 100
+           else if (s.cal_P < -0.00001) then
+             LdP = -s.cal_P * 100,
+             LdQ = -s.cal_Q *100
+           end,
+           double qUp=s.qUp * 100,
+           double qLower=s.qLower * 100,
+           string busType="",
+	   if (s.busType == 0 or s.busType == 1) then
+	 	  busType = "PQ母线"
+	   else if (s.busType == 2) then
+	 	  busType = "PV母线"
+	   else if (s.busType == 3) then
+	   	busType = "平衡母线"
+	   else
+		  busType = "异常母线"
+	   end,
+       @@result+=vertex_row(s.bus_name, s.@area, s.Sub, s.@sub_id,  busType, LdP, LdQ, GenP, GenQ, s.base_kV, s.desired_volts, qUp, qLower),
+		  @@result_part+=vertex_row(s.bus_name, s.@area, s.Sub, s.@sub_id,  busType, LdP, LdQ, GenP, GenQ, s.base_kV, s.desired_volts, qUp, qLower),
+     @@count_all += 1,
+    double volt = s.base_kV,
+                  if volt >= 500 then
+                  @@count_500 += 1,
+                  if busType=="PQ母线" then 
+                     @@count_500_pq +=1,
+                     @@count_pq +=1
+                  end,
+                  if busType=="PV母线" then 
+                     @@count_500_pv +=1,
+                     @@count_pv +=1
+                  end,
+                  if busType=="平衡母线" then 
+                     @@count_500_balance +=1,
+                     @@count_balance +=1
+                  end,
+                  if busType=="异常母线" then 
+                     @@count_500_error +=1,
+                     @@count_error +=1
+                  end
+                else if volt >= 220 then
+                  @@count_220+=1,
+                  if busType=="PQ母线" then 
+                     @@count_220_pq +=1,
+                     @@count_pq +=1
+                  end,
+                  if busType=="PV母线" then 
+                     @@count_220_pv +=1,
+                     @@count_pv +=1
+                  end,
+                  if busType=="平衡母线" then 
+                     @@count_220_balance +=1,
+                     @@count_balance +=1
+                  end,
+                  if busType=="异常母线" then 
+                     @@count_220_error +=1,
+                     @@count_error +=1
+                  end 
+                  
+                else if volt >= 110 then
+                  @@count_110+=1,
+                  if busType=="PQ母线" then 
+                     @@count_110_pq +=1,
+                     @@count_pq +=1
+                  end,
+                  if busType=="PV母线" then 
+                     @@count_110_pv +=1,
+                     @@count_pv +=1
+                  end,
+                  if busType=="平衡母线" then 
+                     @@count_110_balance +=1,
+                     @@count_balance +=1
+                  end,
+                  if busType=="异常母线" then 
+                     @@count_110_error +=1,
+                     @@count_error +=1
+                  end                
+                else if volt >= 34.5 then
+                  @@count_35+=1,
+                  if busType=="PQ母线" then 
+                     @@count_35_pq +=1,
+                     @@count_pq +=1
+                  end,
+                  if busType=="PV母线" then 
+                     @@count_35_pv +=1,
+                     @@count_pv +=1
+                  end,
+                  if busType=="平衡母线" then 
+                     @@count_35_balance +=1,
+                     @@count_balance +=1
+                  end,
+                  if busType=="异常母线" then 
+                     @@count_35_error +=1,
+                     @@count_error +=1
+                  end     
+  
+                else if volt >= 10 then
+                  @@count_10+=1,
+                   if busType=="PQ母线" then 
+                     @@count_10_pq +=1,
+                     @@count_pq +=1
+                  end,
+                  if busType=="PV母线" then 
+                     @@count_10_pv +=1,
+                     @@count_pv +=1
+                  end,
+                  if busType=="平衡母线" then 
+                     @@count_10_balance +=1,
+                     @@count_balance +=1
+                  end,
+                  if busType=="异常母线" then 
+                     @@count_10_error +=1,
+                     @@count_error +=1
+                  end
+                else
+                  @@count_other+=1,
+                   if busType=="PQ母线" then 
+                     @@count_other_pq +=1,
+                     @@count_pq +=1
+                  end,
+                  if busType=="PV母线" then 
+                     @@count_other_pv +=1,
+                     @@count_pv +=1
+                  end,
+                  if busType=="平衡母线" then 
+                     @@count_other_balance +=1,
+                     @@count_balance +=1
+                  end,
+                  if busType=="异常母线" then 
+                     @@count_other_error +=1,
+                     @@count_error +=1
+                  end
+                end;
+			
+		if return_all then
+    print @@result;
+  else
+    print @@result_part;
+  end;
+	        
+			
+
+	print @@count_all;
+  
+  print @@count_pq;
+  print @@count_pv;
+  print @@count_balance;
+  print @@count_error;
+  
+  
+  
+  print @@count_500;
+  print @@count_500_pq;
+  print @@count_500_pv;
+  print @@count_500_balance;
+  print @@count_500_error;
+ 
+  
+  print @@count_220;
+  print @@count_220_pq;
+  print @@count_220_pv;
+  print @@count_220_balance;
+  print @@count_220_error;
+  
+  
+  
+  print @@count_110;
+  print @@count_110_pq;
+  print @@count_110_pv;
+  print @@count_110_balance;
+  print @@count_110_error;
+  
+  
+  print @@count_35;
+  print @@count_35_pq;
+  print @@count_35_pv;
+  print @@count_35_balance;
+  print @@count_35_error;
+ 
+  
+  print @@count_10;
+  print @@count_10_pq;
+  print @@count_10_pv;
+  print @@count_10_balance;
+  print @@count_10_error;
+  
+  
+  print @@count_other;
+  print @@count_other_pq;
+  print @@count_other_pv;
+  print @@count_other_balance;
+  print @@count_other_error;
+ 
+}

@@ -1,0 +1,259 @@
+CREATE QUERY dispatcher_powerflow_current_exceeding(bool return_all=true) FOR GRAPH gsql_EMS { 
+  TYPEDEF TUPLE <string edge_name, string Line_trans, string from_name, string from_sub, string from_subid, string to_name, double MVAmax1, double MVAmax2,double MVAmax3, double MVA, double difference, double rating, string vio_type, double volt> branch_vio;
+	
+	
+	ListAccum<branch_vio> @@branchVioList;
+  HeapAccum<branch_vio>(10000000, edge_name DESC, from_name DESC) @@result;
+	HeapAccum<branch_vio>(50, edge_name DESC, from_name DESC) @@result_part;
+	MaxAccum<double> @@PI = 3.1415926535898;
+  SumAccum<string> @subid;
+  
+  SumAccum<INT> @@count_all;
+  
+  SumAccum<INT> @@count_1_exceed;
+  SumAccum<INT> @@count_2_exceed;
+  SumAccum<INT> @@count_3_exceed;
+  
+  
+  SumAccum<INT> @@count_500;
+  SumAccum<INT> @@count_500_1_exceed;
+  SumAccum<INT> @@count_500_2_exceed;
+  SumAccum<INT> @@count_500_3_exceed;
+  
+  SumAccum<INT> @@count_220;
+  SumAccum<INT> @@count_220_1_exceed;
+  SumAccum<INT> @@count_220_2_exceed;
+  SumAccum<INT> @@count_220_3_exceed;
+  
+  
+  SumAccum<INT> @@count_110;
+  SumAccum<INT> @@count_110_1_exceed;
+  SumAccum<INT> @@count_110_2_exceed;
+  SumAccum<INT> @@count_110_3_exceed;
+  
+  SumAccum<INT> @@count_35;
+  SumAccum<INT> @@count_35_1_exceed;
+  SumAccum<INT> @@count_35_2_exceed;
+  SumAccum<INT> @@count_35_3_exceed;
+  
+  SumAccum<INT> @@count_10;
+  SumAccum<INT> @@count_10_1_exceed;
+  SumAccum<INT> @@count_10_2_exceed;
+  SumAccum<INT> @@count_10_3_exceed;
+  
+  SumAccum<INT> @@count_other;
+  SumAccum<INT> @@count_other_1_exceed;
+  SumAccum<INT> @@count_other_2_exceed;
+  SumAccum<INT> @@count_other_3_exceed;
+
+	T0 = {TopoND.*};
+
+  Tsub = select s from T0:s-(topoid_subid:e)-:t
+         accum
+         s.@subid = t.strid;
+	
+	T1 = SELECT s 
+	  from T0: s -(topo_connect:e)->TopoND:t 
+	  WHERE s.island == 1 and t.island == 1 and e.reverse == 1
+	  accum IF e.R.size() != 0 THEN 
+	  double tap_ratio = abs(e.transformer_final_turns_ratio),
+	  double tap_ratio_square = abs((e.transformer_final_turns_ratio)*(e.transformer_final_turns_ratio)),
+			case when (e.transformer_final_turns_ratio == 0) then
+				e.P_TLPF = s.PF_Vm * t.PF_Vm * sin((s.PF_Va - t.PF_Va)*@@PI/180)* e.B + (s.PF_Vm*s.PF_Vm - s.PF_Vm*t.PF_Vm*cos((s.PF_Va - t.PF_Va)*@@PI/180)) * e.G,
+				e.Q_TLPF = - s.PF_Vm * s.PF_Vm * (-e.B + 0.5*e.hB) - s.PF_Vm * t.PF_Vm * (e.G*sin((s.PF_Va - t.PF_Va)*@@PI/180) - (-e.B)*cos((s.PF_Va - t.PF_Va)*@@PI/180))
+			when (e.transformer_final_turns_ratio > 0) then
+				e.P_TLPF = s.PF_Vm * s.PF_Vm * e.G - s.PF_Vm * t.PF_Vm * ((e.G*tap_ratio)*cos((s.PF_Va - t.PF_Va)*@@PI/180) + (-e.B*tap_ratio)*sin((s.PF_Va - t.PF_Va)*@@PI/180)),
+				e.Q_TLPF = - s.PF_Vm * s.PF_Vm * (-e.B + 0.5*e.hB)  - s.PF_Vm * t.PF_Vm * ((e.G*tap_ratio)*sin((s.PF_Va - t.PF_Va)*@@PI/180) - (-e.B*tap_ratio)*cos((s.PF_Va - t.PF_Va)*@@PI/180))
+			else
+				e.P_TLPF = s.PF_Vm * s.PF_Vm * e.G * tap_ratio_square - s.PF_Vm * t.PF_Vm * ((e.G*tap_ratio)*cos((s.PF_Va - t.PF_Va)*@@PI/180) + (-e.B*tap_ratio)*sin((s.PF_Va - t.PF_Va)*@@PI/180)),
+				e.Q_TLPF = - s.PF_Vm * s.PF_Vm * (-e.B * tap_ratio_square + 0.5*e.hB) - s.PF_Vm * t.PF_Vm * ((e.G*tap_ratio)*sin((s.PF_Va - t.PF_Va)*@@PI/180) - (-e.B*tap_ratio)*cos((s.PF_Va - t.PF_Va)*@@PI/180))
+			end
+         END;	
+
+	
+    T1 = SELECT s
+	      FROM T0:s-(topo_connect:e)-> TopoND:t
+		  where s.island == 1 and t.island == 1 and e.reverse == 1
+		  ACCUM 
+		    string Line_trans="None",
+			string vio_type="Normal",
+			double difference=0,
+			double rating=0,
+			double MVA=0,
+			// log(true, s.exId, t.exId),
+			
+            int minValue = e.R.size() - 1,
+            IF (minValue < 0) THEN
+                minValue = 0
+            END,
+		      
+			MVA=sqrt(e.P_TLPF*e.P_TLPF+e.Q_TLPF*e.Q_TLPF),
+	
+			case when (MVA>e.line_Q1 and MVA<e.line_Q2) then
+	             vio_type="1级越限",
+				 difference=MVA-e.line_Q1,
+				 rating=difference*100/e.line_Q1
+				
+	        when (MVA>=e.line_Q2 and MVA<e.line_Q3) then
+	             vio_type="2级越限",
+				 difference=MVA-e.line_Q2,
+			     rating=difference*100/e.line_Q2
+				
+	        when (MVA>=e.line_Q3) then
+	             vio_type="3级越限",
+				 difference=MVA-e.line_Q3,
+			     rating=difference*100/e.line_Q3
+				 
+	        end,
+			case when (e.flag == 0) then 
+			     Line_trans="线路"
+		    when (e.flag != 0) then
+			     Line_trans="变压器"
+			end,
+			FOREACH i in range[0, minValue] DO
+					double MVAmax1 = e.line_Q1*100/e.R.size(),
+					double MVAmax2 = e.line_Q2*100/e.R.size(), 
+					double MVAmax3 = e.line_Q3*100/e.R.size(),
+					double MVA_ = MVA*100/e.R.size(),
+					//log(true, s.exId, t.exId, MVA_),
+	         case when (vio_type != "Normal")  then
+		       @@result+= branch_vio(e.edge_name.get(i), Line_trans, s.bus_name, s.Sub, s.@subid, t.bus_name, MVAmax1, MVAmax2, MVAmax3, MVA_,  difference, rating, vio_type,s.base_kV),
+           @@result_part+= branch_vio(e.edge_name.get(i), Line_trans, s.bus_name, s.Sub, s.@subid, t.bus_name, MVAmax1, MVAmax2, MVAmax3, MVA_,  difference, rating, vio_type,s.base_kV),
+          @@count_all += 1,
+    double volt = s.base_kV,
+                  if volt >= 500 then
+                  @@count_500 += 1,
+                  if vio_type=="1级越限" then 
+                     @@count_500_1_exceed +=1,
+                     @@count_1_exceed +=1
+                  end,
+                  if vio_type=="2级越限" then 
+                     @@count_500_2_exceed +=1,
+                     @@count_2_exceed +=1
+                  end,
+                  if vio_type=="3级越限" then 
+                     @@count_500_3_exceed +=1,
+                     @@count_3_exceed +=1
+                  end
+                else if volt >= 220 then
+                  @@count_220+=1,
+                  if vio_type=="1级越限" then 
+                     @@count_220_1_exceed +=1,
+                     @@count_1_exceed +=1
+                  end,
+                  if vio_type=="2级越限" then 
+                     @@count_220_2_exceed +=1,
+                     @@count_2_exceed +=1
+                  end,
+                  if vio_type=="3级越限" then 
+                     @@count_220_3_exceed +=1,
+                     @@count_3_exceed +=1
+                  end  
+                  
+                else if volt >= 110 then
+                  @@count_110+=1,
+                  if vio_type=="1级越限" then 
+                     @@count_110_1_exceed +=1,
+                     @@count_1_exceed +=1
+                  end,
+                  if vio_type=="2级越限" then 
+                     @@count_110_2_exceed +=1,
+                     @@count_2_exceed +=1
+                  end,
+                  if vio_type=="3级越限" then 
+                     @@count_110_3_exceed +=1,
+                     @@count_3_exceed +=1
+                  end                
+                else if volt >= 34.5 then
+                  @@count_35+=1,
+                  if vio_type=="1级越限" then 
+                     @@count_35_1_exceed +=1,
+                     @@count_1_exceed +=1
+                  end,
+                  if vio_type=="2级越限" then 
+                     @@count_35_2_exceed +=1,
+                     @@count_2_exceed +=1
+                  end,
+                  if vio_type=="3级越限" then 
+                     @@count_35_3_exceed +=1,
+                     @@count_3_exceed +=1
+                  end     
+  
+                else if volt >= 10 then
+                  @@count_10+=1,
+                   if vio_type=="1级越限" then 
+                     @@count_10_1_exceed +=1,
+                     @@count_1_exceed +=1
+                  end,
+                  if vio_type=="2级越限" then 
+                     @@count_10_2_exceed +=1,
+                     @@count_2_exceed +=1
+                  end,
+                  if vio_type=="3级越限" then 
+                     @@count_10_3_exceed +=1,
+                     @@count_3_exceed +=1
+                  end
+                else
+                  @@count_other+=1,
+                   if vio_type=="1级越限" then 
+                     @@count_other_1_exceed +=1,
+                     @@count_1_exceed +=1
+                  end,
+                  if vio_type=="2级越限" then 
+                     @@count_other_2_exceed +=1,
+                     @@count_2_exceed +=1
+                  end,
+                  if vio_type=="3级越限" then 
+                     @@count_other_3_exceed +=1,
+                     @@count_3_exceed +=1
+                  end
+                end
+	         end
+			END;
+    
+		if return_all then
+    print @@result;
+  else
+    print @@result_part;
+  end;
+  
+  print @@count_all;
+  
+  print @@count_1_exceed;
+  print @@count_2_exceed;
+  print @@count_3_exceed;
+  
+  
+  print @@count_500;
+  print @@count_500_1_exceed;
+  print @@count_500_2_exceed;
+  print @@count_500_3_exceed;
+  
+  print @@count_220;
+  print @@count_220_1_exceed;
+  print @@count_220_2_exceed;
+  print @@count_220_3_exceed;
+  
+  
+  print @@count_110;
+  print @@count_110_1_exceed;
+  print @@count_110_2_exceed;
+  print @@count_110_3_exceed;
+  
+  print @@count_35;
+  print @@count_35_1_exceed;
+  print @@count_35_2_exceed;
+  print @@count_35_3_exceed;
+  
+  print @@count_10;
+  print @@count_10_1_exceed;
+  print @@count_10_2_exceed;
+  print @@count_10_3_exceed;
+  
+  print @@count_other;
+  print @@count_other_1_exceed;
+  print @@count_other_2_exceed;
+  print @@count_other_3_exceed;
+
+
+}

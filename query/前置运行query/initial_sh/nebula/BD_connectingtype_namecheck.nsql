@@ -1,0 +1,85 @@
+//此query 将开关和刀闸分开更新
+'''
+use ems_v1 match (b:Breaker) where (contains(b.name,'电容') = true or contains(b.name,'电抗') = true or contains(b.name,'互感') = true or contains(b.name,'滤波') = true) and b.connecting_type <> 'CP_Switching'
+SET
+b.connecting_type = "CP_Switching"
+'''
+
+'''
+use ems_v1 match (b:Breaker) where (contains(b.name,'发电') = true or contains(b.name,'机') = true) and b.connecting_type <> 'unit_Switching'
+SET
+b.connecting_type = "unit_Switching"
+'''
+
+'''
+use ems_v1 match (b:Breaker) where (contains(b.name,'主变') = true or contains(b.name,'变压器') = true or contains(b.name,'接地变') = true or contains(b.name,'换流变') = true) and b.connecting_type <> 'trans_open'
+SET
+b.connecting_type = "trans_open"
+'''
+
+'''
+use ems_v1 match (b:Breaker) where (contains(b.name,'线路开关') = true or contains(b.name,'出线') = true) and b.connecting_type <> 'ACline_open'
+SET
+b.connecting_type = "ACline_open"
+'''
+
+'''
+use ems_v1 match (b:Breaker) where (contains(b.name,'联络') = true or contains(b.name,'分段') = true) and b.connecting_type <> 'bus_split'
+SET
+b.connecting_type = "bus_split"
+'''
+
+'''
+use ems_v1 match (b:Breaker) where contains(b.name,'电厂') = true and b.connecting_type = 'other'
+SET
+b.connecting_type = "unit_Switching"
+'''
+
+'''
+use ems_v1 match (b:Breaker) where b.connecting_type = 'other'
+SET
+b.connecting_type = "bus_split"
+'''
+
+'''
+use ems_v1 match (b:Disconnector) where (contains(b.name,'电容') = true or contains(b.name,'电抗') = true or contains(b.name,'互感') = true or contains(b.name,'滤波') = true) and b.connecting_type <> 'CP_Switching'
+SET
+b.connecting_type = "CP_Switching"
+'''
+
+'''
+use ems_v1 match (b:Disconnector) where (contains(b.name,'发电') = true or contains(b.name,'机') = true) and b.connecting_type <> 'unit_Switching'
+SET
+b.connecting_type = "unit_Switching"
+'''
+
+'''
+use ems_v1 match (b:Disconnector) where (contains(b.name,'主变') = true or contains(b.name,'变压器') = true or contains(b.name,'接地变') = true or contains(b.name,'换流变') = true) and b.connecting_type <> 'trans_open'
+SET
+b.connecting_type = "trans_open"
+'''
+
+'''
+use ems_v1 match (b:Disconnector) where (contains(b.name,'线路开关') = true or contains(b.name,'出线') = true) and b.connecting_type <> 'ACline_open'
+SET
+b.connecting_type = "ACline_open"
+'''
+
+'''
+use ems_v1 match (b:Disconnector) where (contains(b.name,'联络') = true or contains(b.name,'分段') = true) and b.connecting_type <> 'bus_split'
+SET
+b.connecting_type = "bus_split"
+'''
+
+'''
+use ems_v1 match (b:Disconnector) where contains(b.name,'电厂') = true and b.connecting_type = 'other'
+SET
+b.connecting_type = "unit_Switching"
+'''
+
+'''
+use ems_v1 match (b:Disconnector) where b.connecting_type = 'other'
+SET
+b.connecting_type = "bus_split"
+'''
+

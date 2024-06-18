@@ -1,0 +1,283 @@
+CREATE QUERY meas_maintenance_substation(string companyID="113715890758877224", bool return_all=true) FOR GRAPH gsql_EMS syntax v2 { 
+  TYPEDEF TUPLE <string subname, string sub_id, double volt, string area, int aclineNum, int aclineMeasNum, int trans2Num, int trans2MeasNum, int trans3Num, int trans3MeasNum, int unitNum, int unitMeasNum, int loadNum, int loadMeasNum, int busNum, int busMeasNum, double sub_cover_range> subinfo;
+  
+  SumAccum<STRING> @com_name;
+  SetAccum<string> @@Comp_ID; 
+  SetAccum<VERTEX> @aclineDot;
+  SetAccum<VERTEX> @aclineDotMeas;
+  SetAccum<VERTEX> @trans2;
+  SetAccum<VERTEX> @trans2Meas;
+  SetAccum<VERTEX> @trans3;
+  SetAccum<VERTEX> @trans3Meas;
+  SetAccum<VERTEX> @unit;
+  SetAccum<VERTEX> @unitMeas;
+  SetAccum<VERTEX> @load;
+  SetAccum<VERTEX> @loadMeas;
+  SetAccum<VERTEX> @bus;
+  SetAccum<VERTEX> @busMeas;
+  SumAccum<double> @aclineDotNum;
+  SumAccum<double> @aclineDotMeasNum;
+  SumAccum<double> @trans2Num;
+  SumAccum<double> @trans2MeasNum;
+  SumAccum<double> @trans3Num;
+  SumAccum<double> @trans3MeasNum;
+  SumAccum<double> @unitNum;
+  SumAccum<double> @unitMeasNum;
+  SumAccum<double> @loadNum;
+  SumAccum<double> @loadMeasNum;
+  SumAccum<double> @busNum;
+  SumAccum<double> @busMeasNum;
+  SumAccum<double> @sub_deviceNum;
+  SumAccum<double> @sub_measNum;
+  SumAccum<double> @sub_cover_range;
+  OrAccum<bool> @isonisland;
+  HeapAccum<subinfo>(1000000,volt DESC, subname DESC) @@subinfoList;
+  HeapAccum<subinfo>(50,volt DESC, subname DESC) @@subinfoList_part;
+
+  SumAccum<INT> @@count_50;
+  SumAccum<INT> @@count_50_80;
+  SumAccum<INT> @@count_80;
+
+  SumAccum<INT> @@count_500;
+  SumAccum<INT> @@count_500_50;
+  SumAccum<INT> @@count_500_50_80;
+  SumAccum<INT> @@count_500_80;
+
+  SumAccum<INT> @@count_220;
+  SumAccum<INT> @@count_220_50;
+  SumAccum<INT> @@count_220_50_80;
+  SumAccum<INT> @@count_220_80;
+
+  SumAccum<INT> @@count_110;
+  SumAccum<INT> @@count_110_50;
+  SumAccum<INT> @@count_110_50_80;
+  SumAccum<INT> @@count_110_80;
+
+  SumAccum<INT> @@count_35;
+  SumAccum<INT> @@count_35_50;
+  SumAccum<INT> @@count_35_50_80;
+  SumAccum<INT> @@count_35_80;
+
+  SumAccum<INT> @@count_other;
+  SumAccum<INT> @@count_other_50;
+  SumAccum<INT> @@count_other_50_80;
+  SumAccum<INT> @@count_other_80;
+
+  SumAccum<INT> @@count_all;
+
+  subSet = {Substation.*};
+  aclinedotSet = {ACline_dot.*};
+  trans2Set = {two_port_transformer.*};
+  trans3Set = {three_port_transformer.*};
+  unitSet = {unit.*};
+  loadSet = {l_oad.*};
+  busSet = {BUS.*};
+  topoNDSet = {TopoND.*};
+  comp = {gridcom.*};
+  
+
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  Tsub = select t from comp:s-(connected_grid_sub:e)-:t where s.id in @@Comp_ID;
+
+  Tsub_gridcom = SELECT s from Tsub:s - (connected_grid_sub:e) - :t 
+   ACCUM
+        s.@com_name = t.name; 
+  
+  subStationSet1 = select s from Tsub:s -(topoid_subid:e)-TopoND:t 
+                      ACCUM 
+                          if(t.island ==1) then 
+                                s.@isonisland +=true 
+                          end;
+  
+  subStationSet = select s from Tsub:s where s.@isonisland==true;
+  
+  T11 = SELECT s from subStationSet:s - (connected_Sub_Aclinedot>:e) - ACline_dot:t - (topo_aclinedot:e1) - :t1
+      ACCUM
+       IF(t1.island ==1) THEN
+          s.@aclineDot += t,
+          if(abs(t.Pimeas) >0.0000001) THEN
+             s.@aclineDotMeas += t
+          end
+       END
+      POST-ACCUM
+          s.@aclineDotNum = s.@aclineDot.size(),
+          s.@aclineDotMeasNum = s.@aclineDotMeas.size();
+          
+  T12 = SELECT s from subStationSet:s - (connected_Sub_Trans_two>:e) - two_port_transformer:t - (topo_Tx_Two:e1) - :t1
+       ACCUM
+       IF(t1.island ==1) THEN
+          s.@trans2 += t,
+          if(abs(t.Pimeas) >0.0000001) THEN
+             s.@trans2Meas += t
+          end
+       END
+       POST-ACCUM
+          s.@trans2Num = s.@trans2.size(),
+          s.@trans2MeasNum = s.@trans2Meas.size();
+
+  T13 = SELECT s from subStationSet:s - (connected_Sub_Trans_three>:e) - three_port_transformer:t -(topo_Tx_Three:e1) - :t1
+       ACCUM
+       IF(t1.island ==1) THEN
+          s.@trans3 += t,
+          if(abs(t.Pimeas) >0.0000001) THEN
+             s.@trans3Meas += t
+          end
+       END
+       POST-ACCUM
+          s.@trans3Num = s.@trans3.size(),
+          s.@trans3MeasNum = s.@trans3Meas.size();
+
+   T14 = SELECT s from subStationSet:s - (connected_Sub_Unit>:e) - unit:t -(topo_unit:e1) -:t1
+       ACCUM
+       IF(t1.island ==1 and t.Gentype != "虚拟机组" and t.Gentype != "交换机组") THEN
+          s.@unit += t, 
+          if(abs(t.Pimeas) >0.0000001) THEN
+             s.@unitMeas += t
+          end
+       END
+       POST-ACCUM
+          s.@unitNum = s.@unit.size(),
+          s.@unitMeasNum = s.@unitMeas.size();
+
+   T15 = SELECT s from subStationSet:s - (connected_Sub_Load>:e) - l_oad:t -(topo_load:e1)-:t1
+       ACCUM
+       IF(t1.island ==1) THEN
+          s.@load += t,
+          if(abs(t.Pimeas) >0.0000001) THEN
+             s.@loadMeas += t
+          end
+       END
+       POST-ACCUM
+          s.@loadNum = s.@load.size(),
+          s.@loadMeasNum = s.@loadMeas.size();
+
+    T16 = SELECT s from subStationSet:s - (connected_Sub_Bus>:e) - BUS:t -(topo_bus:e1)- :t1
+       ACCUM
+       IF(t1.island ==1) THEN
+          s.@bus += t,
+          if(abs(t.Pimeas) >0.0000001) THEN
+             s.@busMeas += t
+          end
+       END
+       POST-ACCUM
+          s.@busNum = s.@bus.size(),
+          s.@busMeasNum = s.@busMeas.size();
+
+
+  T2 = SELECT s from subStationSet:s
+   POST-ACCUM
+     s.@sub_deviceNum = s.@aclineDotNum + s.@trans2Num + s.@trans3Num + s.@unitNum + s.@loadNum + s.@busNum,
+     s.@sub_measNum = s.@aclineDotMeasNum + s.@trans2MeasNum + s.@trans3MeasNum + s.@unitMeasNum + s.@loadMeasNum + s.@busMeasNum,
+     if (s.@sub_deviceNum >= 1) then
+         s.@sub_cover_range = s.@sub_measNum/s.@sub_deviceNum,
+   //  else
+   //      s.@sub_cover_range = 0
+   //  end,
+         @@subinfoList += subinfo(s.name, s.strid,s.volt,s.@com_name,s.@aclineDotNum,s.@aclineDotMeasNum,s.@trans2Num,s.@trans2MeasNum,s.@trans3Num,s.@trans3MeasNum,s.@unitNum,s.@unitMeasNum, s.@loadNum,s.@loadMeasNum,s.@busNum,s.@busMeasNum, s.@sub_cover_range),
+         @@subinfoList_part += subinfo(s.name, s.strid,s.volt,s.@com_name,s.@aclineDotNum,s.@aclineDotMeasNum,s.@trans2Num,s.@trans2MeasNum,s.@trans3Num,s.@trans3MeasNum,s.@unitNum,s.@unitMeasNum, s.@loadNum,s.@loadMeasNum,s.@busNum,s.@busMeasNum, s.@sub_cover_range),
+         @@count_all += 1,
+         if s.volt >= 500 then
+             @@count_500 += 1,
+             if s.@sub_cover_range < 0.5 then
+                  @@count_500_50 += 1,
+                  @@count_50 += 1
+             else if s.@sub_cover_range >= 0.5 and s.@sub_cover_range < 0.8 then
+                  @@count_500_50_80 += 1,
+                  @@count_50_80 += 1
+             else if s.@sub_cover_range >= 0.8 then
+                  @@count_500_80 += 1,
+                  @@count_80 += 1
+             end
+         else if s.volt >= 220 then
+             @@count_220 += 1,
+             if s.@sub_cover_range < 0.5 then
+                  @@count_220_50 += 1,
+                  @@count_50 += 1
+             else if s.@sub_cover_range >= 0.5 and s.@sub_cover_range < 0.8 then
+                  @@count_220_50_80 += 1,
+                  @@count_50_80 += 1
+             else if s.@sub_cover_range >= 0.8 then
+                  @@count_220_80 += 1,
+                  @@count_80 += 1
+             end
+         else if s.volt >= 110 then
+             @@count_110 += 1,
+             if s.@sub_cover_range < 0.5 then
+                  @@count_110_50 += 1,
+                  @@count_50 += 1
+             else if s.@sub_cover_range >= 0.5 and s.@sub_cover_range < 0.8 then
+                  @@count_110_50_80 += 1,
+                  @@count_50_80 += 1
+             else if s.@sub_cover_range >= 0.8 then
+                  @@count_110_80 += 1,
+                  @@count_80 += 1
+             end
+         else if s.volt >= 34.5 then
+             @@count_35 += 1,
+             if s.@sub_cover_range < 0.5 then
+                  @@count_35_50 += 1,
+                  @@count_50 += 1
+             else if s.@sub_cover_range >= 0.5 and s.@sub_cover_range < 0.8 then
+                  @@count_35_50_80 += 1,
+                  @@count_50_80 += 1
+             else if s.@sub_cover_range >= 0.8 then
+                  @@count_35_80 += 1,
+                  @@count_80 += 1
+             end
+          else
+             @@count_other += 1,
+             if s.@sub_cover_range < 0.5 then
+                  @@count_other_50 += 1,
+                  @@count_50 += 1
+             else if s.@sub_cover_range >= 0.5 and s.@sub_cover_range < 0.8 then
+                  @@count_other_50_80 += 1,
+                  @@count_50_80 += 1
+             else if s.@sub_cover_range >= 0.8 then
+                  @@count_other_80 += 1,
+                  @@count_80 += 1
+             end
+          end
+       end;
+
+  if return_all then
+    print @@subinfoList;
+  else
+    print @@subinfoList_part;
+  end;
+
+  print @@count_50;
+  print @@count_50_80;
+  print @@count_80;
+
+  print @@count_500;
+  print @@count_500_50;
+  print @@count_500_50_80;
+  print @@count_500_80;
+
+  print @@count_220;
+  print @@count_220_50;
+  print @@count_220_50_80;
+  print @@count_220_80;
+
+  print @@count_110;
+  print @@count_110_50;
+  print @@count_110_50_80;
+  print @@count_110_80;
+
+  print @@count_35;
+  print @@count_35_50;
+  print @@count_35_50_80;
+  print @@count_35_80; 
+  
+  print @@count_other;
+  print @@count_other_50;
+  print @@count_other_50_80;
+  print @@count_other_80;
+
+  print @@count_all;
+}

@@ -1,0 +1,27 @@
+CREATE QUERY NTP_EMS_sub_info() FOR GRAPH gsql_EMS{
+
+  SumAccum<string> @@slack_bus;
+
+	T0 = {TopoND.*};
+        parameterSet = {parameters.*};
+
+/*	
+	T1 =  select s from T0:s-((topo_Tx_Two|topo_Tx_Three):e)-:t
+		  where t.volt == 500;
+*/
+
+  Tparameter = select s from parameterSet:s
+    post-accum
+      @@slack_bus += s.slack_bus_name;	
+	
+	T2 =  select s from T0:s-(topo_bus:e)-:t
+		  where (t.off == 0 AND t.name == @@slack_bus)
+		  //  OR (t.off == 0 AND t.name == "来宾变电站.2母线")
+		 // OR (t.off == 0 AND t.name == "四川.蜀州/500kV.Ⅰ母线")
+		 // OR (t.off == 0 AND t.name == "四川.蜀州/500kV.Ⅱ母线")
+		  post-accum
+		      s.start_pt = 1;
+print @@slack_bus;
+print T2.size();
+		  
+}

@@ -1,0 +1,31 @@
+se_all_info_bus_overview
+'''
+use ems_v1 match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s1:Substation)-[topoid_subid]->(td:TopoND) where startid.id = "113715890758877224"
+return td as topond
+
+UNION
+
+match (s2:Substation)-[connected_Sub_Trans_three]->(t:`three_port_transformer`)-[neutral_three]->(neutral_point)-[topo_neutral]->(TD:TopoND)
+return TD as topond
+
+NEXT
+match (s:topond) where s.island = 1
+let
+volt = s.base_kV,
+M_Vm = case when s.M_Vm is not NULL then s.M_Vm else 0.0 end,
+base_kV = case when s.base_kV is not NULL then s.base_kV else 0.0 end,
+SE_Vm = case when s.SE_Vm is not NULL then s.SE_Vm else 0.0 end,
+desired_volts = case when s.desired_volts is not NULL then s.desired_volts else 0.0 end,
+ZJP = case when s.ZJP is not NULL then s.ZJP else 0.0 end,
+ZJQ = case when s.ZJQ is not NULL then s.ZJQ else 0.0 end
+let
+volt_residual_pct = case when M_Vm <> 0 and base_kV >= 500 then abs(M_Vm-SE_Vm)*desired_volts/600*100 when M_Vm <> 0 and base_kV >= 330 and base_kV < 500 then abs(M_Vm-SE_Vm)*desired_volts/396*100 when M_Vm <> 0 and base_kV >= 220 and base_kV < 330 then abs(M_Vm-SE_Vm)*desired_volts/264*100 when M_Vm <> 0 then abs(M_Vm-SE_Vm)*desired_volts/132*100 else 0.0 end
+let
+count_V_belowlimit = case when volt_residual_pct <= 2.0 then 1 else 0 end,
+count_V_abovelimit = case when volt_residual_pct > 2.0 then 1 else 0 end,
+count_P0 = case when ZJP = 1 and ZJQ = 0 then 1 else 0 end,
+count_P0Q0 = case when ZJP = 1 and ZJQ = 1 then 1 else 0 end,
+count_P1Q1 = case when ZJP = 0 and ZJQ = 0 then 1 else 0 end
+
+return case when volt >= 500.0 then "500kV" when volt >= 220.0 then "220kV" when volt >= 110.0 then "110kV" when volt >= 34.5 then "35kV" when volt >= 10.0 then "10kV" else "other" end as voltageLevel, count(*) as total, sum(count_V_belowlimit) as count_V_belowlimit_total, sum(count_V_abovelimit) as count_V_abovelimit_total, sum(count_P0) as count_P0_total, sum(count_P0Q0) as count_P0Q0_total, sum(count_P1Q1) as count_P1Q1_total group by voltageLevel Next return voltageLevel, total, count_V_belowlimit_total, count_V_abovelimit_total, count_P0_total,count_P0Q0_total,count_P1Q1_total
+'''

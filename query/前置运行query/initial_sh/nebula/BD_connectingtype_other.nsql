@@ -1,0 +1,88 @@
+//Line 22-32
+'''
+use ems_v1 match (sub:Substation)-[:connected_Sub_Bus]->(bus0:BUS)-[:connected_Bus_CN]->(t1:CN)<-[:connected_Disconnector_CN]-(t2:Disconnector)-[:connected_Disconnector_CN]->(t3:CN)<-[:connected_Breaker_CN]-(t4:Breaker)-[:connected_Breaker_CN]->(t5:CN)<-[:connected_Disconnector_CN]-(t6:Disconnector)-[:connected_Disconnector_CN]->(t7:CN)<-[:connected_Bus_CN]-(t8:BUS)
+SET
+t2.connecting_type="bus_split",
+t2.connecting_dev=bus0.name,
+t4.connecting_type="bus_split",
+t4.connecting_dev=bus0.name,
+t6.connecting_type="bus_split",
+t6.connecting_dev=bus0.name
+'''
+
+//Line 37-47
+'''
+use ems_v1 match (sub:Substation)-[:connected_Sub_Aclinedot]->(ACline0:ACline_dot)-[:aclinedot_cn]->(t1:CN)<-[:connected_Disconnector_CN]-(t2:Disconnector)-[:connected_Disconnector_CN]->(t3:CN)<-[:connected_Breaker_CN]-(t4:Breaker)-[:connected_Breaker_CN]->(t5:CN)<-[:connected_Disconnector_CN]-(t6:Disconnector)
+SET
+t2.connecting_type="ACline_open",
+t2.connecting_dev=ACline0.name,
+t4.connecting_type="ACline_open",
+t4.connecting_dev=ACline0.name,
+t6.connecting_type="ACline_open",
+t6.connecting_dev=ACline0.name
+'''
+
+//Line 50-54
+'''
+use ems_v1 match (sub:Substation)-[:connected_Sub_Aclinedot]->(ACline0:ACline_dot)-[:aclinedot_cn]->(t1:CN)<-[:connected_Disconnector_CN]-(t2:Disconnector)
+SET
+t2.connecting_type="ACline_open",
+t2.connecting_dev=ACline0.name
+'''
+
+//Line 57-70
+'''
+use ems_v1 match (sub:Substation)-[:connected_Sub_Aclinedot]->(ACline0:ACline_dot)-[:aclinedot_cn]->(t1:CN)<-[:connected_Disconnector_CN]-(t2:Disconnector)-[:connected_Disconnector_CN]->(t3:CN)<-[:connected_Disconnector_CN]-(t4:Disconnector)-[:connected_Disconnector_CN]->(t5:CN)<-[:connected_Breaker_CN]-(t6:Breaker)-[:connected_Breaker_CN]->(t7:CN)<-[:connected_Disconnector_CN]-(t8:Disconnector)
+SET
+t2.connecting_type="ACline_open",
+t2.connecting_dev=ACline0.name,
+t4.connecting_type="ACline_open",
+t4.connecting_dev=ACline0.name,
+t6.connecting_type="ACline_open",
+t6.connecting_dev=ACline0.name,
+t8.connecting_type="ACline_open",
+t8.connecting_dev=ACline0.name
+'''
+
+//Line 73-80
+'''
+use ems_v1 match (sub:Substation)-[:connected_Sub_Aclinedot]->(ACline0:ACline_dot)-[:aclinedot_cn]->(t1:CN)<-[:connected_Disconnector_CN]-(t2:Disconnector)-[:connected_Disconnector_CN]->(t3:CN)<-[:connected_Disconnector_CN]-(t4:Disconnector)
+SET
+t2.connecting_type="ACline_open",
+t2.connecting_dev=ACline0.name,
+t4.connecting_type="ACline_open",
+t4.connecting_dev=ACline0.name
+'''
+
+
+//Line 85-95
+'''
+use ems_v1 match (sub:Substation)-[:connected_Sub_transformWinding]->(trans:TransformWinding)<-[:CN_transformWinding]-(t1:CN)<-[:connected_Disconnector_CN]-(t2:Disconnector)-[:connected_Disconnector_CN]->(t3:CN)<-[:connected_Breaker_CN]-(t4:Breaker)-[:connected_Breaker_CN]->(t5:CN)<-[:connected_Disconnector_CN]-(t6:Disconnector)-[:connected_Disconnector_CN]->(t7:CN)<-[:connected_Bus_CN]-(t8:BUS)
+SET
+t2.connecting_type="trans_open",
+t2.connecting_dev=trans.name,
+t4.connecting_type="trans_open",
+t4.connecting_dev=trans.name,
+t6.connecting_type="trans_open",
+t6.connecting_dev=trans.name
+'''
+
+
+//Line 98-105
+'''
+use ems_v1 match (sub:Substation)-[:connected_Sub_transformWinding]->(trans:TransformWinding)<-[:CN_transformWinding]-(t1:CN)<-[:connected_Breaker_CN]-(t2:Breaker)-[:connected_Breaker_CN]->(t3:CN)<-[:connected_Disconnector_CN]-(t4:Disconnector)-[：connected_Disconnector_CN]->(t5:CN)<-[connected_Bus_CN]-(t6:BUS)
+SET
+t2.connecting_type="trans_open",
+t2.connecting_dev=trans.name,
+t4.connecting_type="trans_open",
+t4.connecting_dev=trans.name
+'''
+
+
+//108-112
+'''
+use ems_v1 match (sub:Substation)-[:connected_Sub_transformWinding]->(trans:TransformWinding)<-[:CN_transformWinding]-(t1:CN)<-[:connected_Disconnector_CN]-(t2:Disconnector)-[:connected_Disconnector_CN]->(t3:CN)<-[:connected_Bus_CN]-(t4:BUS)
+SET
+t2.connecting_type="trans_open",
+t2.connecting_dev=trans.name
+'''

@@ -1,0 +1,27 @@
+CREATE QUERY BD_connectingtype_clear(/* Parameters here */) FOR GRAPH gsql_EMS syntax v2{ 
+  SumAccum<string> @devname;
+  SumAccum<string> @type;
+  SumAccum<int> @updateflag = 0; 
+
+  cpSet ={C_P.*};
+  sub ={Substation.*};
+  breakerSet = {Breaker.*};
+  disconnectorSet = {Disconnector.*};
+  
+  trans2Set ={two_port_transformer.*};
+  trans3Set ={three_port_transformer.*};
+  
+  aclinedotSet = {ACline_dot.*};
+  
+  busSet = {BUS.*};
+
+
+  breakerAndDisconnectorSet = breakerSet UNION disconnectorSet;
+  T_result =  select s from breakerAndDisconnectorSet:s
+                POST-ACCUM
+                     s.connecting_type = "other",
+                     s.connecting_dev = "N/A";
+
+
+
+}

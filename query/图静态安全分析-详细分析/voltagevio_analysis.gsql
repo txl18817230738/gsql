@@ -1,0 +1,32 @@
+create query voltagevio_analysis()
+for graph gsql_EMS {
+	
+	TYPEDEF TUPLE <string devId, string bus_name, string sub_name, string sub_id, double volt, double Vmax,  double Vmin> voltage_vio;
+	HeapAccum<voltage_vio>(1000000, bus_name DESC) @@voltageVio;
+        SumAccum<double> @Vmin=0.9;
+        SumAccum<double> @Vmax=1.1;
+        SumAccum<string> @subid;
+
+	T0 = {TopoND.*};
+        FaultSet = {Fault.*};
+        sub = {Substation.*};
+
+    Tsub_topo = SELECT t FROM sub:s - (topoid_subid:e) -:t
+                accum
+                t.@subid = s.strid;
+
+    Tbus  = select t from FaultSet:s-(fault_bus_overlimit:e)-:t
+         where abs(e.OverLimit_value) > 0.0001;
+
+    T1 = select t from Tbus:s-(topo_bus:e)-:t
+                  where t.island == 1 and s.volt >= 110
+                  ACCUM
+                    @@voltageVio+= voltage_vio(convertToString(s.id), s.name, t.Sub, t.@subid, t.base_kV, t.@Vmax, t.@Vmin);
+
+	
+	foreach x in @@voltageVio do
+            print x.devId, x.bus_name, x.sub_name, x.sub_id, x.volt, x.Vmax, x.Vmin;
+        end;
+    
+   print Tbus.size(), T1.size();		 
+}

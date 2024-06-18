@@ -1,0 +1,54 @@
+CREATE QUERY dispatcher_powerflow_device_overlimit(string companyID="113715890758877224") FOR GRAPH gsql_EMS { 
+  //统计各个区域的设备不越限百分比
+  SumAccum<int> @area_base_lineq1;
+  SumAccum<int> @area_base_lineq2;
+  SumAccum<int> @area_base_lineq3;
+  SumAccum<int> @area_base_voloverlimit;
+  
+  MapAccum<string,double> @@area_base_overlimit_pct;
+  
+  comp ={gridcom.*};
+  comp_stat={gridcom_stat.*};
+  
+  start_comp = select s from comp:s where s.id == companyID;
+  
+  second_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id; 
+  
+  T1 = select t from second_comp:s -(com_history_lineQ1vio:e)-:t
+                  ACCUM 
+                      int iter = t.today.size()-1,
+                      s.@area_base_lineq1 = t.today.get(iter).v;
+  
+  T2 = select t from second_comp:s -(com_history_lineQ2vio:e)-:t
+                  ACCUM
+                      int iter = t.today.size()-1,
+                      s.@area_base_lineq2 = t.today.get(iter).v;
+  
+  T3 = select t from second_comp:s -(com_history_lineQ3vio:e)-:t
+                  ACCUM
+                      int iter = t.today.size()-1,
+                      s.@area_base_lineq3 = t.today.get(iter).v;
+  
+  T4 = select t from second_comp:s -(com_history_volvio:e)-:t 
+                  ACCUM
+                     int iter = t.today.size()-1,
+                     s.@area_base_voloverlimit = t.today.get(iter).v;
+  
+  T5 = select t from second_comp:s -(gridcom_gridcom_stat:e)-:t
+                  ACCUM
+                    t.@area_base_lineq1 = s.@area_base_lineq1,
+                    t.@area_base_lineq2 = s.@area_base_lineq2,
+                    t.@area_base_lineq3 = s.@area_base_lineq3,
+                    t.@area_base_voloverlimit = s.@area_base_voloverlimit;
+  
+  T6 = select s from comp_stat:s where s.id !=companyID
+            ACCUM 
+                double overlimit_total = s.@area_base_lineq1 + s.@area_base_lineq2 + s.@area_base_lineq3 + s.@area_base_voloverlimit,
+                double total = s.count_acline + s.count_trans2 + s.count_trans3 + s.count_bus, //+ s.count_unit + s.count_load + s.count_CP + s.count_CS,//设备总数如何计算？
+                double pct =0,
+                if total >0 then 
+                    pct = overlimit_total / total
+                end,
+                @@area_base_overlimit_pct +=(s.id -> 1-pct);
+    print @@area_base_overlimit_pct;
+}

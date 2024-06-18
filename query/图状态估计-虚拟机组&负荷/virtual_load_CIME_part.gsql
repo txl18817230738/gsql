@@ -1,0 +1,44 @@
+CREATE QUERY virtual_load_CIME_part(string companyID="113715890758877224") FOR GRAPH gsql_EMS { 
+  TYPEDEF TUPLE<id string, Substation string, subname string, name string, devname string, volt double, off uint, Pimeas double, Qimeas double, nd string, base_value double, island int> load_get;
+  //HeapAccum<load_get>(50, id DESC, name DESC, Substation DESC, volt DESC)  @@unit_part;
+  HeapAccum<load_get>(50, id DESC, name DESC, Substation DESC, volt DESC)  @@vload_part;
+
+  //SumAccum<INT> @@count_all = 0;
+  SumAccum<INT> @@vcount_all = 0;
+  SumAccum<STRING> @subname;
+  SetAccum<string> @@Comp_ID;
+  SumAccum<int> @island;
+  //MapAccum<INT,INT> @@islandMap;
+
+  comp = {gridcom.*};
+  sub = {Substation.*};
+
+  if(companyID!="") then
+    start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+    WHILE(start_comp.size()>0) DO
+      start_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+    END;
+    sub = select t from comp:s-(connected_grid_sub:e)-:t where s.id in @@Comp_ID;
+  end;
+
+  F6 = SELECT t
+       FROM sub:s - (connected_Sub_Load:e) ->:t
+       accum t.@subname = s.name;
+
+  subs = select s from F6:s - (topo_load:e) - TopoND:t
+      accum
+        //@@islandMap+=(s.id->t.island);
+        s.@island = t.island;
+
+  G1 = select s from F6:s
+       //accum s.@island = @@islandMap.get(s.id)
+       POST-ACCUM
+            IF (s.id > 200000000000000000) THEN
+             @@vcount_all += 1,
+             @@vload_part += load_get(convertToString(s.id), s.Substation, s.@subname, s.name, "虚拟负荷", s.volt, s.off, s.Pimeas, s.Qimeas, convertToString(s.nd), s.base_value, s.@island)
+            END;
+
+  print @@vload_part;
+  print @@vcount_all;
+}

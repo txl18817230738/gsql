@@ -1,0 +1,357 @@
+CREATE QUERY dispatcher_powerflow_bus_cal(string companyID="113715890758877224", bool return_all=true, double v_qualified_factor=0.98) FOR GRAPH gsql_EMS syntax v2 { 
+ TYPEDEF TUPLE < string area, string sub_name, string sub_id, string bus_type, string tap_bus_name, double base_kV,  double Vm, double V_error_pct,  double Va, string volt_violation> row;
+  SumAccum<string> @area;
+  SumAccum<string> @sub_id;
+	SetAccum<string> @@Comp_ID;
+	//ListAccum<row> @@vertexList; 
+	string G_volt_violation;
+	//SumAccum<double> @V_error_abs;
+	SumAccum<double> @V_error_pct;
+  HeapAccum<row>(50, tap_bus_name DESC) @@result_part;
+  HeapAccum<row>(100000, tap_bus_name DESC) @@result;
+  
+  SumAccum<INT> @@count_all;
+  
+  SumAccum<INT> @@count_pq;
+  SumAccum<INT> @@count_pv;
+  SumAccum<INT> @@count_balance;
+  SumAccum<INT> @@count_error;
+  SumAccum<INT> @@count_avail;
+  
+  
+  SumAccum<INT> @@count_500;
+  SumAccum<INT> @@count_500_pq;
+  SumAccum<INT> @@count_500_pv;
+  SumAccum<INT> @@count_500_balance;
+  SumAccum<INT> @@count_500_error;
+  SumAccum<INT> @@count_500_avail;
+  
+  SumAccum<INT> @@count_220;
+  SumAccum<INT> @@count_220_pq;
+  SumAccum<INT> @@count_220_pv;
+  SumAccum<INT> @@count_220_balance;
+  SumAccum<INT> @@count_220_error;
+  SumAccum<INT> @@count_220_avail;
+  
+  
+  SumAccum<INT> @@count_110;
+  SumAccum<INT> @@count_110_pq;
+  SumAccum<INT> @@count_110_pv;
+  SumAccum<INT> @@count_110_balance;
+  SumAccum<INT> @@count_110_error;
+  SumAccum<INT> @@count_110_avail;
+  
+  SumAccum<INT> @@count_35;
+  SumAccum<INT> @@count_35_pq;
+  SumAccum<INT> @@count_35_pv;
+  SumAccum<INT> @@count_35_balance;
+  SumAccum<INT> @@count_35_error;
+  SumAccum<INT> @@count_35_avail;
+  
+  SumAccum<INT> @@count_10;
+  SumAccum<INT> @@count_10_pq;
+  SumAccum<INT> @@count_10_pv;
+  SumAccum<INT> @@count_10_balance;
+  SumAccum<INT> @@count_10_error;
+  SumAccum<INT> @@count_10_avail;
+  
+  SumAccum<INT> @@count_other;
+  SumAccum<INT> @@count_other_pq;
+  SumAccum<INT> @@count_other_pv;
+  SumAccum<INT> @@count_other_balance;
+  SumAccum<INT> @@count_other_error;
+  SumAccum<INT> @@count_other_avail;
+	
+	T0 = {TopoND.*};
+  sub = {Substation.*};
+	comp = {gridcom.*};
+   start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)-:t where s.id in @@Comp_ID
+                accum 
+                    t.@area =s.name;
+  
+  TopoSet_normal = select t from sub:s -(topoid_subid:e) -:t where t.island ==1
+                accum 
+                    t.@area = s.@area,
+                    t.@sub_id = s.strid;
+  TopoSet_neutral_add = select t from sub:s -(np_sub:e1)-neutral_point:t1-(topo_neutral:e)-:t where t.island==1;
+  
+  TopoSet = TopoSet_normal UNION TopoSet_neutral_add;
+  
+	TopoSet = SELECT s FROM TopoSet:s
+		 WHERE s.island == 1
+		 POST-ACCUM
+		 case when (s.PF_Vm >= s.up_V) then
+			s.OV = 1
+		 else s.OV = 0
+		 end,
+		 case when (s.PF_Vm <= s.lo_V) then
+			s.UV = 1
+		 else s.UV = 0
+		 end;
+		 
+	T_result = select s from TopoSet:s
+		 WHERE s.island == 1
+		 POST-ACCUM
+				if (s.volt >= 500) then
+                  if (abs(s.SE_Vm) > 0.01) then
+                    //s.@V_error_abs = abs(s.PF_Vm - s.SE_Vm),
+                    s.@V_error_pct = abs(s.PF_Vm - s.SE_Vm)/1082*100
+                  else
+                    //s.@V_error_abs = 0,
+                    s.@V_error_pct = 0
+                  end
+                else if (s.volt >= 330 and s.volt < 500) then
+                  if (abs(s.SE_Vm) > 0.01) then
+                    //s.@V_error_abs = abs(s.PF_Vm - s.SE_Vm),
+                    s.@V_error_pct = abs(s.PF_Vm - s.SE_Vm)/686*100
+                  else
+                    //s.@V_error_abs = 0,
+                    s.@V_error_pct = 0
+                  end
+                else if (s.volt >= 220 and s.volt< 330) then
+                  if (abs(s.SE_Vm) > 0.01) then
+                    //s.@V_error_abs = abs(s.PF_Vm - s.SE_Vm),
+                    s.@V_error_pct = abs(s.PF_Vm - s.SE_Vm)/305*100
+                  else
+                    //s.@V_error_abs = 0,
+                    s.@V_error_pct = 0
+                  end
+				else
+                  if (abs(s.SE_Vm) > 0.01) then
+                    //s.@V_error_abs = abs(s.PF_Vm - s.SE_Vm),
+                    s.@V_error_pct = abs(s.PF_Vm - s.SE_Vm)/141*100
+                  else
+                    //s.@V_error_abs = 0,
+                    s.@V_error_pct = 0
+                  end
+                end;	 
+		 
+	T1 = SELECT s
+	FROM T_result:s
+	where s.island == 1
+	POST-ACCUM
+	string busType = "",
+	if (s.busType == 0 or s.busType == 1) then
+	 	busType = "PQ母线"
+	else if (s.busType == 2) then
+	 	busType = "PV母线"
+	else if (s.busType == 3) then
+	 	busType = "平衡母线"
+	else
+		busType = "异常母线"
+	end,
+	case when (s.OV == 1) then
+		@@result+= row(s.@area, s.Sub, s.@sub_id,busType, s.bus_name, s.base_kV,  s.PF_Vm,  s.@V_error_pct, s.PF_Va, "高电压越限"),
+    @@result_part+= row(s.@area, s.Sub, s.@sub_id,busType, s.bus_name, s.base_kV,  s.PF_Vm,  s.@V_error_pct, s.PF_Va, "高电压越限")
+	when (s.UV == 1) then
+		@@result+= row(s.@area, s.Sub, s.@sub_id,busType, s.bus_name, s.base_kV,  s.PF_Vm,  s.@V_error_pct, s.PF_Va, "低电压越限"),
+		@@result_part+= row(s.@area, s.Sub, s.@sub_id,busType, s.bus_name, s.base_kV,  s.PF_Vm,  s.@V_error_pct, s.PF_Va, "低电压越限")
+	else
+		@@result+= row(s.@area, s.Sub, s.@sub_id,busType, s.bus_name, s.base_kV,  s.PF_Vm,  s.@V_error_pct, s.PF_Va, "正常"),
+	  @@result_part+= row(s.@area, s.Sub, s.@sub_id,busType, s.bus_name, s.base_kV,  s.PF_Vm,  s.@V_error_pct, s.PF_Va, "正常")
+	end,
+  @@count_all += 1,
+    double volt = s.base_kV,
+                  if volt >= 500 then
+                  @@count_500 += 1,
+                  if s.@V_error_pct <=1-v_qualified_factor then 
+                     @@count_avail +=1,
+                     @@count_500_avail +=1 
+                  end,
+                  if busType=="PQ母线" then 
+                     @@count_500_pq +=1,
+                     @@count_pq +=1
+                  end,
+                  if busType=="PV母线" then 
+                     @@count_500_pv +=1,
+                     @@count_pv +=1
+                  end,
+                  if busType=="平衡母线" then 
+                     @@count_500_balance +=1,
+                     @@count_balance +=1
+                  end,
+                  if busType=="异常母线" then 
+                     @@count_500_error +=1,
+                     @@count_error +=1
+                  end
+                else if volt >= 220 then
+                  @@count_220+=1,
+                  if s.@V_error_pct <=1-v_qualified_factor then 
+                     @@count_avail +=1,
+                     @@count_220_avail +=1 
+                  end,
+                  if busType=="PQ母线" then 
+                     @@count_220_pq +=1,
+                     @@count_pq +=1
+                  end,
+                  if busType=="PV母线" then 
+                     @@count_220_pv +=1,
+                     @@count_pv +=1
+                  end,
+                  if busType=="平衡母线" then 
+                     @@count_220_balance +=1,
+                     @@count_balance +=1
+                  end,
+                  if busType=="异常母线" then 
+                     @@count_220_error +=1,
+                     @@count_error +=1
+                  end 
+                  
+                else if volt >= 110 then
+                  @@count_110+=1,
+                  if s.@V_error_pct <=1-v_qualified_factor then 
+                     @@count_avail +=1,
+                     @@count_110_avail +=1 
+                  end,
+                  if busType=="PQ母线" then 
+                     @@count_110_pq +=1,
+                     @@count_pq +=1
+                  end,
+                  if busType=="PV母线" then 
+                     @@count_110_pv +=1,
+                     @@count_pv +=1
+                  end,
+                  if busType=="平衡母线" then 
+                     @@count_110_balance +=1,
+                     @@count_balance +=1
+                  end,
+                  if busType=="异常母线" then 
+                     @@count_110_error +=1,
+                     @@count_error +=1
+                  end                
+                else if volt >= 34.5 then
+                  @@count_35+=1,
+                  if s.@V_error_pct <=1-v_qualified_factor then 
+                     @@count_avail +=1,
+                     @@count_35_avail +=1 
+                  end,
+                  if busType=="PQ母线" then 
+                     @@count_35_pq +=1,
+                     @@count_pq +=1
+                  end,
+                  if busType=="PV母线" then 
+                     @@count_35_pv +=1,
+                     @@count_pv +=1
+                  end,
+                  if busType=="平衡母线" then 
+                     @@count_35_balance +=1,
+                     @@count_balance +=1
+                  end,
+                  if busType=="异常母线" then 
+                     @@count_35_error +=1,
+                     @@count_error +=1
+                  end     
+  
+                else if volt >= 10 then
+                  @@count_10+=1,
+                  if s.@V_error_pct <=1-v_qualified_factor then 
+                     @@count_avail +=1,
+                     @@count_10_avail +=1 
+                  end,
+                   if busType=="PQ母线" then 
+                     @@count_10_pq +=1,
+                     @@count_pq +=1
+                  end,
+                  if busType=="PV母线" then 
+                     @@count_10_pv +=1,
+                     @@count_pv +=1
+                  end,
+                  if busType=="平衡母线" then 
+                     @@count_10_balance +=1,
+                     @@count_balance +=1
+                  end,
+                  if busType=="异常母线" then 
+                     @@count_10_error +=1,
+                     @@count_error +=1
+                  end
+                else
+                  @@count_other+=1,
+                  if s.@V_error_pct <=1-v_qualified_factor then 
+                     @@count_avail +=1,
+                     @@count_other_avail +=1 
+                  end,
+                   if busType=="PQ母线" then 
+                     @@count_other_pq +=1,
+                     @@count_pq +=1
+                  end,
+                  if busType=="PV母线" then 
+                     @@count_other_pv +=1,
+                     @@count_pv +=1
+                  end,
+                  if busType=="平衡母线" then 
+                     @@count_other_balance +=1,
+                     @@count_balance +=1
+                  end,
+                  if busType=="异常母线" then 
+                     @@count_other_error +=1,
+                     @@count_error +=1
+                  end
+                end;
+			
+		if return_all then
+    print @@result;
+  else
+    print @@result_part;
+  end;
+	        
+			
+
+	print @@count_all;
+  
+  print @@count_pq;
+  print @@count_pv;
+  print @@count_balance;
+  print @@count_error;
+  print @@count_avail;
+  
+  
+  print @@count_500;
+  print @@count_500_pq;
+  print @@count_500_pv;
+  print @@count_500_balance;
+  print @@count_500_error;
+  print @@count_500_avail;
+  
+  print @@count_220;
+  print @@count_220_pq;
+  print @@count_220_pv;
+  print @@count_220_balance;
+  print @@count_220_error;
+  print @@count_220_avail;
+  
+  
+  print @@count_110;
+  print @@count_110_pq;
+  print @@count_110_pv;
+  print @@count_110_balance;
+  print @@count_110_error;
+  print @@count_110_avail;
+  
+  print @@count_35;
+  print @@count_35_pq;
+  print @@count_35_pv;
+  print @@count_35_balance;
+  print @@count_35_error;
+  print @@count_35_avail;
+  
+  print @@count_10;
+  print @@count_10_pq;
+  print @@count_10_pv;
+  print @@count_10_balance;
+  print @@count_10_error;
+  print @@count_10_avail;
+  
+  print @@count_other;
+  print @@count_other_pq;
+  print @@count_other_pv;
+  print @@count_other_balance;
+  print @@count_other_error;
+  print @@count_other_avail;
+	
+}

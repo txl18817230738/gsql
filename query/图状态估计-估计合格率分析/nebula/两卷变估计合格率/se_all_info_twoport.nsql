@@ -1,0 +1,56 @@
+se_all_info_twoport
+'''
+use ems_v1 
+match (p:parameters)
+let
+error_limit_P = case when p.error_limit_P is not NULL then p.error_limit_P else 0.0 end,
+error_limit_Q = case when p.error_limit_Q is not NULL then p.error_limit_Q else 0.0 end,
+error_p_baddata = case when p.backup1 is not NULL then p.backup1 else 0.0 end,
+error_q_baddata = case when p.backup2 is not NULL then p.backup2 else 0.0 end
+
+match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:connected_Sub_Trans_two]->(t:`two_port_transformer`)<-[topo_Tx_Two]-(td:TopoND) filter where startid.id = "113715890758877224"
+let
+island = td.island,
+bus_name = td.bus_name,
+device_type = "twoport_transformer",
+Pimeas = case when t.Pimeas is not NULL then t.Pimeas else 0.0 end,
+P = case when t.P is not NULL then t.P else 0.0 end,
+Qimeas = case when t.Qimeas is not NULL then t.Qimeas else 0.0 end,
+Q = case when t.Q is not NULL then t.Q else 0.0 end,
+S = case when t.S is not NULL then t.S else 0.0 end
+let
+P_error = case when abs(Pimeas) > 0 then P - Pimeas else 0.0 end,
+P_error_abs = case when abs(Pimeas) > 0 then abs(P - Pimeas) else 0.0 end,
+Q_error = case when abs(Qimeas) > 0 then Q - Qimeas else 0.0 end,
+P_error_abs = case when abs(Qimeas) > 0 then abs(Q - Qimeas) else 0.0 end,
+
+P_error_pct = case when S > 0.1 then abs(P - Pimeas)/S*100 else 0 end,
+Q_error_pct = case when S > 0.1 and abs(Qimeas) > 0.0001 then abs(Q - Qimeas)/S*100 else 0 end
+
+match (twoport:`two_port_transformer`)<-[Meas_trans2]-(m:meas)
+let
+p_meas_flag = m.P_PseudoFlag,
+q_meas_flag = m.Q_PseudoFlag
+
+match (srctrans:`two_port_transformer`)<-[txI_txJ_transformerline] - (tartrans:`two_port_transformer`)
+let
+src_Pimeas = case when srctrans.Pimeas is not NULL then srctrans.Pimeas else 0.0 end,
+src_Qimeas = case when srctrans.Qimeas is not NULL then srctrans.Qimeas else 0.0 end,
+tar_Pimeas = case when tartrans.Pimeas is not NULL then tartrans.Pimeas else 0.0 end,
+tar_Qimeas = case when tartrans.Qimeas is not NULL then tartrans.Qimeas else 0.0 end
+let
+P_mark = case when src_Pimeas <> 0 then "实测" else "无实测" end,
+Q_mark = case when src_Qimeas <> 0 then "实测" else "无实测" end,
+
+P_mark_reverse = case when tar_Pimeas <> 0 then "实测" else "无实测" end,
+Q_mark_reverse = case when tar_Qimeas <> 0 then "实测" else "无实测" end
+
+return src.name, src.volt, sub_name, sub_id, s.@bus_name, t.@bus_name,
+                        // from_side (positive direction)
+                        P_mark, P_mark_num, s.Pimeas, s.P, s.@P_error, s.@P_error_abs, s.@P_error_pct, 
+                        Q_mark, Q_mark_num, s.Qimeas, s.Q, s.@Q_error, s.@Q_error_abs, s.@Q_error_pct,
+                        // to_side (reverse direction)
+                        P_mark_reverse, t.Pimeas, t.P, t.@P_error, t.@P_error_abs, t.@P_error_pct,
+                        Q_mark_reverse, t.Qimeas, t.Q, t.@Q_error, t.@Q_error_abs, t.@Q_error_pct,
+                        s.@device_type
+'''

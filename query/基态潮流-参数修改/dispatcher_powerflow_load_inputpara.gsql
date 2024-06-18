@@ -1,0 +1,278 @@
+CREATE QUERY dispatcher_powerflow_load_inputpara(string companyID="113715890758877224", bool return_all=true) FOR GRAPH gsql_EMS { 
+  TYPEDEF TUPLE<string load_name, string sub_name, string sub_id, double sub_volt, double P_pf_real, double Q_pf_real, double load_volt, string from_vertex_id> load_list;
+	SetAccum<string> @@Comp_ID;
+	SumAccum<string> @sub_name;
+  SumAccum<string> @sub_id;
+	SumAccum<int> @sub_volt;
+
+	
+  SumAccum<INT> @@count_all;
+	HeapAccum<load_list>(10000000, load_name ASC) @@loads_all;
+	HeapAccum<load_list>(50, load_name ASC) @@loads_part;
+    
+	SumAccum<INT> @@count_0;
+	SumAccum<INT> @@count_0_10;
+	SumAccum<INT> @@count_10_50;
+	SumAccum<INT> @@count_50;
+  
+  SumAccum<double> @@total_pf;
+  //SumAccum<double> @@total_cal;
+  
+  
+	SumAccum<INT> @@count_500;
+	SumAccum<INT> @@count_500_0;
+	SumAccum<INT> @@count_500_0_10;
+	SumAccum<INT> @@count_500_10_50;
+	SumAccum<INT> @@count_500_50;
+	SumAccum<double> @@count_500_pf;
+	//SumAccum<double> @@count_500_cal;
+  
+	SumAccum<INT> @@count_220;
+	SumAccum<INT> @@count_220_0;
+	SumAccum<INT> @@count_220_0_10;
+	SumAccum<INT> @@count_220_10_50;
+	SumAccum<INT> @@count_220_50;
+	SumAccum<double> @@count_220_pf;
+	//SumAccum<double> @@count_220_cal;
+  
+  
+    SumAccum<INT> @@count_110;
+	SumAccum<INT> @@count_110_0;
+	SumAccum<INT> @@count_110_0_10;
+	SumAccum<INT> @@count_110_10_50;
+	SumAccum<INT> @@count_110_50;
+	SumAccum<double> @@count_110_pf;
+	//SumAccum<double> @@count_110_cal;
+  
+	SumAccum<INT> @@count_35;
+	SumAccum<INT> @@count_35_0;
+	SumAccum<INT> @@count_35_0_10;
+	SumAccum<INT> @@count_35_10_50;
+	SumAccum<INT> @@count_35_50;
+	SumAccum<double> @@count_35_pf;
+	//SumAccum<double> @@count_35_cal;
+  
+	SumAccum<INT> @@count_10;
+	SumAccum<INT> @@count_10_0;
+	SumAccum<INT> @@count_10_0_10;
+	SumAccum<INT> @@count_10_10_50;
+	SumAccum<INT> @@count_10kv_50;
+	SumAccum<double> @@count_10_pf;
+	//SumAccum<double> @@count_10_cal;
+	
+  
+	SumAccum<INT> @@count_other;
+	SumAccum<INT> @@count_other_0;
+	SumAccum<INT> @@count_other_0_10;
+	SumAccum<INT> @@count_other_10_50;
+	SumAccum<INT> @@count_other_50;
+  SumAccum<double> @@count_other_pf;
+	//SumAccum<double> @@count_other_cal;
+   
+
+	T0 = {TopoND.*};
+	sub = {Substation.*};
+	comp = {gridcom.*};
+	
+	start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID; 
+        
+  loadSet = SELECT t FROM sub:s - (connected_Sub_Load:e) ->:t
+                accum
+                t.@sub_name = s.name,
+                t.@sub_id = s.strid,
+                t.@sub_volt = s.volt;
+  
+  T_load = SELECT s FROM loadSet:s - (topo_load:e) - TopoND:t where t.island ==1;
+			
+	T_load = SELECT s FROM T_load:s		
+			POST-ACCUM
+			// lazy_loading
+				@@loads_all += load_list(s.name, s.@sub_name, s.@sub_id, s.@sub_volt, s.P_pf, s.Q_pf,s.volt, s.strid),
+				@@loads_part += load_list(s.name, s.@sub_name, s.@sub_id, s.@sub_volt, s.P_pf, s.Q_pf,s.volt, s.strid),
+			@@count_all += 1,
+      @@total_pf += s.P_pf,
+      //@@total_cal += s.P,
+			double volt = s.volt,
+			if volt >= 500 then
+				 @@count_500 += 1,
+				 @@count_500_pf += s.P_pf,
+				 //@@count_500_cal += s.P, 
+				 if s.P_pf < 0 then
+                    @@count_500_0+=1,
+                    @@count_0+=1
+                  else if s.P_pf >= 0 and s.P_pf < 10 then
+                    @@count_500_0_10+=1,
+                    @@count_0_10+=1
+                  else if s.P_pf >= 10 and s.P_pf < 50 then
+                    @@count_500_10_50+=1,
+                    @@count_10_50+=1            
+                  else if s.P_pf >= 50 then
+                    @@count_500_50+=1,
+                    @@count_50+=1
+                  end
+			else if volt >= 220 then
+                  @@count_220+=1,
+                  @@count_220_pf += s.P_pf,
+                  
+				  //@@count_220_cal += abs(s.P),
+				 if s.P_pf < 0 then
+                    @@count_220_0+=1,
+                    @@count_0+=1
+                  else if s.P_pf >= 0 and s.P_pf < 10 then
+                    @@count_220_0_10+=1,
+                    @@count_0_10+=1
+                  else if s.P_pf >= 10 and s.P_pf < 50 then
+                    @@count_220_10_50+=1,
+                    @@count_10_50+=1            
+                  else if s.P_pf >= 50 then
+                    @@count_220_50+=1,
+                    @@count_50+=1
+                  end
+                  
+                else if volt >= 110 then
+                  @@count_110+=1,
+                  @@count_110_pf += s.P_pf,
+				  //@@count_110_cal += abs(s.P),
+				 if s.P_pf < 0 then
+                    @@count_110_0+=1,
+                    @@count_0+=1
+                  else if s.P_pf >= 0 and s.P_pf < 10 then
+                    @@count_110_0_10+=1,
+                    @@count_0_10+=1
+                  else if s.P_pf >= 10 and s.P_pf < 50 then
+                    @@count_110_10_50+=1,
+                    @@count_10_50+=1            
+                  else if s.P_pf >= 50 then
+                    @@count_110_50+=1,
+                    @@count_50+=1
+                  end
+                  
+                else if volt >= 34.5 then
+                  @@count_35+=1,
+                  @@count_35_pf += s.P_pf,
+				  //@@count_35_cal += abs(s.P),
+				 if s.P_pf < 0 then
+                    @@count_35_0+=1,
+                    @@count_0+=1
+                  else if s.P_pf >= 0 and s.P_pf < 10 then
+                    @@count_35_0_10+=1,
+                    @@count_0_10+=1
+                  else if s.P_pf >= 10 and s.P_pf < 50 then
+                    @@count_35_10_50+=1,
+                    @@count_10_50+=1            
+                  else if s.P_pf >= 50 then
+                    @@count_35_50+=1,
+                    @@count_50+=1
+                  end
+  
+                else if volt >= 10 then
+                  @@count_10+=1,
+                  @@count_10_pf += s.P_pf,
+				  //@@count_10_cal += abs(s.P),
+				 if s.P_pf < 0 then
+                    @@count_10_0+=1,
+                    @@count_0+=1
+                  else if s.P_pf >= 0 and s.P_pf < 10 then
+                    @@count_10_0_10+=1,
+                    @@count_0_10+=1
+                  else if s.P_pf >= 10 and s.P_pf < 50 then
+                    @@count_10_10_50+=1,
+                    @@count_10_50+=1            
+                  else if s.P_pf >= 50 then
+                    @@count_10kv_50+=1,
+                    @@count_50+=1
+                  end
+                  
+                else
+                  @@count_other+=1,
+                  @@count_other_pf += s.P_pf,
+				 // @@count_other_cal += abs(s.P),
+				 if s.P_pf < 0 then
+                    @@count_other_0+=1,
+                    @@count_0+=1
+                  else if s.P_pf >= 0 and s.P_pf < 10 then
+                    @@count_other_0_10+=1,
+                    @@count_0_10+=1
+                  else if s.P_pf >= 10 and s.P_pf < 50 then
+                    @@count_other_10_50+=1,
+                    @@count_10_50+=1            
+                  else if s.P_pf >= 50 then
+                    @@count_other_50+=1,
+                    @@count_50+=1
+                  end
+                end;	  
+				  
+	
+						
+	if return_all then
+    print @@loads_all;
+  else
+    print @@loads_part;
+  end;
+  print @@count_all;
+  print @@count_0;
+	print @@count_0_10;
+	print @@count_10_50;
+	print @@count_50;
+  
+  print @@total_pf;
+  //print @@total_cal;
+  
+  
+	print @@count_500;
+	print @@count_500_0;
+	print @@count_500_0_10;
+	print @@count_500_10_50;
+	print @@count_500_50;
+	print @@count_500_pf;
+	//print @@count_500_cal;
+  
+	print @@count_220;
+	print @@count_220_0;
+	print @@count_220_0_10;
+	print @@count_220_10_50;
+	print @@count_220_50;
+	print @@count_220_pf;
+	//print @@count_220_cal;
+  
+  
+    print @@count_110;
+	print @@count_110_0;
+	print @@count_110_0_10;
+	print @@count_110_10_50;
+	print @@count_110_50;
+	print @@count_110_pf;
+	//print @@count_110_cal;
+  
+	print @@count_35;
+	print @@count_35_0;
+	print @@count_35_0_10;
+	print @@count_35_10_50;
+	print @@count_35_50;
+	print @@count_35_pf;
+	//print @@count_35_cal;
+  
+	print @@count_10;
+	print @@count_10_0;
+	print @@count_10_0_10;
+	print @@count_10_10_50;
+	print @@count_10kv_50;
+	print @@count_10_pf;
+	//print @@count_10_cal;
+	
+  
+	print @@count_other;
+	print @@count_other_0;
+	print @@count_other_0_10;
+	print @@count_other_10_50;
+	print @@count_other_50;
+  print @@count_other_pf;
+	//print @@count_other_cal;
+    
+}

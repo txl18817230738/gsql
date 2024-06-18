@@ -1,0 +1,16 @@
+"""
+use ems match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:connected_Sub_Unit]->(F6:`unit`) where startid.gridid = "113715890758877224"
+let 
+p_rate = case when F6.P_rate <= 0.0 then 300.0 ELSE F6.P_rate end,
+piMeas = case when F6.Pimeas is not NULL then F6.Pimeas ELSE 0.0 end
+let 
+meas_overload = case when p_rate > 0.0 then (piMeas/p_rate)*100.0 ELSE 0.0 end
+let
+overload_type_less = case when meas_overload >= 0.0 and meas_overload <= 20.0 then 1 else 0 end,
+overload_type_midlle = case when meas_overload > 20.0 and meas_overload <= 80.0 then 1 else 0 end,
+overload_type_large = case when  meas_overload > 80.0 and meas_overload <= 100.0 then 1 else 0 end,
+overload_type_overload = case when meas_overload > 100.0 then 1 else 0 end,
+neg = case when piMeas < 0.0 then abs(piMeas) ELSE 0.0 end,
+pos = case when piMeas >= 0.0 then piMeas ELSE 0.0 end
+ return case when F6.Gentype = "火电机组" then "火电" when F6.Gentype = "水电机组" then "水电"  when F6.Gentype = "风电机组" then "风电" when F6.Gentype = "光伏机组" then "光伏"  when F6.Gentype = "虚拟机组" then "虚拟" when F6.Gentype = "交换机组" then "交换" when F6.Gentype = "核电机组" then "核电" when F6.Gentype = "抽蓄机组" then "抽蓄" else "其他机组" end as unitType, count(*) as total, sum(p_rate) as cap, sum(neg) as neg, sum(pos) as pos, sum(overload_type_less) as over_load_less, sum(overload_type_midlle) as over_load_middle, sum(overload_type_large) as over_load_large, sum(overload_type_overload) as over_load_overload group by unitType Next return unitType, total, cap, neg, pos, over_load_less, over_load_middle, over_load_large, over_load_overload
+ """

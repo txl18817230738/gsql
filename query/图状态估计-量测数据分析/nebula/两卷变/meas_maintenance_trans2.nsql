@@ -1,0 +1,29 @@
+meas_maintenance_trans2
+"""
+use ems_v1
+match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:connected_Sub_Trans_two]->(t:`two_port_transformer`)<-[txJ_txI_transformerline]-(`two_port_transformer`) filter where startid.id = "113715890758877224"
+let
+Ri_eP = {key:e.name,value:e.Ri_eP},
+Ri_eQ = {key:e.name,value:e.Ri_eQ},
+sub_id = s.strid
+match (srcTrans2:`two_port_transformer`)<-[ed:txI_txJ_transformerline]-(tarTrans2:`two_port_transformer`) where srcTrans2.island=1 and tarTrans2.island=1
+let
+p_rate = case when srcTrans2.S is not NULL then s.S else 0.0 end,
+Pimeas = case when srcTrans2.Pimeas is not NULL then srcTrans2.Pimeas else 0.0 end,
+Qimeas = case when srcTrans2.Qimeas is not NULL then srcTrans2.Qimeas else 0.0 end,
+Pimeas_reverse = case when tarTrans2.Pimeas is not NULL then tarTrans2.Pimeas else 0.0 end,
+Qimeas_reverse = case when tarTrans2.Qimeas is not NULL then tarTrans2.Qimeas else 0.0 end
+let
+meas_overload = case when abs(p_rate) >= 0.5 then abs(Pimeas/p_rate)*100 else 0.0 end
+let
+overload_type = case when meas_overload >= 0.0 and meas_overload <= 20.0 then "轻载" when meas_overload > 20.0 and meas_overload <= 80.0 then "正常" when meas_overload > 80.0 and meas_overload <= 100.0 then "重载" when meas_overload > 100.0 then "过载" end,
+p_mark = case when Pimeas <> 0.0 then "实测" else "无实测" end,
+p_mark_num = case when Pimeas <> 0.0 then 1 else 0 end,
+q_mark = case when Qimeas <> 0.0 then "实测" else "无实测" end,
+q_mark_num = case when Qimeas <> 0.0 then 1 else 0 end,
+p_mark_reverse = case when Pimeas_reverse <> 0 then "实测" else "无实测" end,
+q_mark_reverse = case when Qimeas_reverse <> 0 then "实测" else "无实测" end,
+device_type = "双绕组变压器"
+return srcTrans2.name, device_type, srcTrans2.Substation, sub_id, meas_overload, overload_type, srcTrans2.bus_name, srcTrans2.topoID, tarTrans2.bus_name, tarTrans2.topoID, srcTrans2.volt,
+p_mark,p_mark_num,Pimeas,q_mark,q_mark_num,Qimeas,ed.Ri_eP,ed.Ri_eQ,p_mark_reverse,Pimeas_reverse,q_mark_reverse,Qimeas_reverse,Ri_eP.get(e.name), Ri_eQ.get(e.name)
+"""

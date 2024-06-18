@@ -1,0 +1,257 @@
+CREATE QUERY dispatcher_powerflow_voltage_exceeding_analysis(bool return_all=true) FOR GRAPH gsql_EMS { 
+  TYPEDEF TUPLE <string bus_name, string area, string sub_name, string sub_id, double se_Vm, string vio_type_se, double pf_Vm, string vio_type_pf, bool has_se_exceed, bool has_pf_exceed, double volt> row;
+
+  SumAccum<int> @@count_all;
+
+  
+  HeapAccum<row>(10000000, bus_name DESC, sub_name DESC) @@result;
+	HeapAccum<row>(50, bus_name DESC, sub_name DESC) @@result_part;
+  
+	//SumAccum<string> @vio_type_pf;
+	//SumAccum<string> @vio_type_se;
+	//SumAccum<double> @difference;
+	//SumAccum<double> @per_rating;
+	//SumAccum<double> @Vmin=0.9;
+	//SumAccum<double> @Vmax=1.1;
+  SumAccum<string> @subid;
+  SumAccum<string> @sub_name;
+  SumAccum<string> @area;
+  //OrAccum<bool> @has_se_exceed;
+  //OrAccum<bool> @has_pf_exceed;
+  
+  
+  SumAccum<INT> @@count_se_exceed;
+  SumAccum<INT> @@count_pf_exceed;
+  SumAccum<INT> @@count_both_exceed;
+  
+  
+  SumAccum<INT> @@count_500;
+  SumAccum<INT> @@count_500_se_exceed;
+  SumAccum<INT> @@count_500_pf_exceed;
+  SumAccum<INT> @@count_500_both_exceed;
+  
+  SumAccum<INT> @@count_220;
+  SumAccum<INT> @@count_220_se_exceed;
+  SumAccum<INT> @@count_220_pf_exceed;
+  SumAccum<INT> @@count_220_both_exceed;
+  
+  
+  SumAccum<INT> @@count_110;
+  SumAccum<INT> @@count_110_se_exceed;
+  SumAccum<INT> @@count_110_pf_exceed;
+  SumAccum<INT> @@count_110_both_exceed;
+  
+  SumAccum<INT> @@count_35;
+  SumAccum<INT> @@count_35_se_exceed;
+  SumAccum<INT> @@count_35_pf_exceed;
+  SumAccum<INT> @@count_35_both_exceed;
+  
+  SumAccum<INT> @@count_10;
+  SumAccum<INT> @@count_10_se_exceed;
+  SumAccum<INT> @@count_10_pf_exceed;
+  SumAccum<INT> @@count_10_both_exceed;
+  
+  SumAccum<INT> @@count_other;
+  SumAccum<INT> @@count_other_se_exceed;
+  SumAccum<INT> @@count_other_pf_exceed;
+  SumAccum<INT> @@count_other_both_exceed;
+	
+		
+	T0 = {TopoND.*};
+	sub ={Substation.*};
+	
+	sub = select s from sub:s -(connected_grid_sub:e)-:t 
+			accum 
+				s.@area = t.name;
+
+    T0 = select s from T0:s-(topoid_subid:e)-:t
+         accum
+         s.@subid = t.strid,
+         s.@sub_name = t.name,
+		 s.@area = t.@area;
+
+
+    T1 = SELECT s FROM T0:s
+		  where s.island == 1 
+		  ACCUM 
+        string vio_type_se="正常",
+        string vio_type_pf="正常",
+	   case when (s.PF_Vm >= s.up_V) then
+			 vio_type_pf="高压越限"
+		when (s.PF_Vm <= s.lo_V) then
+			 vio_type_pf="低压越限"
+		end,
+		case when (s.SE_Vm >= s.up_V) then
+			 vio_type_se="高压越限"
+		when (s.SE_Vm <= s.lo_V) then
+			 vio_type_se="低压越限"
+		end,	 
+		
+		if(vio_type_pf != "正常" and vio_type_se != "正常" ) then
+				@@result+= row(s.bus_name, s.@area, s.Sub, s.@subid, s.SE_Vm, vio_type_se,s.PF_Vm, vio_type_pf, true,true,s.base_kV),
+				@@result_part+= row(s.bus_name, s.@area, s.Sub, s.@subid, s.SE_Vm, vio_type_se,s.PF_Vm, vio_type_pf, true,true,s.base_kV)
+		else if (vio_type_pf == "正常" and vio_type_se != "正常" ) then
+				@@result+= row(s.bus_name, s.@area, s.Sub, s.@subid, s.SE_Vm, vio_type_se,s.PF_Vm, vio_type_pf, true,false,s.base_kV),
+				@@result_part+= row(s.bus_name, s.@area, s.Sub, s.@subid, s.SE_Vm, vio_type_se,s.PF_Vm, vio_type_pf, true,false,s.base_kV)
+		else if (vio_type_pf != "正常" and vio_type_se == "正常" ) then
+		
+				@@result+= row(s.bus_name, s.@area, s.Sub, s.@subid, s.SE_Vm, vio_type_se,s.PF_Vm, vio_type_pf, false,true,s.base_kV),
+				@@result_part+= row(s.bus_name, s.@area, s.Sub, s.@subid, s.SE_Vm, vio_type_se,s.PF_Vm, vio_type_pf, false,true,s.base_kV)
+		end,
+    double volt = s.base_kV,
+                  if volt >= 500 then
+                  if(vio_type_se != "正常" and vio_type_pf != "正常") then
+                      @@count_all += 1,
+                     @@count_500_both_exceed +=1,
+                     @@count_both_exceed +=1,
+                     @@count_500 += 1
+                  else if (vio_type_se != "正常" and vio_type_pf == "正常") then
+                     @@count_all += 1,
+                     @@count_500 += 1,
+                     @@count_500_se_exceed +=1,
+                     @@count_se_exceed +=1
+                  else if(vio_type_se == "正常" and vio_type_pf != "正常") then
+                     @@count_all += 1,
+                     @@count_500 += 1,
+                     @@count_500_pf_exceed +=1,
+                     @@count_pf_exceed +=1
+                  end
+                else if volt >= 220 then
+                 
+                  if(vio_type_se != "正常" and vio_type_pf != "正常") then 
+                      @@count_all += 1,
+                      @@count_220+=1,
+                     @@count_220_both_exceed +=1,
+                     @@count_both_exceed +=1
+                  else if (vio_type_se != "正常" and vio_type_pf == "正常") then
+                       @@count_all += 1,
+                      @@count_220+=1,
+                     @@count_220_se_exceed +=1,
+                     @@count_se_exceed +=1
+                  else if(vio_type_se == "正常" and vio_type_pf != "正常") then
+                     @@count_all += 1,
+                     @@count_220+=1,
+                     @@count_220_pf_exceed +=1,
+                     @@count_pf_exceed +=1
+                  end
+                else if volt >= 110 then
+                  
+                  if(vio_type_se != "正常" and vio_type_pf != "正常") then
+                     @@count_all += 1,
+                     @@count_110+=1,
+                     @@count_110_both_exceed +=1,
+                     @@count_both_exceed +=1
+                  else if (vio_type_se != "正常" and vio_type_pf == "正常") then
+                     @@count_all += 1,
+                     @@count_110+=1,
+                     @@count_110_se_exceed +=1,
+                     @@count_se_exceed +=1
+                  else if(vio_type_se == "正常" and vio_type_pf != "正常") then
+                     @@count_all += 1,
+                     @@count_110+=1,
+                     @@count_110_pf_exceed +=1,
+                     @@count_pf_exceed +=1
+                  end               
+                else if volt >= 34.5 then
+                 
+                   if(vio_type_se != "正常" and vio_type_pf != "正常") then
+                       @@count_all += 1,
+                      @@count_35+=1,
+                     @@count_35_both_exceed +=1,
+                     @@count_both_exceed +=1
+                  else if (vio_type_se != "正常" and vio_type_pf == "正常") then
+                       @@count_all += 1,
+                      @@count_35+=1,
+                     @@count_35_se_exceed +=1,
+                     @@count_se_exceed +=1
+                  else if(vio_type_se == "正常" and vio_type_pf != "正常") then
+                       @@count_all += 1,
+                      @@count_35+=1,
+                     @@count_35_pf_exceed +=1,
+                     @@count_pf_exceed +=1
+                  end   
+  
+                else if volt >= 10 then
+                 
+                  if(vio_type_se != "正常" and vio_type_pf != "正常") then 
+                     @@count_all += 1,
+                     @@count_10+=1,
+                     @@count_10_both_exceed +=1,
+                     @@count_both_exceed +=1
+                  else if (vio_type_se != "正常" and vio_type_pf == "正常") then 
+                     @@count_all += 1,
+                     @@count_10+=1,
+                     @@count_10_se_exceed +=1,
+                     @@count_se_exceed +=1
+                  else if(vio_type_se == "正常" and vio_type_pf != "正常") then
+                     @@count_all += 1,
+                     @@count_10+=1,
+                     @@count_10_pf_exceed +=1,
+                     @@count_pf_exceed +=1
+                  end
+                else
+                 
+                  if(vio_type_se != "正常" and vio_type_pf != "正常") then
+                       @@count_all += 1,
+                      @@count_other+=1,
+                     @@count_other_both_exceed +=1,
+                     @@count_both_exceed +=1
+                  else if (vio_type_se != "正常" and vio_type_pf == "正常") then
+                     @@count_all += 1,
+                     @@count_other+=1,
+                     @@count_other_se_exceed +=1,
+                     @@count_se_exceed +=1
+                  else if(vio_type_se == "正常" and vio_type_pf != "正常") then
+                     @@count_all += 1,
+                     @@count_other+=1,
+                     @@count_other_pf_exceed +=1,
+                     @@count_pf_exceed +=1
+                  end 
+                end;
+	
+    
+		
+  if return_all then
+    print @@result;
+  else
+    print @@result_part;
+  end;
+  
+  print @@count_all;
+  
+  print @@count_se_exceed;
+  print @@count_pf_exceed;
+  print @@count_both_exceed;
+  
+  
+  print @@count_500;
+  print @@count_500_se_exceed;
+  print @@count_500_pf_exceed;
+  print @@count_500_both_exceed;
+  
+  print @@count_220;
+  print @@count_220_se_exceed;
+  print @@count_220_pf_exceed;
+  print @@count_220_both_exceed;
+  
+  
+  print @@count_110;
+  print @@count_110_se_exceed;
+  print @@count_110_pf_exceed;
+  print @@count_110_both_exceed;
+  
+  print @@count_35;
+  print @@count_35_se_exceed;
+  print @@count_35_pf_exceed;
+  print @@count_35_both_exceed;
+  
+  print @@count_10;
+  print @@count_10_se_exceed;
+  print @@count_10_pf_exceed;
+  print @@count_10_both_exceed;
+  
+  print @@count_other;
+  print @@count_other_se_exceed;
+  print @@count_other_pf_exceed;
+  print @@count_other_both_exceed;
+}

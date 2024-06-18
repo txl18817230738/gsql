@@ -1,0 +1,45 @@
+CREATE QUERY pf_cal_control() FOR GRAPH gsql_EMS { 
+  
+  SumAccum<DOUBLE> @@pf_MaxChange_P;
+  SumAccum<DOUBLE> @@pf_MaxChange_Q;
+  SumAccum<DOUBLE> @@pf_MaxIter;
+  SumAccum<STRING> @@pf_flatstart;
+  
+  SumAccum<STRING> @@pf_starttime;
+  SumAccum<STRING> @@pf_status;
+  SumAccum<STRING> @@pf_time;
+  SumAccum<INT> @@pf_iteration;
+
+  statusSets = {status.*};
+  parametersSet = {parameters.*};
+  
+  Tstatus = SELECT s FROM statusSets:s 
+    ACCUM @@pf_starttime += s.pf_starttime,
+  IF s.pf_status == "completed" THEN
+    @@pf_status += "完成"
+  ELSE 
+    @@pf_status += "计算中"
+  END,
+  @@pf_time += s.pf_time,
+  @@pf_iteration += s.pf_iteration;
+  
+  Tparameters = SELECT p FROM parametersSet:p 
+    ACCUM @@pf_MaxChange_P += p.pf_MaxChange_P,
+  @@pf_MaxChange_Q += p.pf_MaxChange_Q,
+  @@pf_MaxIter += p.pf_MaxIter,
+  IF p.pf_flatstart == 0 THEN 
+    @@pf_flatstart += "非0-1启动"
+  ELSE
+    @@pf_flatstart += "0-1启动"
+  END;
+   
+  PRINT @@pf_MaxChange_P as pf_MaxChange_P,
+  @@pf_MaxChange_Q as pf_MaxChange_Q,
+  @@pf_MaxIter as pf_MaxIter,
+  @@pf_flatstart as pf_flatstart,
+  
+  @@pf_starttime as pf_starttime,
+  @@pf_status as pf_status,
+  @@pf_time as pf_time,
+  @@pf_iteration as pf_iteration;
+}

@@ -1,0 +1,18 @@
+"""
+use ems match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:connected_Sub_Unit]->(F6:`unit`) filter where startid.id = "113715890758877224"
+let
+p_rate = case when F6.P_rate < 0.0 then 300.0 ELSE F6.P_rate end
+let
+subName = s.name
+return F6.name as name, p_rate
+"""
+
+
+"""
+use ems match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:connected_Sub_Unit]->(F6:`unit`) filter where startid.id = "113715890758877224"
+let
+p_rate = case when F6.P_rate < 0.0 then 300.0 ELSE 0.0 end
+let
+subName = s.name
+return F6.name as name, p_rate
+"""

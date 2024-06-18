@@ -1,0 +1,70 @@
+CREATE QUERY guangdong_grid_switch_p_series(string timestamp) FOR GRAPH gsql_EMS syntax v2{
+  MapAccum<string,double> @@input_map;
+  MapAccum<string,double> @@output_map;
+	SetAccum<string> @@Comp_ID;
+  double total_input;
+  double total_output;
+  string current_time;
+
+  
+  T0 = {TopoND.*};
+	sub = {Substation.*};
+	comp = {gridcom.*};
+  statusSet = {status.*};
+  
+  T1 = select s from statusSet:s
+        ACCUM 
+          current_time = s.last_history_time;
+
+
+  start_comp = select s from comp:s where s.id == "113715890758877224" accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  
+ 
+  /**
+  //广东全省-> 换流站-> 发电机组 
+  com_unit = select t2 from comp:s-(connected_grid_sub:e1)-:t1 -(connected_Sub_Unit>:e2)-unit:t2-(topo_unit:e)-:t where s.id in @@Comp_ID and t1.subtype=="换流站" and t.island ==1;
+  **/
+  sub_set = select t from comp:s-(connected_grid_sub:e)-:t where s.id in @@Comp_ID and t.subtype=="换流站";
+  
+  switch_unit_mease_set = select s from sub_set:s -(sub_history_total_gen:e)-:t where t.today.size()>0
+              ACCUM
+                FOREACH x in t.today DO
+                 if isOneDay(timestamp,x.t) then
+                  //@@input_map += ()
+                 if(not @@input_map.containsKey(x.t)) then
+                      @@input_map +=(x.t ->0)
+                 end,
+                 if(not @@output_map.containsKey(x.t)) then
+                      @@output_map +=(x.t ->0)
+                 end,
+                  if x.v >=0 then 
+                              double value = @@input_map.get(x.t),
+                              value = value + x.v,
+                              @@input_map +=(x.t ->value)
+                  else  
+                              double value = @@output_map.get(x.t),
+                              value = value + abs(x.v),
+                              @@output_map +=(x.t ->value)
+                    end
+                  end
+                END;
+  
+   total_input = @@input_map.get(current_time);
+   total_output = @@output_map.get(current_time);
+  
+  print current_time;
+  print total_input;
+  print total_output;
+  
+  print @@input_map;
+  print @@output_map;
+  
+
+ 
+ 
+}

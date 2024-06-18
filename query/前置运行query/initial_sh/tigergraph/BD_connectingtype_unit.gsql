@@ -1,1 +1,123 @@
-8
+CREATE QUERY BD_connectingtype_unit(/* Parameters here */) FOR GRAPH gsql_EMS syntax v2{ 
+  SumAccum<string> @devname;
+  SumAccum<string> @cntype;
+  SumAccum<int> @updateflag = 0;
+ 
+  unitSet = {unit.*};
+  sub ={Substation.*};
+  breakerSet = {Breaker.*};
+  disconnectorSet = {Disconnector.*};
+  
+  trans2Set ={two_port_transformer.*};
+  trans3Set ={three_port_transformer.*};
+  
+  aclinedotSet = {ACline_dot.*};
+  
+  busSet = {BUS.*};
+  
+  unitSet0 = select t from sub:s-(connected_Sub_Unit>:e)-:t;  
+ 
+  // mode one : the path of cp to bus has disconnector ,breaker,disconnector   D-B-D
+
+  T1unit = select s from unitSet0:s -(connected_Unit_CN:e1)-CN:t1-(connected_Disconnector_CN:e2)-Disconnector:t2-(connected_Disconnector_CN:e3)-CN:t3-(connected_Breaker_CN:e4)-Breaker:t4-(connected_Breaker_CN:e5)-CN:t5-(connected_Disconnector_CN:e6)-Disconnector:t6-(connected_Disconnector_CN:e7)-CN:t7-((connected_Bus_CN|CN_tx_two):e8)-:t8
+      ACCUM
+          t2.@updateflag = 1,
+          t4.@updateflag = 1,
+          t6.@updateflag = 1,
+          t2.@devname = s.name,
+          t4.@devname = s.name,
+          t6.@devname = s.name,
+          t2.@cntype ="unit_Switching",
+          t4.@cntype ="unit_Switching",
+          t6.@cntype = "unit_Switching";
+ 
+ 
+   //mode two: the path of cp to bus has breaker ,disconnector  B-D
+  unitSet1 = unitSet0 MINUS T1unit;
+  T2unit = select s from unitSet1:s -(connected_Unit_CN:e1)-CN:t1-(connected_Breaker_CN:e2)-Breaker:t2-(connected_Breaker_CN:e3)- CN:t3 -(connected_Disconnector_CN:e4)-Disconnector:t4-(connected_Disconnector_CN:e5)-CN:t5-((connected_Bus_CN|CN_tx_two):e6)-:t6
+           ACCUM
+                 t2.@updateflag = 1,
+                 t4.@updateflag = 1,
+                 t2.@devname = s.name,
+                 t4.@devname = s.name,
+                 t2.@cntype ="unit_Switching",
+                 t4.@cntype ="uint_Switching";
+
+  // mode three: the path of cp to bus only has one breaker  B
+  unitSet2 = unitSet1 MINUS T2unit;
+  T3unit = select s from unitSet2:s -(connected_Unit_CN:e1)-CN:t1-(connected_Breaker_CN:e2)-Breaker:t2-(connected_Breaker_CN:e3)- CN:t3 -((connected_Bus_CN|CN_tx_two):e4)-:t4
+            ACCUM
+                t2.@updateflag = 1,
+                t2.@devname = s.name,
+                t2.@cntype = "unit_Switching";
+
+  // mode four: the path of cp to bus has, disconnector, disconnector and breaker  D-D-B
+  unitSet3 = unitSet2 MINUS T3unit;
+   T4unit = select s from unitSet3:s -(connected_Unit_CN:e1)-CN:t1-(connected_Disconnector_CN:e2)-Disconnector:t2-(connected_Disconnector_CN:e3)-CN:t3-(connected_Disconnector_CN:e4)-Disconnector:t4-(connected_Disconnector_CN:e5)-CN:t5-(connected_Breaker_CN:e6)-Breaker:t6-(connected_Breaker_CN:e7)-CN:t7-((connected_Bus_CN|CN_tx_two):e8)-:t8
+      ACCUM
+          t2.@updateflag = 1,
+          t4.@updateflag = 1,
+          t6.@updateflag = 1,
+          t2.@devname = s.name,
+          t4.@devname = s.name,
+          t6.@devname = s.name,
+          t2.@cntype ="unit_Switching",
+          t4.@cntype ="unit_Switching",
+          t6.@cntype = "unit_Switching";
+
+  // mode five: the path of cp to bus has, disconnector, disconnector, breaker and disconnector  D-D-B-D
+  unitSet4 = unitSet3 MINUS T4unit;
+   T5unit = select s from unitSet4:s -(connected_Unit_CN:e1)-CN:t1-(connected_Disconnector_CN:e2)-Disconnector:t2-(connected_Disconnector_CN:e3)-CN:t3-(connected_Disconnector_CN:e4)-Disconnector:t4-(connected_Disconnector_CN:e5)-CN:t5-(connected_Breaker_CN:e6)-Breaker:t6-(connected_Breaker_CN:e7)-CN:t7-(connected_Disconnector_CN:e8)-Disconnector:t8-(connected_Disconnector_CN:e9)-CN:t9-((connected_Bus_CN|CN_tx_two):e10)-:t10
+      ACCUM
+          t2.@updateflag = 1,
+          t4.@updateflag = 1,
+          t6.@updateflag = 1,
+          t8.@updateflag = 1,
+          t2.@devname = s.name,
+          t4.@devname = s.name,
+          t6.@devname = s.name,
+          t8.@devname = s.name,
+          t2.@cntype ="unit_Switching",
+          t4.@cntype ="unit_Switching",
+          t6.@cntype = "unit_Switching",
+          t8.@cntype = "unit_Switching";
+
+    //mode six: the path of cp to bus has breaker ,disconnector, disconnector B-D-D
+  unitSet5 = unitSet4 MINUS T5unit;
+  T6unit = select s from unitSet5:s -(connected_Unit_CN:e1)-CN:t1-(connected_Breaker_CN:e2)-Breaker:t2-(connected_Breaker_CN:e3)- CN:t3 -(connected_Disconnector_CN:e4)-Disconnector:t4-(connected_Disconnector_CN:e5)-CN:t5-(connected_Disconnector_CN:e6)-Disconnector:t6-(connected_Disconnector_CN:e7)-CN:t7-((connected_Bus_CN|CN_tx_two):e8)-:t8
+           ACCUM
+                 t2.@updateflag = 1,
+                 t4.@updateflag = 1,
+                 t6.@updateflag = 1,
+                 t2.@devname = s.name,
+                 t4.@devname = s.name,
+                 t6.@devname = s.name,
+                 t2.@cntype ="unit_Switching",
+                 t4.@cntype ="unit_Switching",
+                 t6.@cntype = "unit_Switching";
+
+T8 = unitSet0 MINUS T1unit MINUS T2unit MINUS T3unit MINUS T4unit MINUS T5unit MINUS T6unit;
+
+
+  breakerAndDisconnectorSet = breakerSet UNION disconnectorSet;
+  T_result =  select s from breakerAndDisconnectorSet:s
+                where s.@updateflag == 1
+                POST-ACCUM
+                     s.connecting_type = s.@cntype,
+                     s.connecting_dev = s.@devname;
+
+
+  T0 = select t from T8:s -(connected_Unit_Sub>:e)-:t;
+
+//  print T0[T0.id,T0.name];            
+  print T0.size();
+  print unitSet0.size();
+  print T1unit.size();
+  print T2unit.size();
+  print T3unit.size();
+  print T4unit.size();
+  print T5unit.size(); 
+  print T6unit.size(); 
+  print T8.size();
+ 
+}

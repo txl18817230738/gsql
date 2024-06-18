@@ -1,0 +1,122 @@
+create query tlineInit() for graph gsql_EMS{
+	OrAccum @tnd;
+	SumAccum<int> @tndId;
+	SumAccum<double> @x;
+	SumAccum<double> @y;
+        SumAccum<int> @xcount = 0;
+        SumAccum<int> @ycount = 0;
+	SumAccum<string> @tndName;
+        SumAccum<string> @subName;
+        SumAccum<string> @ControlArea;
+        SumAccum<int> @subID;
+	SumAccum<string> @tndBaseVoltage;
+	SumAccum<double> @tndVolt;
+
+        FILE file1 ("/home/tigergraph/ems-query/query_gsql_EMS/output/TlineSub.csv");
+
+	cnSet = {CN.*};
+        subSet = {Substation.*};
+
+	tnodeSet = select s  from cnSet:s where s.outdegree("aclinedot_cn")==3; //and s.CN_id == 4100001040002064;
+        print tnodeSet.size();
+	oriSubSet = select t from tnodeSet:s - (sub_cn:e) -:t
+		accum
+                        s.@subName = t.name,
+                        s.@ControlArea = t.ControlArea,
+			s.@tndBaseVoltage = t.BaseVoltage;	
+
+	tnodeAClineDot =  select t from tnodeSet:s - (aclinedot_cn:e) -:t
+		accum
+			t.@tndId = s.CN_id,
+			t.@tnd += true,
+			s.@tndName = t.name,
+			s.@tndVolt = t.volt
+                post-accum
+                        t.Substation = convertToString(t.@tndId);
+ 
+
+	tlineAClineDotOther = select t from tnodeAClineDot:s - ((aclinedot_aclinedot|aclinedot_aclinedot_reverse):e) -:t;
+
+	tlineAClineDotOther = select s from tlineAClineDotOther:s - (connected_Aclinedot_Sub:e) -:t
+		accum
+                        if (t.pos_x > 1) then
+                            s.@xcount += 1
+                        end,
+                        if (t.pos_y > 1) then
+                            s.@ycount += 1
+                        end,
+			s.@x = t.pos_x,
+			s.@y = t.pos_y;
+
+	tlineAClineDotOther = select t from tnodeAClineDot:s - ((aclinedot_aclinedot|aclinedot_aclinedot_reverse):e) -:t
+		accum
+                        s.@xcount = t.@xcount,
+                        s.@ycount = t.@ycount,
+			s.@x = t.@x,
+			s.@y = t.@y;
+
+	tnodeAClineDot =  select t from tnodeSet:s - (aclinedot_cn:e) -:t
+		accum
+                        s.@xcount += t.@xcount,
+                        s.@ycount += t.@ycount,
+			s.@x += t.@x,
+			s.@y += t.@y;
+
+	tnodeSet = select s from tnodeSet:s 
+		accum
+                        if (s.@xcount >= 1) then
+			   s.@x = s.@x/s.@xcount
+                        else
+                           s.@x = 0
+                        end,
+                        if (s.@ycount >= 1) then
+			   s.@y = s.@y/s.@ycount
+                        else
+                           s.@y = 0
+                        end;
+
+	TsubSet = select t from tnodeAClineDot:s - (connected_Aclinedot_Sub:e) -:t;
+
+	DELETE e from tnodeAClineDot:s - (connected_Aclinedot_Sub:e) -:t;
+	DELETE e from TsubSet:s - (connected_Sub_Aclinedot:e) -:t where t.@tnd==true;
+        DELETE e from TsubSet:s - (sub_cn:e) -:t;
+        DELETE e from tnodeSet:s - (cn_subid:e) - Substation:t;
+        DELETE s from TsubSet:s;
+
+	// insert virtual substation by tnode
+	tnodeSet = select s from tnodeSet:s
+		accum
+			insert into Substation values(s.CN_id,s.CN_id, s.@tndName , s.@tndVolt,"虚拟T接站",_,_,_,_,_,s.@x, s.@y,"虚拟T接站", s.strid,_,_,s.@ControlArea,_,_,_,_,_,_,s.@tndBaseVoltage, _,0,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_),
+                        insert into BUS values(s.CN_id,_, s.CN_id, s.@subName + "母线",s.@tndVolt,_,_,_,_,_,_,_,s.CN_id,_,_,_,_,_,_,"Bus",s.@tndVolt, s.CN_id, s.strid,_,_,s.@tndName,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_);
+	
+	tnodeAClineDot = select s from tnodeAClineDot:s
+		accum
+			insert into connected_Aclinedot_Sub values(s.id, s.@tndId, s.@tndId),
+			insert into connected_Sub_Aclinedot values(s.@tndId, s.id, s.@tndId);
+
+        tnodeSet = select s from tnodeSet:s
+                ACCUM
+                        insert into sub_cn values(s.CN_id, s.CN_id),
+                        insert into cn_subid values(s.CN_id, s.CN_id),
+                        insert into connected_grid_sub values(s.@ControlArea, s.CN_id),
+                        insert into connected_Bus_Sub values(s.CN_id, s.CN_id, s.CN_id),
+                        insert into connected_Sub_Bus values(s.CN_id, s.CN_id, s.CN_id),
+                        insert into connected_Bus_CN values(s.CN_id, s.CN_id);
+	
+        NewTsubSet = select t from tnodeAClineDot:s - (connected_Aclinedot_Sub:e) -:t;
+
+        Tsub = select s from NewTsubSet:s;
+           //   where s.name == "南宁.PAS_T接厂站2.PAS_T接厂站2.110kV.青秋文琅线T端_T1" or s.name == "南宁.PAS_T接厂站2.PAS_T接厂站2.110kV.科尧滨铝五线T3端_T2";
+
+
+        /*     
+          print TsubSet[TsubSet.name, TsubSet.id, TsubSet.pos_x, TsubSet.pos_y];
+          print tnodeAClineDot[tnodeAClineDot.name, tnodeAClineDot.id, tnodeAClineDot.@x, tnodeAClineDot.@y, tnodeAClineDot.@xcount, tnodeAClineDot.@ycount];
+          print tlineAClineDotOther[tlineAClineDotOther.name, tlineAClineDotOther.id, tlineAClineDotOther.@x, tlineAClineDotOther.@y, tlineAClineDotOther.@xcount, tlineAClineDotOther.@ycount];
+          print tnodeSet[tnodeSet.CN_id, tnodeSet.@x, tnodeSet.@y, tnodeSet.@xcount, tnodeSet.@ycount];         
+          print Tsub[Tsub.name, Tsub.id, Tsub.pos_x, Tsub.pos_y];
+       */
+          print Tsub.name, Tsub.id, Tsub.volt, Tsub.pos_x, Tsub.pos_y TO_CSV file1;	
+
+
+}

@@ -1,0 +1,18 @@
+se_all_info_voltageVio
+'''
+use ems_v1 match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:topoid_subid]->(t:`TopoND`) filter where startid.id = "113715890758877224" and t.island = 1
+let
+subid = s.strid,
+volt = t.base_kV,
+PF_Vm = case when t.PF_Vm is not NULL then t.PF_Vm else 0.0 end,
+up_V = case when t.up_V is not NULL then t.up_V else 0.0 end,
+lo_V = case when t.lo_V is not NULL then t.lo_V else 0.0 end,
+Vmax = 1.1,
+Vmin = 0.9
+let
+vio_type = case when PF_Vm >= up_V then "高电压越限" when PF_Vm <= lo_V then "低电压越限" else "正常" end,
+difference = case when PF_Vm >= up_V then PF_Vm - Vmax when PF_Vm <= lo_V then Vmin-PF_Vm else 0.0 end
+let
+per_rating = case when PF_Vm >= up_V then difference/Vmax*100 when PF_Vm <= lo_V then difference/Vmin*100
+return t.exId, t.bus_name, t.Sub, subid, t.base_kV, Vmax, Vmin, PF_Vm, difference, per_rating, vio_type
+'''

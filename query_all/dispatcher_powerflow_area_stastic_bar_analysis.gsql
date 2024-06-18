@@ -1,0 +1,61 @@
+CREATE QUERY dispatcher_powerflow_area_stastic_bar_analysis(string companyID="113715890758877224") FOR GRAPH gsql_EMS syntax v2 { 
+  SumAccum<string> @@area_name;
+  
+  
+  SumAccum<double> @@total_acline_pf;
+  SumAccum<double> @@total_acline_se;
+ 
+  
+  SumAccum<double> @@total_gen_pf;
+  SumAccum<double> @@total_gen_se;
+  
+  SumAccum<double> @@total_load_pf;
+  SumAccum<double> @@total_load_se;
+  
+  SumAccum<double> @@total_trans2_pf;
+  SumAccum<double> @@total_trans2_se;
+  
+  SumAccum<double> @@total_trans3_pf;
+  SumAccum<double> @@total_trans3_se;
+  
+  comp = {gridcom.*};
+  comp_stat = {gridcom_stat.*};
+  
+
+  start_comp = select s from comp:s where s.id == companyID 
+                accum 
+                  @@area_name += s.name;
+
+  
+  
+  T5 = select s from comp_stat:s where s.id == companyID 
+            ACCUM
+               @@total_acline_pf += s.total_acline_pf,
+               @@total_acline_se += s.total_acline_se,
+               @@total_gen_pf += s.total_gen_pf,
+               @@total_gen_se += s.total_gen_se,
+               @@total_load_pf += s.total_load_pf,
+               @@total_load_se += s.total_load_se,
+               @@total_trans2_pf += s.total_trans2_pf,
+               @@total_trans2_se += s.total_trans2_se,
+               @@total_trans3_pf += s.total_trans3_pf,
+               @@total_trans3_se += s.total_trans3_se;
+  
+  print @@total_acline_pf;
+  print @@total_acline_se;
+ 
+  
+  print @@total_gen_pf;
+  print @@total_gen_se;
+  
+  print @@total_load_pf;
+  print @@total_load_se;
+  
+  print @@total_trans2_pf;
+  print @@total_trans2_se;
+  
+  print @@total_trans3_pf;
+  print @@total_trans3_se; 
+  
+  print @@area_name;
+}

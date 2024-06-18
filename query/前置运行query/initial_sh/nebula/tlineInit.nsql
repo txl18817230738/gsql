@@ -1,0 +1,5 @@
+'''
+use ems_v1 match (ac:ACline_dot)-[:aclinedot_cn]->(c:CN)<-[:sub_cn]-(sub:Substation) where ac.cn_count = 3
+SET
+ac.Substation = c.CN_id
+'''

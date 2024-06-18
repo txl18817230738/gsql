@@ -1,0 +1,53 @@
+//此query，nebula写法不支持minus，写法复杂，建议修改schema，添加一个修改字段，在查询的时候筛选
+use ems_v1 match (sub:Substation)-[connected_Sub_Load]->(load:l_oad)-[connected_Load_CN]-(t1:CN)-[connected_Disconnector_CN]-(t2:Disconnector)-[connected_Disconnector_CN]-(t3:CN)-[connected_Breaker_CN]-(t4:Breaker)-[connected_Breaker_CN]-(t5:CN)-[connected_Disconnector_CN]-(t6:Disconnector)-[connected_Disconnector_CN]-(t7:CN)-[connected_Bus_CN|CN_transformWinding]-(t8)
+SET
+t2.connecting_type="load_Switching",
+t2.connecting_dev = load.name,
+t4.connecting_type="load_Switching",
+t4.connecting_dev=load.name,
+t6.connecting_type="load_Switching",
+t6.connecting_dev=load.name
+
+
+use ems_v1 match (sub:Substation)-[connected_Sub_Load]->(load:l_oad)-[connected_Load_CN]-(t1:CN)-[connected_Breaker_CN]-(t2:Breaker)-[connected_Breaker_CN]-(t3:CN)-[connected_Disconnector_CN]-(t4:Disconnector)-[connected_Disconnector_CN]-(t5:CN)-[connected_Bus_CN|CN_transformWinding]-(t6)
+SET
+t2.connecting_type="load_Switching",
+t2.connecting_dev = load.name,
+t4.connecting_type="load_Switching",
+t4.connecting_dev=load.name
+
+
+use ems_v1 match (sub:Substation)-[connected_Sub_Load]->(load:l_oad)-[connected_Load_CN]->(t1:CN)-[connected_Breaker_CN]-(t2:Breaker)-[connected_Breaker_CN]-(t3:CN)-[connected_Bus_CN|CN_transformWinding]-(t4)
+SET
+t2.connecting_type="load_Switching",
+t2.connecting_dev = load.name
+
+
+use ems_v1 match (sub:Substation)-[connected_Sub_Load]->(load:l_oad)-[connected_Load_CN]-(t1:CN)-[connected_Disconnector_CN]-(t2:Disconnector)-[connected_Disconnector_CN]-(t3:CN)-[connected_Disconnector_CN]-(t4:Disconnector)-[connected_Disconnector_CN]-(t5:CN)-[connected_Breaker_CN]-(t6:Breaker)-[connected_Breaker_CN]-(t7:CN)-[connected_Bus_CN|CN_transformWinding]-(t8)
+SET
+t2.connecting_type="load_Switching",
+t2.connecting_dev = load.name,
+t4.connecting_type="load_Switching",
+t4.connecting_dev=load.name,
+t6.connecting_type="load_Switching",
+t6.connecting_dev=load.name
+
+use ems_v1 match (sub:Substation)-[connected_Sub_Load]->(load:l_oad)-[connected_Load_CN]-(t1:CN)-[connected_Disconnector_CN]-(t2:Disconnector)-[connected_Disconnector_CN]-(t3:CN)-[connected_Disconnector_CN]-(t4:Disconnector)-[connected_Disconnector_CN]-(t5:CN)-[connected_Breaker_CN]-(t6:Breaker)-[connected_Breaker_CN]-(t7:CN)-[connected_Disconnector_CN]-(t8:Disconnector)-[connected_Disconnector_CN]-(t9:CN)-[connected_Bus_CN|CN_transformWinding]-(t10)
+SET
+t2.connecting_type="load_Switching",
+t2.connecting_dev = load.name,
+t4.connecting_type="load_Switching",
+t4.connecting_dev=load.name,
+t6.connecting_type="load_Switching",
+t6.connecting_dev=load.name
+t8.connecting_type="load_Switching",
+t8.connecting_dev=load.name
+
+use ems_v1 match (sub:Substation)-[connected_Sub_Load]->(load:l_oad)-[connected_Load_CN]-(t1:CN)-[connected_Breaker_CN]-(t2:Breaker)-[connected_Breaker_CN]-(t3:CN)-[connected_Disconnector_CN]-(t4:Disconnector)-[connected_Disconnector_CN]-(t5:CN)-[connected_Disconnector_CN]-(t6:Disconnector)-[connected_Disconnector_CN]-(t7:CN)-[connected_Bus_CN|CN_transformWinding]-(t8)
+SET
+t2.connecting_type="load_Switching",
+t2.connecting_dev = load.name,
+t4.connecting_type="load_Switching",
+t4.connecting_dev=load.name,
+t6.connecting_type="load_Switching",
+t6.connecting_dev=load.name

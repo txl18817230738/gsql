@@ -1,0 +1,29 @@
+"""
+use ems_v1 
+match (p:parameters)
+let
+error_limit_P = p.error_limit_P,
+error_limit_Q = p.error_limit_Q
+match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:connected_Sub_Aclinedot]->(t:`ACline_dot`)<-(Meas_AClinedot)-(m:meas) filter where startid.id = "113715890758877224"
+let
+p_meas_flag = m.P_PseudoFlag,
+q_meas_flag = m.Q_PseudoFlag
+match (topond:TopoND)-[topo_aclinedot]->(as:`ACline_dot`)
+let
+factor = case when as.volt >= 500 then 1082 when as.volt >= 330 and as.volt < 500 then 686 when as.volt >= 220 and as.volt< 330 then 305 else 141 end,
+let
+P_error = case when p_meas_flag = 0 and abs(as.Pimeas) > 0.0001 then as.P - as.Pimeas else 0 end,
+P_error_abs = case when p_meas_flag = 0 and abs(as.Pimeas) > 0.0001 then abs(as.P - as.Pimeas) else 0 end,
+P_error_pct = case when p_meas_flag = 0 and abs(as.Pimeas) > 0.0001 then abs(as.P - as.Pimeas)/factor*100 else 0 end,
+
+Q_error = case when q_meas_flag = 0 and abs(as.Qimeas) > 0.0001 then as.Q - as.Qimeas else 0 end,
+Q_error_abs = case when q_meas_flag = 0 and abs(as.Qimeas) > 0.0001 then abs(as.Q - as.Qimeas) else 0 end,
+Q_error_pct = case when q_meas_flag = 0 and abs(as.Qimeas) > 0.0001 then abs(as.Q - as.Qimeas)/factor*100 else 0 end
+
+match (src:`ACline_dot`)-[aclinedot_aclinedot]->(tar:`ACline_dot`)
+where src.island = 1 and tar.island == 1 and src.off=0 and tar.off=0 and s.@P_error_pct <5*@@error_limit_P and s.@Q_error_pct <3.33*@@error_limit_Q and t.@P_error_pct <5*@@error_limit_P and t.@Q_error_pct <3.33*@@error_limit_Q
+
+
+
+
+"""

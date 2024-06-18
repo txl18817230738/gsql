@@ -1,0 +1,74 @@
+CREATE QUERY dispatcher_powerflow_area_stastic_bar(string companyID="113715890758877224", double p_qualified_factor, double q_qualified_factor, double v_qualified_factor) FOR GRAPH gsql_EMS syntax v2{ 
+  
+  SumAccum<INT> @@count_acline_p_qualified;
+  SumAccum<INT> @@count_acline_q_qualified;
+  SumAccum<INT> @@count_acline;
+  
+  SumAccum<INT> @@count_unit_p_qualified;
+  SumAccum<INT> @@count_unit_q_qualified;
+  SumAccum<INT> @@count_unit;
+  
+  SumAccum<INT> @@count_load_p_qualified;
+  SumAccum<INT> @@count_load_q_qualified;
+  SumAccum<INT> @@count_load;
+  
+  SumAccum<INT> @@count_trans2_p_qualified;
+  SumAccum<INT> @@count_trans2_q_qualified;
+  SumAccum<INT> @@count_trans2;
+  
+  SumAccum<INT> @@count_trans3_p_qualified;
+  SumAccum<INT> @@count_trans3_q_qualified;
+  SumAccum<INT> @@count_trans3;
+  
+  SumAccum<INT> @@count_bus_v_qualified;
+  SumAccum<INT> @@count_bus;
+  
+  MapAccum<string, int> @@count_area;
+
+
+  comp = {gridcom.*};
+  comp_stat = {gridcom_stat.*};
+  
+  T5 = select s from comp_stat:s where s.id == companyID 
+            ACCUM
+               @@count_acline_p_qualified += s.count_acline_p_qualified,
+               @@count_acline_q_qualified += s.count_acline_q_qualified,
+               @@count_acline += s.count_acline,
+               @@count_unit_p_qualified += s.count_unit_p_qualified,
+               @@count_unit_q_qualified += s.count_unit_q_qualified,
+               @@count_unit += s.count_unit,
+               @@count_load_p_qualified += s.count_load_p_qualified,
+               @@count_load_q_qualified += s.count_load_q_qualified,
+               @@count_load += s.count_load,
+               @@count_trans2_p_qualified += s.count_trans2_p_qualified,
+               @@count_trans2_q_qualified += s.count_trans2_q_qualified,
+               @@count_trans2 += s.count_trans2,
+               @@count_trans3_p_qualified += s.count_trans3_p_qualified,
+               @@count_trans3_q_qualified += s.count_trans3_q_qualified,
+               @@count_trans3 += s.count_trans3,
+               @@count_bus_v_qualified += s.count_bus_v_qualified,
+               @@count_bus += s.count_bus;
+  
+  print @@count_acline_p_qualified;
+  print @@count_acline_q_qualified;
+  print @@count_acline;
+  
+  print @@count_unit_p_qualified;
+  print @@count_unit_q_qualified;
+  print @@count_unit;
+  
+  print @@count_load_p_qualified;
+  print @@count_load_q_qualified;
+  print @@count_load;
+  
+  print @@count_trans2_p_qualified;
+  print @@count_trans2_q_qualified;
+  print @@count_trans2;
+  
+  print @@count_trans3_p_qualified;
+  print @@count_trans3_q_qualified;
+  print @@count_trans3;
+  
+  print @@count_bus_v_qualified;
+  print @@count_bus;
+}

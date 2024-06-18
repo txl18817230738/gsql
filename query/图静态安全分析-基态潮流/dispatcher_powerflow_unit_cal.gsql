@@ -1,0 +1,506 @@
+CREATE QUERY dispatcher_powerflow_unit_cal(string companyID="113715890758877224", bool return_all=true,double p_qualified_factor=0.98) FOR GRAPH gsql_EMS { 
+  TYPEDEF TUPLE < string unit_name, string area, string sub_name, string sub_id, double volt, double P_TLPF, double loadfactor, double P_residual_pct, double Q_TLPF, double Q_residual_pct, double vm, double vm_normal, string unit_type, string margin> unit_list;	
+		HeapAccum<unit_list>(10000000, volt DESC, unit_name DESC, sub_name DESC) @@result_all;
+    HeapAccum<unit_list>(50, volt DESC, unit_name DESC, sub_name DESC) @@result_part;
+    SumAccum<INT> @@count_all;
+    SumAccum<int> @island;
+    SumAccum<string> @bus_name;
+    SumAccum<string> @sub_name;
+    SumAccum<string> @sub_id;
+    SumAccum<string> @area;
+  
+    SetAccum<string> @@Comp_ID;
+    SumAccum<double> @P_error_pct;
+    SumAccum<double> @Q_error_pct;
+    SumAccum<double> @cal_Vm = 0;
+    SumAccum<double> @cal_Vm_pu = 0;
+    SumAccum<double> @loadfactor;
+  
+  SumAccum<INT> @@count_20;
+  SumAccum<INT> @@count_20_80;
+  SumAccum<INT> @@count_80_100;
+  SumAccum<INT> @@count_100;
+  SumAccum<INT> @@count_p_qualified;
+  
+  SumAccum<INT> @@count_fire;
+  SumAccum<INT> @@count_fire_20;
+  SumAccum<INT> @@count_fire_20_80;
+  SumAccum<INT> @@count_fire_80_100;
+  SumAccum<INT> @@count_fire_100;
+  SumAccum<INT> @@count_fire_p_qualified;
+ 
+  
+  SumAccum<INT> @@count_water;
+  SumAccum<INT> @@count_water_20;
+  SumAccum<INT> @@count_water_20_80;
+  SumAccum<INT> @@count_water_80_100;
+  SumAccum<INT> @@count_water_100;
+  SumAccum<INT> @@count_water_p_qualified;
+  
+  
+  SumAccum<INT> @@count_wind;
+  SumAccum<INT> @@count_wind_20;
+  SumAccum<INT> @@count_wind_20_80;
+  SumAccum<INT> @@count_wind_80_100;
+  SumAccum<INT> @@count_wind_100;
+  SumAccum<INT> @@count_wind_p_qualified;
+  
+  SumAccum<INT> @@count_light;
+  SumAccum<INT> @@count_light_20;
+  SumAccum<INT> @@count_light_20_80;
+  SumAccum<INT> @@count_light_80_100;
+  SumAccum<INT> @@count_light_100;
+  SumAccum<INT> @@count_light_p_qualified;
+  
+  SumAccum<INT> @@count_virtual;
+  SumAccum<INT> @@count_virtual_20;
+  SumAccum<INT> @@count_virtual_20_80;
+  SumAccum<INT> @@count_virtual_80_100;
+  SumAccum<INT> @@count_virtual_100;
+  SumAccum<INT> @@count_virtual_p_qualified;
+  
+  SumAccum<INT> @@count_switch;
+  SumAccum<INT> @@count_switch_20;
+  SumAccum<INT> @@count_switch_20_80;
+  SumAccum<INT> @@count_switch_80_100;
+  SumAccum<INT> @@count_switch_100;
+  SumAccum<INT> @@count_switch_p_qualified;
+  
+  SumAccum<INT> @@count_nuclear;
+  SumAccum<INT> @@count_nuclear_20;
+  SumAccum<INT> @@count_nuclear_20_80;
+  SumAccum<INT> @@count_nuclear_80_100;
+  SumAccum<INT> @@count_nuclear_100;
+  SumAccum<INT> @@count_nuclear_p_qualified;
+  
+  SumAccum<INT> @@count_pumping;
+  SumAccum<INT> @@count_pumping_20;
+  SumAccum<INT> @@count_pumping_20_80;
+  SumAccum<INT> @@count_pumping_80_100;
+  SumAccum<INT> @@count_pumping_100;
+  SumAccum<INT> @@count_pumping_p_qualified;
+  
+  
+  SumAccum<INT> @@count_distribution;
+  SumAccum<INT> @@count_distribution_20;
+  SumAccum<INT> @@count_distribution_20_80;
+  SumAccum<INT> @@count_distribution_80_100;
+  SumAccum<INT> @@count_distribution_100;
+  SumAccum<INT> @@count_distribution_p_qualified;
+
+  SumAccum<INT> @@count_other;
+  SumAccum<INT> @@count_other_20;
+  SumAccum<INT> @@count_other_20_80;  
+  SumAccum<INT> @@count_other_80_100; 
+  SumAccum<INT> @@count_other_100;
+  SumAccum<INT> @@count_other_p_qualified;
+
+	
+	sub = {Substation.*};
+  comp = {gridcom.*};
+  T0 = {TopoND.*};	
+	
+  
+  
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID
+            accum 
+                t.@area = s.name;
+	
+  unitSet = SELECT t FROM sub:s - (connected_Sub_Unit:e) ->:t
+                accum
+                t.@sub_name = s.name,
+                t.@sub_id = s.strid,
+                t.@area = s.@area;
+  
+  
+  
+	// calculate the measured total generation in each TopoND
+	// select the generators with measurements and eliminate those without measurements
+	T_gen = SELECT t
+			FROM T0:s - (topo_unit:e) - unit:t
+			where s.island == 1
+			post-accum
+			 if (t.volt >= 500) then
+                  if (abs(t.P) > 0.01) then
+                    //t.@P_error_abs = abs(t.P_pf - t.Pimeas),
+                    t.@P_error_pct = abs(t.P_pf - t.P)/1082*100
+                  else
+                    //t.@P_error_abs = 0,
+                    t.@P_error_pct = 0
+                  end,
+                  if (abs(t.Q) > 0.01) then
+                    //t.@Q_error_abs = abs(t.Q_pf - t.Qimeas),
+                    t.@Q_error_pct = abs(t.Q_pf - t.Q)/1082*100
+                  else
+                    //t.@Q_error_abs = 0,
+                    t.@Q_error_pct = 0
+                  end
+                else if (t.volt >= 330 and t.volt < 500) then
+                  if (abs(t.P) > 0.01) then
+                    //t.@P_error_abs = abs(t.P_pf - t.Pimeas),
+                    t.@P_error_pct = abs(t.P_pf - t.P)/686*100
+                  else
+                    //t.@P_error_abs = 0,
+                    t.@P_error_pct = 0
+                  end,
+				  if (abs(t.Q) > 0.01) then
+                    //t.@Q_error_abs = abs(t.Q_pf - t.Qimeas),
+                    t.@Q_error_pct = abs(t.Q_pf - t.Q)/686*100
+                  else
+                    //t.@Q_error_abs = 0,
+                    t.@Q_error_pct = 0
+                  end
+                else if (t.volt >= 220 and t.volt< 330) then
+                  if (abs(t.P) > 0.01) then
+                    //t.@P_error_abs = abs(t.P_pf - t.Pimeas),
+                    t.@P_error_pct = abs(t.P_pf - t.P)/305*100
+                  else
+                    //t.@P_error_abs = 0,
+                    t.@P_error_pct = 0
+                  end,
+                  if (abs(t.Q) > 0.01) then
+                    //t.@Q_error_abs = abs(t.Q_pf - t.Qimeas),
+                    t.@Q_error_pct = abs(t.Q_pf - t.Q)/305*100
+                  else
+                    //t.@Q_error_abs = 0,
+                    t.@Q_error_pct = 0
+                  end
+				else
+                  if (abs(t.P) > 0.01) then
+                    //t.@P_error_abs = abs(t.P_pf - t.Pimeas),
+                    t.@P_error_pct = abs(t.P_pf - t.P)/141*100
+                  else
+                    //t.@P_error_abs = 0,
+                    t.@P_error_pct = 0
+                  end,
+                  if (abs(t.Q) > 0.01) then
+                    //t.@Q_error_abs = abs(t.Q_pf - t.Qimeas),
+                    t.@Q_error_pct = abs(t.Q_pf - t.Q)/141*100
+                  else
+                    //t.@Q_error_abs = 0,
+                    t.@Q_error_pct = 0
+                  end
+                end;
+			
+			
+	// calculate each generator's power output
+	// put generator information into a vertex list and then print out	
+	Tre = SELECT s
+		    FROM unitSet:s - (topo_unit:e) - TopoND:t
+			where t.island == 1 //(s.Pimeas != 0 or s.Qimeas != 0) and
+		    accum
+			s.@cal_Vm = t.PF_Vm*t.desired_volts,
+			s.@cal_Vm_pu = t.PF_Vm,
+      s.@island = t.island,
+      if(s.P_rate ==0) then 
+            s.@loadfactor = 0 
+      else 
+            s.@loadfactor = abs(s.P_pf / s.P_rate)*100
+      end;
+          
+			
+	T_gen = SELECT s FROM Tre:s where s.Gentype != "虚拟机组" and s.Gentype != "交换机组"
+			ACCUM
+			double p_rate = s.P_rate,
+			string pf_margin = "-",
+			if(p_rate !=0) then 
+				pf_margin = convertToString(p_rate - s.P_pf) 
+			end,
+			//pf_margin = p_rate - s.P_f
+			@@result_all += unit_list(s.name, s.@area, s.@sub_name, s.@sub_id, s.volt, s.P_pf, s.@loadfactor, s.@P_error_pct, s.Q_pf, s.@Q_error_pct, s.@cal_Vm,s.@cal_Vm_pu,s.Gentype,pf_margin), 
+	    @@result_part += unit_list(s.name, s.@area, s.@sub_name, s.@sub_id, s.volt, s.P_pf, s.@loadfactor, s.@P_error_pct, s.Q_pf, s.@Q_error_pct, s.@cal_Vm,s.@cal_Vm_pu,s.Gentype,pf_margin),
+      @@count_all +=1,
+      if (s.Gentype == "火电机组") then
+                        @@count_fire += 1,
+                  if s.@P_error_pct <= 1-p_qualified_factor then 
+                     @@count_fire_p_qualified +=1,
+                     @@count_p_qualified +=1 
+                  end,
+                  if s.@loadfactor<=20 then
+                    @@count_fire_20+=1,
+                    @@count_20+=1
+                  else if s.@loadfactor > 20 and s.@loadfactor<=80 then
+                    @@count_fire_20_80+=1,
+                    @@count_20_80+=1
+                  else if s.@loadfactor > 80 and s.@loadfactor<=100 then
+                    @@count_fire_80_100+=1,
+                    @@count_80_100+=1            
+                  else if s.@loadfactor > 100 then
+                    @@count_fire_100+=1,
+                    @@count_100+=1
+                  end            
+                
+                else if (s.Gentype == "水电机组") then
+                  @@count_water+=1,
+                  if s.@P_error_pct <= 1-p_qualified_factor then 
+                     @@count_water_p_qualified +=1,
+                     @@count_p_qualified +=1 
+                  end,
+                  if s.@loadfactor<=20 then
+                    @@count_water_20+=1,
+                    @@count_20+=1
+                  else if s.@loadfactor > 20 and s.@loadfactor<=80 then
+                    @@count_water_20_80+=1,
+                    @@count_20_80+=1
+                  else if s.@loadfactor > 80 and s.@loadfactor<=100 then
+                    @@count_water_80_100+=1,
+                    @@count_80_100+=1            
+                  else if s.@loadfactor > 100 then
+                    @@count_water_100+=1,
+                    @@count_100+=1
+                  end
+                  
+                else if (s.Gentype == "风电机组") then
+                  @@count_wind+=1,
+                  if s.@P_error_pct <= 1-p_qualified_factor then 
+                     @@count_wind_p_qualified +=1,
+                     @@count_p_qualified +=1 
+                  end,
+                  if s.@loadfactor<=20 then
+                    @@count_wind_20+=1,
+                    @@count_20+=1
+                  else if s.@loadfactor > 20 and s.@loadfactor<=80 then
+                    @@count_wind_20_80+=1,
+                    @@count_20_80+=1
+                  else if s.@loadfactor > 80 and s.@loadfactor<=100 then
+                    @@count_wind_80_100+=1,
+                    @@count_80_100+=1        
+                  else if s.@loadfactor > 100 then
+                    @@count_wind_100+=1,
+                    @@count_100+=1
+                  end
+                  
+                else if (s.Gentype == "光伏机组") then
+                  @@count_light+=1,
+                  if s.@P_error_pct <= 1-p_qualified_factor then 
+                     @@count_light_p_qualified +=1,
+                     @@count_p_qualified +=1 
+                  end,
+                  if s.@loadfactor<=20 then
+                    @@count_light_20+=1,
+                    @@count_20+=1
+                  else if s.@loadfactor > 20 and s.@loadfactor<=80 then
+                    @@count_light_20_80+=1,
+                    @@count_20_80+=1
+                  else if s.@loadfactor > 80 and s.@loadfactor<=100 then
+                    @@count_light_80_100+=1,
+                    @@count_80_100+=1            
+                  else if s.@loadfactor > 100 then
+                    @@count_light_100+=1,
+                    @@count_100+=1
+                  end
+  
+                else if (s.Gentype == "虚拟机组") then
+                  @@count_virtual+=1,
+                  if s.@P_error_pct <= 1-p_qualified_factor then 
+                     @@count_virtual_p_qualified +=1,
+                     @@count_p_qualified +=1 
+                  end,
+                  if s.@loadfactor<=20 then
+                    @@count_virtual_20+=1,
+                    @@count_20+=1
+                  else if s.@loadfactor > 20 and s.@loadfactor<=80 then
+                    @@count_virtual_20_80+=1,
+                    @@count_20_80+=1
+                  else if s.@loadfactor > 80 and s.@loadfactor<=100 then
+                    @@count_virtual_80_100+=1,
+                    @@count_80_100+=1            
+                  else if s.@loadfactor > 100 then
+                    @@count_virtual_100+=1,
+                    @@count_100+=1
+                  end
+				 
+				 else if (s.Gentype == "交换机组") then
+                  @@count_switch+=1,
+                  if s.@P_error_pct <= 1-p_qualified_factor then 
+                     @@count_switch_p_qualified +=1,
+                     @@count_p_qualified +=1 
+                  end,
+                  if s.@loadfactor<=20 then
+                    @@count_switch_20+=1,
+                    @@count_20+=1
+                  else if s.@loadfactor > 20 and s.@loadfactor<=80 then
+                    @@count_switch_20_80+=1,
+                    @@count_20_80+=1
+                  else if s.@loadfactor > 80 and s.@loadfactor<=100 then
+                    @@count_switch_80_100+=1,
+                    @@count_80_100+=1            
+                  else if s.@loadfactor > 100 then
+                    @@count_switch_100+=1,
+                    @@count_100+=1
+                  end
+				  
+				 else if (s.Gentype == "核电机组") then
+                  @@count_nuclear+=1,
+                  if s.@P_error_pct <= 1-p_qualified_factor then 
+                     @@count_nuclear_p_qualified +=1,
+                     @@count_p_qualified +=1 
+                  end,
+                  if s.@loadfactor<=20 then
+                    @@count_nuclear_20+=1,
+                    @@count_20+=1
+                  else if s.@loadfactor > 20 and s.@loadfactor<=80 then
+                    @@count_nuclear_20_80+=1,
+                    @@count_20_80+=1
+                  else if s.@loadfactor > 80 and s.@loadfactor<=100 then
+                    @@count_nuclear_80_100+=1,
+                    @@count_80_100+=1            
+                  else if s.@loadfactor > 100 then
+                    @@count_nuclear_100+=1,
+                    @@count_100+=1
+                  end
+
+                 else if (s.Gentype == "抽蓄机组") then
+                  @@count_pumping+=1,
+                  if s.@P_error_pct <= 1-p_qualified_factor then 
+                     @@count_pumping_p_qualified +=1,
+                     @@count_p_qualified +=1 
+                  end,
+                  if s.@loadfactor<=20 then
+                    @@count_pumping_20+=1,
+                    @@count_20+=1
+                  else if s.@loadfactor > 20 and s.@loadfactor<=80 then
+                    @@count_pumping_20_80+=1,
+                    @@count_20_80+=1
+                  else if s.@loadfactor > 80 and s.@loadfactor<=100 then
+                    @@count_pumping_80_100+=1,
+                    @@count_80_100+=1            
+                  else if s.@loadfactor > 100 then
+                    @@count_pumping_100+=1,
+                    @@count_100+=1
+                  end
+                  
+                  else if (s.Gentype == "分布式电源") then
+                  @@count_distribution+=1,
+                  if s.@P_error_pct <= 1-p_qualified_factor then 
+                     @@count_distribution_p_qualified +=1,
+                     @@count_p_qualified +=1 
+                  end,
+                  if s.@loadfactor<=20 then
+                    @@count_distribution_20+=1,
+                    @@count_20+=1
+                  else if s.@loadfactor > 20 and s.@loadfactor<=80 then
+                    @@count_distribution_20_80+=1,
+                    @@count_20_80+=1
+                  else if s.@loadfactor > 80 and s.@loadfactor<=100 then
+                    @@count_distribution_80_100+=1,
+                    @@count_80_100+=1            
+                  else if s.@loadfactor > 100 then
+                    @@count_distribution_100+=1,
+                    @@count_100+=1
+                  end
+                else if (s.Gentype == "其他机组") then
+                  @@count_other+=1,
+                  if s.@P_error_pct <= 1-p_qualified_factor then 
+                     @@count_other_p_qualified +=1,
+                     @@count_p_qualified +=1 
+                  end,
+                  if s.@loadfactor<=20 then
+                    @@count_other_20+=1,
+                    @@count_20+=1
+                  else if s.@loadfactor > 20 and s.@loadfactor<=80 then
+                    @@count_other_20_80+=1,
+                    @@count_20_80+=1
+                  else if s.@loadfactor > 80 and s.@loadfactor<=100 then
+                    @@count_other_80_100+=1,
+                    @@count_80_100+=1
+                  else if s.@loadfactor > 100 then
+                    @@count_other_100+=1,
+                    @@count_100+=1
+                  end
+                end;
+ 		  
+ 
+  if return_all then
+    print @@result_all;
+  else
+    print @@result_part;
+  end;
+ print @@count_all;//总数
+ print @@count_20; //轻载(小于20%)总个数(供柱状图用)
+  print @@count_20_80;//正常(20%-80%)总个数(供柱状图用)
+  print @@count_80_100;//重载(80%-100%)总个数(供柱状图用)
+  print @@count_100;//过载(大于100%)总个数(供柱状图用)
+  print @@count_p_qualified;
+  
+  print @@count_fire; //发电类型:火电的总个数
+  print @@count_fire_20;//发电类型:火电的轻载个数
+  print @@count_fire_20_80;//发电类型:火电的正常个数
+  print @@count_fire_80_100;//发电类型:火电的重载个数
+  print @@count_fire_100;//发电类型:火电的过载个数
+  print @@count_fire_p_qualified;
+ 
+  print @@count_water;//发电类型:水电的总个数
+  print @@count_water_20;//发电类型:水电的轻载个数
+  print @@count_water_20_80;//发电类型:水电的正常个数
+  print @@count_water_80_100;//发电类型:水电的重载个数
+  print @@count_water_100;//发电类型:水电的过载个数
+  print @@count_water_p_qualified;
+  
+  
+  print @@count_wind;//风电
+  print @@count_wind_20;
+  print @@count_wind_20_80;
+  print @@count_wind_80_100;
+  print @@count_wind_100;
+  print @@count_wind_p_qualified;
+  
+  
+  print @@count_light;//光伏
+  print @@count_light_20;
+  print @@count_light_20_80;
+  print @@count_light_80_100;
+  print @@count_light_100;
+  print @@count_light_p_qualified;
+  
+  print @@count_virtual;//虚拟
+  print @@count_virtual_20;
+  print @@count_virtual_20_80;
+  print @@count_virtual_80_100;
+  print @@count_virtual_100;
+  print @@count_virtual_p_qualified;
+
+  print @@count_switch;//交换
+  print @@count_switch_20;
+  print @@count_switch_20_80;
+  print @@count_switch_80_100;
+  print @@count_switch_100;
+  print @@count_switch_p_qualified;
+  
+  print @@count_nuclear;//核电
+  print @@count_nuclear_20;
+  print @@count_nuclear_20_80;
+  print @@count_nuclear_80_100;
+  print @@count_nuclear_100;
+  print @@count_nuclear_p_qualified;
+  
+  print @@count_pumping;//抽蓄
+  print @@count_pumping_20;
+  print @@count_pumping_20_80;
+  print @@count_pumping_80_100;
+  print @@count_pumping_100;
+  print @@count_pumping_p_qualified;
+  
+  print @@count_distribution;
+  print @@count_distribution_20;
+  print @@count_distribution_20_80;
+  print @@count_distribution_80_100;
+  print @@count_distribution_100;
+  print @@count_distribution_p_qualified;
+ 
+  print @@count_other;//抽蓄
+  print @@count_other_20;
+  print @@count_other_20_80;
+  print @@count_other_80_100;
+  print @@count_other_100;
+  print @@count_other_p_qualified;
+
+  
+
+}

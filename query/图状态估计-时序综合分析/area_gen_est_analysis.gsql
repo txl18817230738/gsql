@@ -1,0 +1,289 @@
+CREATE QUERY area_gen_est_analysis(string companyID="113715890758877224", bool return_all=true) FOR GRAPH gsql_EMS syntax v2 { 
+  TYPEDEF TUPLE<string area_name, string unit_name, string unit_id, string sub_name, string sub_id, string unit_type, double current, double beforeone, double beforetwo, double beforethree, double current_p, double beforeone_p, double beforetwo_p, double beforethree_p> info;
+   //SumAccum<INT> @@count_all;
+	
+	//SumAccum<string> @sub_id;
+	HeapAccum<info>(10000000, area_name DESC, sub_name DESC, unit_id DESC, unit_name DESC) @@result_all;
+	HeapAccum<info>(50, area_name DESC, sub_name DESC, unit_id DESC, unit_name DESC) @@result_part;
+	SetAccum<string> @@Comp_ID;
+  
+  SumAccum<string> @area_name;
+  SumAccum<string> @sub_name;
+  SumAccum<string> @sub_id;
+  SumAccum<double> @current;
+  SumAccum<double> @beforeone;
+  SumAccum<double> @beforetwo;
+  SumAccum<double> @beforethree;
+  SumAccum<double> @current_p;
+  SumAccum<double> @beforeone_p;
+  SumAccum<double> @beforetwo_p;
+  SumAccum<double> @beforethree_p;
+
+  SumAccum<double> @@neg_meas;
+  SumAccum<double> @@pos_meas;
+  SumAccum<double> @@neg_est;
+  SumAccum<double> @@pos_est;
+
+  SumAccum<double> @@fire_neg_meas;
+  SumAccum<double> @@fire_pos_meas;
+  SumAccum<double> @@fire_neg_est;
+  SumAccum<double> @@fire_pos_est;
+
+  SumAccum<double> @@water_neg_meas;
+  SumAccum<double> @@water_pos_meas;
+  SumAccum<double> @@water_neg_est;
+  SumAccum<double> @@water_pos_est;
+
+  SumAccum<double> @@wind_neg_meas;
+  SumAccum<double> @@wind_pos_meas;
+  SumAccum<double> @@wind_neg_est;
+  SumAccum<double> @@wind_pos_est;
+
+  SumAccum<double> @@light_neg_meas;
+  SumAccum<double> @@light_pos_meas;
+  SumAccum<double> @@light_neg_est;
+  SumAccum<double> @@light_pos_est;
+
+  SumAccum<double> @@nuclear_neg_meas;
+  SumAccum<double> @@nuclear_pos_meas;
+  SumAccum<double> @@nuclear_neg_est;
+  SumAccum<double> @@nuclear_pos_est;
+
+  SumAccum<double> @@pumping_neg_meas;
+  SumAccum<double> @@pumping_pos_meas;
+  SumAccum<double> @@pumping_neg_est;
+  SumAccum<double> @@pumping_pos_est;
+
+  SumAccum<double> @@other_neg_meas;
+  SumAccum<double> @@other_pos_meas;
+  SumAccum<double> @@other_neg_est;
+  SumAccum<double> @@other_pos_est;
+  
+  T0 = {TopoND.*};
+	sub = {Substation.*};
+	comp = {gridcom.*};
+
+
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)-:t where s.id in @@Comp_ID; 
+  
+  
+  //区域 厂站 发电机组
+  com_unit = select t2 from comp:s-(connected_grid_sub:e1)-:t1 -(connected_Sub_Unit>:e2)-unit:t2-(topo_unit:e)-:t where s.id in @@Comp_ID and t2.off ==0 and t.island ==1
+              ACCUM
+                t2.@area_name = s.name,
+                t2.@sub_name = t1.name,
+                t2.@sub_id = t1.strid;
+  
+  unit_mease_set = select s from com_unit:s -(Unit_meas_history:e)-:t 
+              ACCUM
+                int currentindex = t.today.size(),
+                if(currentindex < 1) THEN
+                    s.@current = 0,
+                    s.@beforeone =0,
+                    s.@beforetwo =0,
+                    s.@beforethree =0,
+                    s.@current_p = 0,
+                    s.@beforeone_p =0,
+                    s.@beforetwo_p =0,
+                    s.@beforethree_p =0
+                else if(currentindex <2) THEN
+                    s.@beforeone =0,
+                    s.@beforeone_p =0,
+                    s.@beforetwo =0,
+                    s.@beforethree =0,
+                    s.@beforetwo_p =0,
+                    s.@beforethree_p =0,
+                    s.@current = t.today.get(currentindex-1).est_p,
+                    s.@current_p = t.today.get(currentindex-1).p
+                else if(currentindex <3) THEN
+                    s.@beforetwo =0,
+                    s.@beforetwo_p =0,
+                    s.@beforethree =0,
+                    s.@beforethree_p =0,
+                    s.@current = t.today.get(currentindex-1).est_p,
+                    s.@beforeone = t.today.get(currentindex -2).est_p,
+                    s.@current_p = t.today.get(currentindex-1).p,
+                    s.@beforeone_p = t.today.get(currentindex -2).p
+                else if(currentindex <4) THEN
+                    s.@beforethree =0,
+                    s.@beforethree_p =0,
+                    s.@current = t.today.get(currentindex -1).est_p,
+                    s.@beforeone = t.today.get(currentindex -2).est_p,
+                    s.@current_p = t.today.get(currentindex -1).p,
+                    s.@beforeone_p = t.today.get(currentindex -2).p,
+                    s.@beforetwo = t.today.get(currentindex -3).est_p,
+                    s.@beforetwo_p = t.today.get(currentindex -3).p
+                else 
+                    s.@current = t.today.get(currentindex -1).est_p,
+                    s.@beforeone = t.today.get(currentindex -2).est_p,
+                    s.@current_p = t.today.get(currentindex -1).p,
+                    s.@beforeone_p = t.today.get(currentindex -2).p,
+                    s.@beforetwo = t.today.get(currentindex -3).est_p,
+                    s.@beforetwo_p = t.today.get(currentindex -3).p,
+                    s.@beforethree = t.today.get(currentindex -4).est_p,
+                    s.@beforethree_p = t.today.get(currentindex -4).p
+                end,
+                if (s.Gentype == "火电机组") then
+                  if s.Pimeas <0 then
+                    @@neg_meas += s.Pimeas,
+                    @@fire_neg_meas += s.Pimeas
+                  else
+                    @@pos_meas += s.Pimeas,
+                    @@fire_pos_meas += s.Pimeas
+                  end,
+                  if s.P <0 then
+                    @@neg_est += s.P,
+                    @@fire_neg_est += s.P
+                  else
+                    @@pos_est += s.P,
+                    @@fire_pos_est += s.P
+                  end
+                else if (s.Gentype == "水电机组") then
+                  if s.Pimeas <0 then
+                    @@neg_meas += s.Pimeas,
+                    @@water_neg_meas += s.Pimeas
+                  else
+                    @@pos_meas += s.Pimeas,
+                    @@water_pos_meas += s.Pimeas
+                  end,
+                  if s.P <0 then
+                    @@neg_est += s.P,
+                    @@water_neg_est += s.P
+                  else
+                    @@pos_est += s.P,
+                    @@water_pos_est += s.P
+                  end
+                else if (s.Gentype == "风电机组") then
+                  if s.Pimeas <0 then
+                    @@neg_meas += s.Pimeas,
+                    @@wind_neg_meas += s.Pimeas
+                  else
+                    @@pos_meas += s.Pimeas,
+                    @@wind_pos_meas += s.Pimeas
+                  end,
+                  if s.P <0 then
+                    @@neg_est += s.P,
+                    @@wind_neg_est += s.P
+                  else
+                    @@pos_est += s.P,
+                    @@wind_pos_est += s.P
+                  end
+                else if (s.Gentype == "光伏机组") then
+                  if s.Pimeas <0 then
+                    @@neg_meas += s.Pimeas,
+                    @@light_neg_meas += s.Pimeas
+                  else
+                    @@pos_meas += s.Pimeas,
+                    @@light_pos_meas += s.Pimeas
+                  end,
+                  if s.P <0 then
+                    @@neg_est += s.P,
+                    @@light_neg_est += s.P
+                  else
+                    @@pos_est += s.P,
+                    @@light_pos_est += s.P
+                  end
+                else if (s.Gentype == "核电机组") then
+                  if s.Pimeas <0 then
+                    @@neg_meas += s.Pimeas,
+                    @@nuclear_neg_meas += s.Pimeas
+                  else
+                    @@pos_meas += s.Pimeas,
+                    @@nuclear_pos_meas += s.Pimeas
+                  end,
+                  if s.P <0 then
+                    @@neg_est += s.P,
+                    @@nuclear_neg_est += s.P
+                  else
+                    @@pos_est += s.P,
+                    @@nuclear_pos_est += s.P
+                  end
+                else if (s.Gentype == "抽蓄机组") then
+                  if s.Pimeas <0 then
+                    @@neg_meas += s.Pimeas,
+                    @@pumping_neg_meas += s.Pimeas
+                  else
+                    @@pos_meas += s.Pimeas,
+                    @@pumping_pos_meas += s.Pimeas
+                  end,
+                  if s.P <0 then
+                    @@neg_est += s.P,
+                    @@pumping_neg_est += s.P
+                  else
+                    @@pos_est += s.P,
+                    @@pumping_pos_est += s.P
+                  end
+                else if (s.Gentype == "其他机组") then
+                 if s.Pimeas <0 then
+                    @@neg_meas += s.Pimeas,
+                    @@other_neg_meas += s.Pimeas
+                  else
+                    @@pos_meas += s.Pimeas,
+                    @@other_pos_meas += s.Pimeas
+                  end,
+                  if s.P <0 then
+                    @@neg_est += s.P,
+                    @@other_neg_est += s.P
+                  else
+                    @@pos_est += s.P,
+                    @@other_pos_est += s.P
+                  end
+                end;
+  
+  Result_set = select s from unit_mease_set:s 
+              ACCUM 
+                @@result_all += info(s.@area_name,s.name,s.strid,s.@sub_name,s.@sub_id,s.Gentype,s.@current,s.@beforeone,s.@beforetwo,s.@beforethree,s.@current_p,s.@beforeone_p,s.@beforetwo_p,s.@beforethree_p),
+                @@result_part += info(s.@area_name,s.name,s.strid,s.@sub_name,s.@sub_id,s.Gentype,s.@current,s.@beforeone,s.@beforetwo,s.@beforethree,s.@current_p,s.@beforeone_p,s.@beforetwo_p,s.@beforethree_p);
+  if return_all then
+    print @@result_all;
+  else
+    print @@result_part;
+  end;
+
+  print @@neg_meas;
+  print @@pos_meas;
+  print @@neg_est;
+  print @@pos_est;
+
+  print @@fire_neg_meas;
+  print @@fire_pos_meas;
+  print @@fire_neg_est;
+  print @@fire_pos_est;
+
+  print @@water_neg_meas;
+  print @@water_pos_meas;
+  print @@water_neg_est;
+  print @@water_pos_est;
+
+  print @@wind_neg_meas;
+  print @@wind_pos_meas;
+  print @@wind_neg_est;
+  print @@wind_pos_est;
+
+  print @@light_neg_meas;
+  print @@light_pos_meas;
+  print @@light_neg_est;
+  print @@light_pos_est;
+
+  print @@nuclear_neg_meas;
+  print @@nuclear_pos_meas;
+  print @@nuclear_neg_est;
+  print @@nuclear_pos_est;
+
+  print @@pumping_neg_meas;
+  print @@pumping_pos_meas;
+  print @@pumping_neg_est;
+  print @@pumping_pos_est;
+
+  print @@other_neg_meas;
+  print @@other_pos_meas;
+  print @@other_neg_est;
+  print @@other_pos_est;
+  
+}

@@ -1,0 +1,47 @@
+CREATE QUERY FaultGroupinit() FOR GRAPH gsql_EMS{
+
+  SumAccum<int> @faultnumber;
+
+  Tfault = {Fault.*};
+  Tfaultgroup = {FaultGroup.*};
+  Tunit = {unit.*};
+  Tacline = {ACline_dot.*};
+  Ttwoport = {two_port_transformer.*};
+  Tthreeport = {three_port_transformer.*};
+  Tbus = {BUS.*};
+  Tsub = {Substation.*};
+  
+ DELETE e from Tfaultgroup:s-(faultgroup_fault:e)-:t;
+
+//Generate N-1 fault groups 
+  faultSet = select s from Tfault:s
+        where  s.faulttype == "N-1"
+        post-accum
+        if s.faultdevtype.get(0) == "AClinedot" then
+            insert into faultgroup_fault values(1,s.id)
+        else if s.faultdevtype.get(0) == "two_port_transformer" then
+            insert into faultgroup_fault values(2,s.id)
+        else if s.faultdevtype.get(0) == "three_port_transformer" then
+            insert into faultgroup_fault values(3,s.id)
+        else if s.faultdevtype.get(0) == "Unit" then
+            insert into faultgroup_fault values(4,s.id)
+        end;
+
+    faultSet = select s from Tfault:s
+        where s.groupname == "复杂故障"
+        post-accum
+            insert into faultgroup_fault values(5,s.id);
+
+    faultSet = select s from Tfault:s
+        where s.groupname == "智能复杂故障组"
+        post-accum
+            insert into faultgroup_fault values(6,s.id);
+
+  FaultgroupSet = select s from Tfaultgroup:s-(faultgroup_fault:e)-:t
+        accum
+           s.@faultnumber += 1
+        post-accum
+           s.faultnumber = s.@faultnumber;
+
+  print FaultgroupSet;
+}

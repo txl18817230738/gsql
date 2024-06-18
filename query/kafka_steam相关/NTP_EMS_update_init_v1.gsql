@@ -1,0 +1,842 @@
+CREATE QUERY NTP_EMS_update_init_v1() FOR GRAPH gsql_EMS{
+  typedef tuple<int exId, int ep, double M_Vm, double M_Va, double GenP, double GenQ, double LdP, double LdQ, double M_C_P> sort_vertex_NTPUpdate;
+ typedef tuple<int exId, double eM_P_TLPF, double eM_Q_TLPF, double eRi_eP, double eRi_eQ, double efrom_CP, double eto_CP, int ei> sort_edge_NTPUpdate;
+ // ******************************** Attributes save************************** 
+// HeapAccum<sort_vertex>(1000000000, exId asc) @@vertex; 
+// HeapAccum<sort_edge>(1000000000, exId asc) @@edge;  
+ //*************************************************************
+ SumAccum<int>@hasSthMoreThanAclinedot = 1;
+  SumAccum<int>@offpoint = 0;
+  SumAccum<int>@offValue = 0;
+  ListAccum<edge>@@listedge;
+  MaxAccum<int> @topoID =0 ;
+  SumAccum<int> @iid =0;
+  SumAccum<int> @jid =0;
+  MaxAccum<int>@toid = 0;
+  MinAccum<int> @zhongxing = 0;
+  SetAccum<edge> @@setedge;
+  SumAccum<STRING> @area;
+  SetAccum<edge> @@main_island_setedge;
+  SumAccum<int>@@counter = 0;
+  SumAccum<int>@@oldcounter = 1;
+  SumAccum<int>@@cpcounter = 0;
+  SumAccum<int>@@debugcounter = 0;
+  SumAccum<int>@@load_debugcounter = 0;
+  SumAccum<int>@@unit_debugcounter = 0;
+  SumAccum<int> @aclinecount = 0;
+ 
+  MaxAccum<DOUBLE> @latitude;
+  MaxAccum<DOUBLE> @longitude;
+  
+  MaxAccum<DOUBLE> @@max_genp = 0;
+  MaxAccum<DOUBLE> @vm =0;
+  MaxAccum<DOUBLE> @va =0;
+  MaxAccum<DOUBLE> @mvm =0;
+  MaxAccum<DOUBLE> @mva =0;
+  MaxAccum<DOUBLE> @base_kv =0;
+  MaxAccum<DOUBLE> @desired_volt =0;
+  SumAccum<double> @M_Vm = 0;
+  SumAccum<double> @M_Va = 0;
+
+  SumAccum<double> @genp;
+  SumAccum<double> @genq;
+  SumAccum<double> @mgenp;
+  SumAccum<double> @mgenq;
+  SumAccum<double> @qup;
+  SumAccum<double> @qlower;
+  SumAccum<double> @GenP = 0;
+  SumAccum<double> @GenQ = 0;
+
+  SumAccum<double> @ldp;
+  SumAccum<double> @ldq;
+  SumAccum<double> @mloadp;
+  SumAccum<double> @mloadq;
+  SumAccum<double> @LdP = 0;
+  SumAccum<double> @LdQ = 0; 
+ 
+  SumAccum<double> @mcp;
+  SumAccum<double> @p;
+  SumAccum<double> @q;
+  MaxAccum<double> @v_rate;
+  SumAccum<double> @M_C_P = 0;  
+  SumAccum<double> @subvolt;
+
+  SumAccum<STRING> @name;
+  SumAccum<STRING> @bus_name;
+  SumAccum<STRING> @sub_name;
+  OrAccum @busnameUpdated;
+
+  SumAccum<int> @Pflag = 0;
+  SumAccum<int> @Qflag = 0;
+  MapAccum<INT, double> @@acline_Pflag;
+  MapAccum<INT, double> @@acline_Qflag;
+  MapAccum<INT, double> @@three_port_Pflag;
+  MapAccum<INT, double> @@three_port_Qflag;
+
+  AvgAccum @@upv;
+  AvgAccum @@lov;
+  AvgAccum @@rivp;
+  AvgAccum @@rivq;
+  
+ //Add declaration of topond.@hasBeenTraversed to innitial value of 0
+  SumAccum<int> @hasBeenTraversed = 0 ;
+
+ //Add declaration of @@oldtoponodecounter
+  SumAccum<int>@@oldtoponodecounter = 1;
+
+//Add declaration of @@toponodecounter
+  SumAccum<int>@@toponodecounter = 0;
+  
+  SumAccum<int>@busType = 0;
+  SumAccum<int>@control_bus = 0;
+  
+  SumAccum<int>@@counter_island = 0;
+  //Map(Key, Value)
+  //Maps for edge p,q measure updating
+  MapAccum<INT, double> @@acline_p_MapAccum;
+  MapAccum<INT, double> @@acline_q_MapAccum;
+
+  MapAccum<INT, double> @@two_port_p_MapAccum;
+  MapAccum<INT, double> @@two_port_q_MapAccum;
+  MapAccum<INT, double> @@three_port_p_MapAccum;
+  MapAccum<INT, double> @@three_port_q_MapAccum;
+  SumAccum<string> @@slack_bus;
+  SumAccum<int> @aclinedot_flag = 0;
+  SumAccum<int> @bus_flag = 0;
+  SumAccum<int> @two_port_flag = 0;
+  SumAccum<int> @three_port_flag = 0;
+  SumAccum<int> @onesideopen_flag = 0;
+
+  busSet = {BUS.*};
+//------------------------------------------------------------------------------------------------------ 
+//*********************************Parameters for preprocessing code *********************
+ 
+ MapAccum<int, int> @@counterMap;
+
+ // ********************************* Countinuous exId Attributes ************************
+ ListAccum<int> @@nodeList;
+ // ******************************** Outdegree Calculation **************************
+ SumAccum<int> @outdegree = 0;
+ SumAccum<int> @alldgr = 0; // the degree (number of edges connecting to) a bus
+ // ******************************** Attributes save**************************
+ HeapAccum<sort_vertex_NTPUpdate>(1000000000, exId asc) @@vertex; 
+ HeapAccum<sort_edge_NTPUpdate>(1000000000, exId asc) @@edge;
+
+//get salck bus name
+  parameterSet = {parameters.*};
+
+  Tparameter = select s from parameterSet:s
+    post-accum
+      @@slack_bus += s.slack_bus_name;
+
+ // End of variable definition
+log(true, "timepoint_NTP_update_start");
+  
+  total_topo = {TopoND.*};
+  print total_topo.size();
+  T0= {TopoND.*};   //start from all vertices in the graph
+  T_status = {status.*};
+  start_set = {TopoND.*};
+
+//  print start_set.size();
+/////////////////////////////////////////main_island////////////////////////////////////////
+  // ***************** logic needs to be changed to avoid hard_code *****************
+  start_set = select s
+              FROM start_set:s
+              //WHERE s.TOPOID == 23839 //23839 is one of the toponode in main island
+        WHERE s.start_pt == 1 
+              POST-ACCUM
+              s.@hasBeenTraversed = 1,
+        s.island = 1;
+
+  sub_TopoND_set = start_set;
+
+  WHILE @@oldtoponodecounter != @@toponodecounter DO
+  
+      @@oldtoponodecounter = @@toponodecounter;
+
+      start_set = SELECT t
+                  FROM start_set:s - ((topo_connect):e) -> :t
+                  WHERE t.@hasBeenTraversed == 0 and (e.from_off.size() > 1 or e.to_off.get(0) == 0)
+                  ACCUM
+                  @@main_island_setedge += e
+            POST-ACCUM
+                  t.@hasBeenTraversed = 1,
+                  @@toponodecounter += 1,
+          t.island = 1;
+
+      sub_TopoND_set = sub_TopoND_set UNION start_set;
+
+ END;
+// set untraversed node to island 0
+mainislandSet = select s from total_topo:s where s.@hasBeenTraversed==1;
+isolatedSet = total_topo MINUS mainislandSet;
+island0 = select s from isolatedSet:s
+  POST-ACCUM
+    s.island=0;
+
+
+ print sub_TopoND_set.size();   
+
+
+               
+//******************************* Outdegree and continuous exId calculation ******************************
+ T1 = SELECT s
+          FROM T0:s-(topo_connect:e)->TopoND:t
+          WHERE s.island == 1 //and t.island == 1
+          ACCUM
+            s.@outdegree += 1
+          POST-ACCUM
+            s.outdegree = s.@outdegree,
+            @@nodeList += s.TOPOID;
+// ********************************* Continuous exId *********************************
+ setTopoIDToExIdMap(@@counterMap, @@nodeList);
+
+ T2 = select s
+          from T0:s
+          WHERE s.island == 1
+          post-accum
+          s.exId = @@counterMap.get(s.TOPOID);
+
+log(true,"point1.2_NTPv5");
+            
+
+//////pass attribute from each component to toponode and build relationship between them/////////
+////Vm double/////
+
+//========set substation name in TopoND====================
+aclinedotSet = {ACline_dot.*};
+two_port = {two_port_transformer.*};
+three_port = {three_port_transformer.*};
+
+  TopoND_subname = SELECT s
+                FROM sub_TopoND_set:s-(topoid_subid:e) ->:t
+                ACCUM
+                    s.@name = t.name
+                POST-ACCUM
+                    s.Sub = s.@name; 
+
+//========================================================
+
+   Vm_topo = SELECT s
+            FROM T0: s-(topo_bus:e)->:t
+            ACCUM
+      s.@vm += t.V,
+      s.@va += t.Ang,
+      s.@mvm += t.Pimeas,
+      s.@mva += t.Ang_meas,
+      s.@base_kv += t.volt, //[Chen Yuan] Wait for Ziyan Yao's update, should be figured out soon
+      s.@desired_volt += t.base_value,
+                s.@bus_name = t.name,
+    //log(true, s.@base_kv, t.volt),
+        s.@busnameUpdated += true
+            POST-ACCUM
+        s.bus_name = s.@bus_name,
+      CASE 
+        WHEN abs(s.@base_kv - 0) > 0.0001 THEN
+        s.Vm = s.@vm/s.@base_kv,
+        s.Va = s.@va/s.@base_kv,
+        s.M_Vm = s.@mvm/s.@base_kv,
+        s.M_Va = s.@mva/s.@base_kv,
+        s.@M_Vm = s.@mvm/s.@base_kv,
+        s.@M_Va = s.@mva/s.@base_kv,
+        s.base_kV = s.@base_kv,  //[Chen Yuan] Wait for Ziyan Yao's update, should be figured out soon
+        s.desired_volts = s.@desired_volt
+        ELSE
+        s.Vm = s.@vm,
+        s.Va = s.@va,
+        s.M_Vm = s.@mvm,
+        s.M_Va = s.@mva,
+        s.@M_Vm = s.@mvm,
+        s.@M_Va = s.@mva
+        //s.base_kV = s.@base_kv,  // [Chen Yuan] Wait for Ziyan Yao's update, should be figured out soon
+        //s.desired_volts = s.@desired_volt
+      END;
+//print Vm_topo;
+  
+
+//==========================================================================
+  
+  gen_topo = SELECT s
+             FROM T0: s-(topo_unit:e)->:t
+             ACCUM
+             s.@genp += t.P / 100,
+             s.@genq += t.Q / 100,
+             s.@mgenp += t.Pimeas/100,
+             s.@mgenq += t.Qimeas/100,
+             //s.@qup += t.Q_max/100,
+             //s.@qlower += t.Q_min/100,
+             s.@base_kv += t.volt,    //[Chen Yuan] Wait for Ziyan Yao's update, should be figured out soon
+             s.@desired_volt += t.base_value,
+       s.@control_bus = t.@topoID,
+             s.@vm += t.Ue,
+             IF s.@busnameUpdated==false THEN
+                s.@bus_name = t.name,
+                s.@busnameUpdated += true
+             END
+             POST-ACCUM
+               s.bus_name = s.@bus_name,
+             CASE
+             WHEN abs(s.@base_kv - 0) > 0.0001 THEN
+                  s.Vm = s.@vm/s.@base_kv
+             ELSE
+                s.Vm = 1
+             END,
+             //s.GenP = s.@genp,
+             //s.GenQ = s.@genq,
+             s.@GenP = s.@mgenp,
+             s.@GenQ = s.@mgenq,
+             s.M_Gen_P = s.@mgenp,
+             s.M_Gen_Q = s.@mgenq,
+             //s.qUp = s.@qup,
+             //s.qLower = s.@qlower,
+             s.base_kV = s.@base_kv,    //[Chen Yuan] Wait for Ziyan Yao's update, should be figured out soon
+             s.desired_volts = s.@desired_volt;
+
+  another_gentopo = SELECT t
+                    FROM T0: s-(topo_unit:e)->:t
+                    WHERE t.off == 0
+                    POST-ACCUM
+                    s.busType = 2,
+                    @@max_genp += s.@genp;
+  
+
+
+  load_topo = SELECT s
+              FROM T0: s-(topo_load:e)->:t
+              ACCUM
+              s.@ldp += t.P/100,
+              s.@ldq += t.Q/100,
+              s.@mloadp += t.Pimeas/100,
+              s.@mloadq += t.Qimeas/100,
+              s.@base_kv += t.volt,  // [Chen Yuan] Wait for Ziyan Yao's update, should be figured out soon
+              s.@desired_volt += t.base_value,
+              IF s.@busnameUpdated==false THEN
+                 s.@bus_name = t.name,
+                 s.@busnameUpdated += true
+              END
+              POST-ACCUM
+                s.bus_name = s.@bus_name,
+              //s.LdP = s.@ldp,
+              //s.LdQ = s.@ldq,
+              s.@LdP = s.@mloadp,
+              s.@LdQ = s.@mloadq,
+              s.M_Load_P = s.@mloadp,
+              s.M_Load_Q = s.@mloadq,
+              s.base_kV = s.@base_kv,   // [Chen Yuan] Wait for Ziyan Yao's update, should be figured out soon
+              s.desired_volts = s.@desired_volt;
+
+
+
+  compensatorP_topo = SELECT s
+                      FROM T0: s-(topo_compensatorP:e)->:t
+                      ACCUM
+                      s.@mcp += t.Qimeas,
+                      s.@p += t.P/100,
+                      s.@q += t.Q_rate/100,
+                      s.@v_rate += 1,  //t.V_rate / t.V_rate, /////////////need double check in the future////////
+                      s.@base_kv += t.volt,  // [Chen Yuan] Wait for Ziyan Yao's update, should be figured out soon
+                      s.@desired_volt += t.base_value,
+                      IF s.@busnameUpdated==false THEN
+                         s.@bus_name = t.name,
+                         s.@busnameUpdated += true
+                      END
+                      POST-ACCUM
+                      s.bus_name = s.@bus_name,
+                      s.M_C_P = s.@mcp,
+                      s.@M_C_P = s.@mcp,
+                      s.G = s.@p / s.@v_rate / s.@v_rate,
+                      s.B = s.@q / s.@v_rate / s.@v_rate,
+                      s.base_kV = s.@base_kv,  // [Chen Yuan] Wait for Ziyan Yao's update, should be figured out soon
+                      s.desired_volts = s.@desired_volt;
+
+  Tx_Two = select s
+       from T0:s-((topo_Tx_Two|topo_Tx_Three):e)->:t
+       ACCUM
+         IF s.@busnameUpdated == false Then
+             s.@bus_name = t.name,
+             s.@busnameUpdated += true
+         END
+       POST-ACCUM
+         s.bus_name = s.@bus_name;
+
+  two_transformer_topo = SELECT s
+                         FROM T0: s-(topo_Tx_Two:e)->:t
+                         ACCUM
+                         s.@base_kv += t.volt,    // [Chen Yuan] Wait for Ziyan Yao's update, should be figured out soon
+                         s.@desired_volt += t.base_value
+                         POST-ACCUM
+                         s.base_kV = s.@base_kv,  // [Chen Yuan] Wait for Ziyan Yao's update, should be figured out soon
+                         s.desired_volts = s.@desired_volt;
+
+  three_transformer_topo = SELECT s
+                           FROM T0: s-(topo_Tx_Three:e)->:t
+                           ACCUM
+                           //log(true, "debug", t.index_three, t.volt, t.base_value),
+                           s.@base_kv += t.volt,    //    [Chen Yuan] Wait for Ziyan Yao's update, should be figured out soon
+                           s.@desired_volt += t.base_value
+                           POST-ACCUM
+                           s.base_kV = s.@base_kv,    //  [Chen Yuan] Wait for Ziyan Yao's update, should be figured out soon
+                           s.desired_volts = s.@desired_volt;
+
+
+
+  Neutral_point = SELECT t FROM three_port:s - (neutral_three:e) ->:t
+          ACCUM
+             t.@name = s.name,
+             t.@sub_name = s.Substation
+          POST-ACCUM
+             t.name = t.@name;
+
+
+  Neutral_topo = SELECT s FROM T0:s - (topo_neutral:e) ->:t
+          WHERE abs(s.base_kV - 1) < 0.0001
+          ACCUM
+             s.@sub_name = t.@sub_name,
+          IF s.@busnameUpdated == false Then
+             s.@bus_name = t.name,
+             s.@busnameUpdated += true
+          END
+          POST-ACCUM
+          s.Sub = s.@sub_name,
+          s.bus_name = s.@bus_name,
+          s.Ri_vP = 20000,
+          s.Ri_vQ = 100;//,
+          //log(true, "neutral_point", s.exId, s.bus_name, s.Sub, s.base_kV, s.ZJP, s.ZJQ);
+
+
+ updateZJP_ZJQ = SELECT s
+                 FROM T0:s-((topo_unit | topo_load ):e) ->:t 
+                 where t.off == 0
+                 POST-ACCUM
+                 s.ZJP = 0;
+ updateZJP_ZJQ = SELECT s
+                 FROM T0:s-((topo_unit | topo_load | topo_compensatorP):e) ->:t
+                 where t.off == 0
+                 POST-ACCUM
+                 s.ZJQ = 0;
+         // log(true, "non-ZJP/ZJQ", s.bus_name, s.Sub);
+
+
+ ManualUpdateZJP_ZJQ_220 = select s from sub_TopoND_set:s
+                 where s.bus_name == "基地站.1主变-中"
+                 post-accum
+                     s.ZJP = 0,
+                     s.ZJQ = 0;
+
+ print updateZJP_ZJQ.size();
+
+//--------------update edges------------------------//
+// edited by Hong Fan @ 10/29/2020
+        X = select s from aclinedotSet:s -(aclinedot_aclinedot:e) - :t
+                accum
+                        int id = e.id,
+                        if s.id == e.I_mRID then
+                        //log(TRUE, "ACLINE_+", id, s.pimeas, s.qimeas),
+                                @@acline_p_MapAccum += (id -> s.Pimeas/100),
+                                @@acline_q_MapAccum += (id -> s.Qimeas/100)
+                        else
+                        //log(TRUE, "ACLINE_-", -id, s.pimeas, s.qimeas),
+                                @@acline_p_MapAccum += (-id -> s.Pimeas/100),
+                                @@acline_q_MapAccum += (-id -> s.Qimeas/100)
+                        end;
+        X2 = select s from aclinedotSet:s -(aclinedot_aclinedot_reverse:e) - :t
+                accum
+                        int id = e.id,
+                        if s.id == e.I_mRID then
+                        //log(TRUE, "ACLINE_+", id, s.pimeas, s.qimeas),
+                                @@acline_p_MapAccum += (id -> s.Pimeas/100),
+                                @@acline_q_MapAccum += (id -> s.Qimeas/100)
+                        else
+                        //log(TRUE, "ACLINE_-", -id, s.pimeas, s.qimeas),
+                                @@acline_p_MapAccum += (-id -> s.Pimeas/100),
+                                @@acline_q_MapAccum += (-id -> s.Qimeas/100)
+                        end;
+                        //log(TRUE, "inserted_ACLINE_+", id, @@acline_p_MapAccum.get(id), @@acline_q_MapAccum.get(id)),
+                        //log(TRUE, "inserted_ACLINE_-", -id, @@acline_p_MapAccum.get(-id), @@acline_q_MapAccum.get(-id));
+  
+  
+//log(TRUE, @@acline_p_MapAccum.size());
+//log(TRUE, @@acline_q_MapAccum.size());
+
+  Y = Select src from two_port:src
+      ACCUM
+      @@two_port_p_MapAccum += (src.id ->  src.Pimeas/100),
+    @@two_port_q_MapAccum += (src.id -> src.Qimeas/100);
+  Z = Select src from three_port:src
+      ACCUM
+      @@three_port_p_MapAccum += (src.id ->  src.Pimeas/100),
+    @@three_port_q_MapAccum += (src.id -> src.Qimeas/100),
+      @@three_port_p_MapAccum += (-src.id -> -src.Pimeas/100),
+      @@three_port_q_MapAccum += (-src.id -> -src.Qimeas/100);
+
+  total_topo = {TopoND.*};
+
+  update_edge = select s
+                from total_topo:s-(topo_connect:e)->:t
+    where s.island == 1 and t.island == 1
+                ACCUM
+                CASE WHEN (e.device_type == "AC传输线") THEN
+                        e.M_P_TLPF_list = GetMapValuesFromList(@@acline_p_MapAccum, e.key_list),
+                        e.M_Q_TLPF_list = GetMapValuesFromList(@@acline_q_MapAccum, e.key_list),
+                        e.M_P_TLPF = GetEdgeValuesFromList(@@acline_p_MapAccum, e.key_list),
+                        e.M_Q_TLPF = GetEdgeValuesFromList(@@acline_q_MapAccum, e.key_list)
+                     WHEN (e.device_type == "双绕组变压器") THEN
+                        e.M_P_TLPF_list = GetMapValuesFromList(@@two_port_p_MapAccum, e.key_list),
+                        e.M_Q_TLPF_list = GetMapValuesFromList(@@two_port_q_MapAccum, e.key_list),
+                        e.M_P_TLPF = GetEdgeValuesFromList(@@two_port_p_MapAccum, e.key_list),
+                        e.M_Q_TLPF = GetEdgeValuesFromList(@@two_port_q_MapAccum, e.key_list)
+                     WHEN (e.device_type == "三绕组变压器") THEN
+                        e.M_P_TLPF_list = GetMapValuesFromList(@@three_port_p_MapAccum, e.key_list),
+                        e.M_Q_TLPF_list = GetMapValuesFromList(@@three_port_q_MapAccum, e.key_list),
+                        e.M_P_TLPF = GetEdgeValuesFromList(@@three_port_p_MapAccum, e.key_list),
+                        e.M_Q_TLPF = GetEdgeValuesFromList(@@three_port_q_MapAccum, e.key_list)
+                END;
+
+
+
+
+    // Update topond information based on ACline if the topond information is geneated based on ACline
+    ACline_Unassigned_topoNd = SELECT s 
+                 FROM T0:s-(topo_aclinedot:e)->:t
+                 ACCUM
+                     IF s.@busnameUpdated == false Then
+                          s.@bus_name = t.name,
+                          s.@busnameUpdated += true,
+                          s.@base_kv = t.volt,
+                          s.@desired_volt = t.base_value
+                     END
+                 POST-ACCUM
+                       s.bus_name = s.@bus_name,
+                       s.base_kV = s.@base_kv,
+                       s.desired_volts = s.@desired_volt;
+
+
+  TopoND_name = SELECT s
+                FROM T0:s-(topoid_subid:e) ->:t
+                ACCUM
+                s.@latitude = t.pos_x,
+                s.@longitude = t.pos_y,
+                s.@subvolt = t.volt,
+                s.@area = t.dvname
+                POST-ACCUM
+    case when (s.ZJP == 1) then
+      if (s.base_kV >= 500) then
+        s.Ri_vP = 20000
+        //log(true, "500 ZJP", s.exId, s.bus_name, s.Sub, s.base_kV)
+      else if (s.base_kV >= 110) then
+        s.Ri_vP = 10000
+      else if (s.base_kV >= 34.5) then
+        if (s.@subvolt == 34.5 or s.@subvolt == 35) then
+            s.Ri_vP = 1000
+        else
+            s.Ri_vP = 100
+        end
+      else if (s.base_kV > 1) then
+        s.Ri_vP = 1
+      else if (s.base_kV == 1) then
+        s.Ri_vP = 20000
+      end
+    end,
+    case when (s.ZJQ == 1) then
+      case when (s.base_kV > 400) then
+        s.Ri_vQ = 100
+        //log(true, "500kV ZJQ", s.exId, s.bus_name, s.Sub, s.base_kV)
+      else
+        s.Ri_vQ = 0.5
+        //log(false, "ZJQ", s.exId, s.bus_name, s.Sub, s.base_kV)
+      end
+    end,
+                s.control_bus_number = s.@control_bus,
+        s.P = s.@genp - s.@ldp,
+        s.Q = s.@genq - s.@ldq,
+                s.latitude = s.@latitude,
+                s.longitude = s.@longitude,
+                s.area = s.@area;
+
+  // give_type3 = select s
+               // from sub_TopoND_set:s
+               // where s.Sub == "国调.锦西厂" AND s.base_kV == 500
+               // POST-ACCUM
+               // s.busType = 3,
+               // s.Ri_V = 1;
+         
+         
+   assign_Ri_V = select s from T0:s
+         post-accum
+        //[Chen Yuan] Wait for Ziyan Yao's update, should be figured out soon
+         //if (s.Sub == "龙门换流站" and s.base_kV > 500 - 0.0001) then
+         //if (s.Sub == "四川.尖山" and s.desired_volts == 525) then
+         if s.bus_name == @@slack_bus then
+          s.busType = 3,
+          //s.@M_Vm = 1.05,
+          s.Ri_V = 10000
+          //log(true, "bustype = 3")
+         end,
+      //  [Chen Yuan] Wait for Ziyan Yao's update, should be figured out soon
+         //if (s.@M_Vm > 0.9 and s.@M_Vm < 1.1 and s.base_kV == 500) then
+         if (s.@M_Vm > 0.9 and s.@M_Vm < 1.1 and s.desired_volts >= 100) then
+          s.Ri_V = 10000
+         else if (s.@M_Vm > 0.9 and s.@M_Vm < 1.1 and s.desired_volts < 100) then
+          s.Ri_V = 10
+         else
+          s.Ri_V = 0.01
+         end;
+ 
+   bus_need_change = select s from busSet:t - (topo_bus:e) -:s where t.name == @@slack_bus
+                    post-accum
+                        s.busType = 3,
+                        s.Ri_V = 10000;
+
+
+
+   T_topo_neutral = select s 
+                  from T0:s
+                  where s.TOPOID < 0
+                  POST-ACCUM
+                  s.base_kV = 1,
+                  s.desired_volts = 1;
+
+//===============set weight for edge measurments=========================================================
+        measSet = {meas.*};
+
+        DeviceSet = SELECT t
+            FROM measSet:s - ((Meas_AClinedot | Meas_CP | Meas_Bus | Meas_Load | Meas_trans2 | Meas_trans3 | Meas_Unit ):e) -> :t
+            ACCUM
+            t.@Pflag = s.PFlag + s.P_ManualFlag,
+            t.@Qflag = s.QFlag + s.Q_ManualFlag;
+
+
+        X = select s from aclinedotSet:s -(aclinedot_aclinedot:e) - :t              
+            accum
+            int id = e.id,
+            if s.id == e.I_mRID then               
+                 @@acline_Pflag += (id -> s.@Pflag),
+                 @@acline_Qflag += (id -> s.@Qflag)
+            else
+                 @@acline_Pflag += (-id -> s.@Pflag),
+                 @@acline_Qflag += (-id -> s.@Qflag)
+            end;
+
+        X2 = select s from aclinedotSet:s -(aclinedot_aclinedot_reverse:e) - :t
+            accum
+            int id = e.id,
+            if s.id == e.I_mRID then
+                 @@acline_Pflag += (id -> s.@Pflag),
+                 @@acline_Qflag += (id -> s.@Qflag)
+            else
+                 @@acline_Pflag += (-id -> s.@Pflag),
+                 @@acline_Qflag += (-id -> s.@Qflag)
+            end;
+
+
+       Z = Select src from three_port:src
+            ACCUM
+            @@three_port_Pflag += (src.id ->  src.@Pflag),
+            @@three_port_Qflag += (src.id -> src.@Qflag),
+            @@three_port_Pflag += (-src.id -> src.@Pflag),
+            @@three_port_Qflag += (-src.id -> src.@Qflag);
+
+
+//找到单端开端的线路
+ AClinedot_topo = select t from aclinedotSet:s -(topo_aclinedot)-:t
+                accum
+                    t.@aclinedot_flag = 1;
+
+ Bus_topo = select t from busSet:s -(topo_bus)-:t
+                accum
+                    t.@bus_flag = 1;
+
+ two_topo = select t from two_port:s -(topo_Tx_Two:e)-:t
+                accum  
+                    t.@two_port_flag = 1;
+
+ three_topo = select t from three_port:s -(topo_Tx_Three:e)-:t
+                accum
+                    t.@three_port_flag = 1;
+
+ Tline = select s from  sub_TopoND_set:s-(topo_connect:e)-> TopoND:t 
+        where s.@aclinedot_flag == 1 and (s.@bus_flag == 1 or s.@two_port_flag == 1 or s.@three_port_flag == 1) and t.@aclinedot_flag == 1 and t.@bus_flag == 0 
+           accum
+              s.@onesideopen_flag = 1,
+              t.@onesideopen_flag = 1;
+
+ edge_control_bus = SELECT s
+          FROM T0:s-(topo_connect:e)-> TopoND:t
+          ACCUM
+          IF s.busType == 2 THEN
+            e.control_bus = s.@topoID,
+            IF s.@control_bus == e.tap_bus THEN
+              e.side = 1
+            ELSE IF s.@control_bus == e.z_bus THEN
+              e.side = 2
+            END
+          END,
+          
+          CASE WHEN e.device_type == "三绕组变压器" THEN
+            IF e.reverse == 1 THEN
+              IF abs(e.M_P_TLPF_list.get(0) - 0) < 0.00001 THEN//and abs(GetEdgeValuesFromList(@@three_port_Pflag, e.key_list) - 0) < 0.00001 THEN
+                IF (s.desired_volts > 100 - 0.00001) THEN
+                  e.Ri_eP = 100
+                ELSE IF (s.desired_volts > 35 - 0.00001) THEN
+                  e.Ri_eP = 10
+                ELSE 
+                  e.Ri_eP = 0.01
+                END
+              ELSE
+                IF (s.desired_volts > 100 - 0.000001) THEN
+                  e.Ri_eP = 100
+                ELSE IF (s.desired_volts > 35 - 0.00001) THEN
+                  e.Ri_eP = 10
+                ELSE 
+                  e.Ri_eP = 2
+                END
+              END,
+              IF abs(e.M_Q_TLPF_list.get(0) - 0) < 0.00001 THEN//and abs(GetEdgeValuesFromList(@@three_port_Qflag, e.key_list) - 0) < 0.00001 THEN
+              IF (s.desired_volts > 100 - 0.00001) THEN
+                e.Ri_eQ = 100
+              ELSE IF (s.desired_volts > 35 - 0.00001) THEN
+                e.Ri_eQ = 10
+              ELSE 
+                e.Ri_eQ = 0.01
+              END
+              ELSE
+              IF (s.desired_volts > 115 - 0.00001) THEN
+                e.Ri_eQ = 100
+              ELSE IF (s.desired_volts > 35 - 0.00001) THEN
+                e.Ri_eQ = 10
+              ELSE 
+                e.Ri_eQ = 2
+              END
+              END
+            ELSE
+              e.Ri_eP = 0, 
+              e.Ri_eQ = 0
+            END
+                                  END,
+          CASE WHEN e.device_type == "CS传输线" THEN
+          e.Ri_eP = 0.01, 
+          e.Ri_eQ = 0.01
+                                  END,
+          CASE WHEN e.device_type == "AC传输线" THEN
+               IF abs(e.M_P_TLPF_list.get(0) - 0) < 0.00001 and abs(GetEdgeValuesFromList(@@acline_Pflag, e.key_list) - 0) < 0.00001 THEN
+                    e.Ri_eP = 0.01,
+                    IF (e.edge_name.get(0) == "石棉.竹能线") THEN
+                        log(true, "zhuneng_acline_p0",e.edge_name.get(0), e.device_type, e.M_P_TLPF_list.get(0),e.M_Q_TLPF_list.get(0), e.Ri_eP, e.Ri_eQ, s.desired_volts)
+                    END
+               ELSE
+                    IF (s.desired_volts > 400 - 0.00001) THEN
+                         e.Ri_eP = 1000
+                    ELSE IF (s.desired_volts > 100 - 0.00001) THEN
+                         if (e.M_P_TLPF_list.get(0) < 100) then
+                               e.Ri_eP = 100
+                         else
+                               e.Ri_eP = 0
+                         end
+                    ELSE IF (s.desired_volts > 35 - 0.00001) THEN
+                         e.Ri_eP = 10
+                    ELSE 
+                         e.Ri_eP = 2
+                    END
+               END,
+               IF abs(e.M_Q_TLPF_list.get(0) - 0) < 0.00001 and abs(GetEdgeValuesFromList(@@acline_Qflag, e.key_list) - 0) < 0.00001 THEN
+                    // e.Ri_eQ = 0.01,
+                    IF (s.desired_volts > 100 - 0.00001) THEN
+                         e.Ri_eQ = 100
+                    ELSE IF (s.desired_volts > 40 - 0.00001) THEN
+                         e.Ri_eQ = 10
+                    ELSE
+                         e.Ri_eQ = 0.01
+                    END,
+                    IF (e.edge_name.get(0) == "石棉.竹能线") THEN
+                         log(true, "zhuneng_acline_q0",e.edge_name.get(0), e.device_type, e.M_P_TLPF_list.get(0),e.M_Q_TLPF_list.get(0), e.Ri_eP, e.Ri_eQ, s.desired_volts)
+                    END             
+               ELSE
+            //IF (s.desired_volts > 115 - 0.00001) THEN
+            //  e.Ri_eQ = 0.1
+            //ELSE
+            //  e.Ri_eQ = 0.1
+            //END
+                    IF (s.desired_volts > 115 - 0.00001) THEN
+                         e.Ri_eQ = 100
+                    ELSE IF (s.desired_volts > 35 - 0.00001) THEN
+                         e.Ri_eQ = 10
+                    ELSE
+                         e.Ri_eQ = 2
+                    END
+               END
+                                  END,
+                   
+          CASE WHEN e.device_type == "双绕组变压器" THEN
+            CASE WHEN abs(e.M_P_TLPF_list.get(0) - 0) < 0.00001 THEN
+              IF (s.desired_volts > 100 - 0.00001) THEN
+                e.Ri_eP = 100
+              ELSE IF (s.desired_volts > 35 - 0.00001) THEN
+                e.Ri_eP = 10
+              ELSE 
+                e.Ri_eP = 0.01
+              END,
+                                                        IF (e.edge_name.get(0) == "石棉.竹能线") THEN
+                                                      log(true, "zhuneng_twoport_P0",e.edge_name.get(0), e.device_type, e.M_P_TLPF_list.get(0), e.M_Q_TLPF_list.get(0), e.Ri_eP, e.Ri_eQ, s.desired_volts)
+                                                        END
+            END,
+                                          CASE WHEN abs(e.M_P_TLPF_list.get(0)) > 0.00001 THEN
+              IF (s.desired_volts > 100 - 0.00001) THEN
+                e.Ri_eP = 100
+              ELSE IF (s.desired_volts > 35 - 0.00001) THEN
+                e.Ri_eP = 10
+              ELSE 
+                e.Ri_eP = 2
+              END
+            END,
+ 
+            CASE WHEN abs(e.M_Q_TLPF_list.get(0) - 0) < 0.00001 THEN
+            IF (s.desired_volts > 100 - 0.00001) THEN
+              e.Ri_eQ = 100
+            ELSE IF (s.desired_volts > 35 - 0.00001) THEN
+              e.Ri_eQ = 10
+            ELSE 
+              e.Ri_eQ = 0.01
+            END,
+                                                IF (e.edge_name.get(0) == "石棉.竹能线") THEN
+                                                      log(true, "zhuneng_twoport_Q0",e.edge_name.get(0), e.device_type, e.M_P_TLPF_list.get(0), e.M_Q_TLPF_list.get(0), e.Ri_eP, e.Ri_eQ, s.desired_volts)
+                                                END
+            END,
+                                          CASE WHEN abs(e.M_Q_TLPF_list.get(0)) > 0.00001 THEN
+            IF (s.desired_volts > 115 - 0.00001) THEN
+              e.Ri_eQ = 100
+            ELSE IF (s.desired_volts > 35 - 0.00001) THEN
+              e.Ri_eQ = 10
+            ELSE 
+              e.Ri_eQ = 2
+            END,
+                                                IF (e.edge_name.get(0) == "石棉.竹能线") THEN
+                                                    log(true, "zhuneng_twoport_Q1",e.edge_name.get(0), e.device_type, e.M_P_TLPF_list.get(0), e.M_Q_TLPF_list.get(0), e.Ri_eP, e.Ri_eQ, s.desired_volts)
+                                                 END
+            END
+        END;  
+
+ edge_control_bus = SELECT s
+          FROM sub_TopoND_set:s-(topo_connect:e)-> TopoND:t
+          ACCUM
+           if s.@onesideopen_flag == 1 and t.@onesideopen_flag == 1 then
+                   e.Ri_eP = 1000,
+                   e.Ri_eQ = 1000
+           end;
+
+//**************************************************************************************************
+log(true,"timepoint_NTP_update_savedata_start");
+ //********************************* save data to memory *****************************
+
+    T5 = SELECT s from T0:s-(topo_connect:e)-> TopoND:t
+      WHERE s.island == 1
+      ACCUM
+           @@edge += sort_edge_NTPUpdate(s.exId*100000 + t.exId, e.M_P_TLPF, e.M_Q_TLPF, e.Ri_eP, e.Ri_eQ, e.from_CP, e.to_CP, t.exId),
+         s.@alldgr += 1
+      POST-ACCUM
+          @@vertex += sort_vertex_NTPUpdate(s.exId, s.@alldgr, s.@M_Vm, s.@M_Va, s.@GenP, s.@GenQ, s.@LdP, s.@LdQ, s.@M_C_P);   
+      AttrSave_NTP_update_v7(@@vertex, @@edge);
+//log(true,"timepoint_NTP_update_end"); 
+//print @@vertex;
+//print @@edge;
+}

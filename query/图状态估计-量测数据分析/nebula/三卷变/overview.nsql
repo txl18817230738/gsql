@@ -1,0 +1,14 @@
+"""
+use ems match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:connected_Sub_Trans_three]->(t:three_port_transformer) where startid.gridid = "113715890758877224"
+let 
+p_rate = case when t.S is not NULL then t.S else 1.0 end,
+pimeas = case when t.Pimeas is not NULL then t.Pimeas else 0.0 end
+let 
+meas_overload = case when p_rate > 0.0 then (pimeas/p_rate)*100.0 ELSE 0.0 end
+let
+overload_type_less = case when meas_overload >= 0.0 and meas_overload <= 20.0 then 1 else 0 end,
+overload_type_midlle = case when meas_overload > 20.0 and meas_overload <= 80.0 then 1 else 0 end,
+overload_type_large = case when  meas_overload > 80.0 and meas_overload <= 100.0 then 1 else 0 end,
+overload_type_overload = case when meas_overload > 100.0 then 1 else 0 end
+ return case when t.volt >= 500.0 then "500" when t.volt >= 220.0 and t.volt < 500.0 then "220" when t.volt >= 110.0 and t.volt < 220.0 then "110" when t.volt >= 35.0 and t.volt < 110.0 then "35" when t.volt >= 10.0 and t.volt < 35.0 then "10" else "other" end as voltLevel, count(*) as total, sum(overload_type_less) as over_load_less, sum(overload_type_midlle) as over_load_middle, sum(overload_type_large) as over_load_large, sum(overload_type_overload) as over_load_overload group by voltLevel Next return voltLevel, total, over_load_less, over_load_middle, over_load_large, over_load_overload
+ """

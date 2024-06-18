@@ -1,0 +1,18 @@
+CREATE QUERY analog_discrete_write_file(string f_meas, string f_discrete, string f_status) FOR GRAPH gsql_EMS{
+  
+  FILE file1 (f_meas);
+  FILE file2 (f_discrete);  
+  FILE file3 (f_status);
+
+  measSet = {meas.*};
+  PRINT measSet.id,measSet.type_name,measSet.strid,measSet.strName,measSet.devName,measSet.off, measSet.f_usable,measSet.P, measSet.Q,measSet.P_previous, measSet.Q_previous,measSet.PManual,measSet.QManual,measSet.PPseudo,measSet.QPseudo,measSet.PBias,measSet.QBias,measSet.PBias_day,measSet.QBias_day,measSet.PBias_month,measSet.QBias_month,measSet.PBias_year,measSet.QBias_year,measSet.PVari,measSet.QVari,measSet.PVari_day,measSet.QVari_day,measSet.PVari_month,measSet.QVari_month,measSet.PVari_year,measSet.QVari_year,measSet.PNum,measSet.QNum,measSet.PFlag,measSet.QFlag,measSet.P_ManualFlag,measSet.Q_ManualFlag,measSet.P_PseudoFlag,measSet.Q_PseudoFlag,measSet.meas_A,measSet.meas_B,measSet.tap,measSet.tapFlag TO_CSV file1;
+  
+            
+  discreteSet = {discrete.*};
+  PRINT discreteSet.id, discreteSet.status, discreteSet.statusM, discreteSet.status_previous, discreteSet.previous_time, discreteSet.flag, discreteSet.flagM, discreteSet.strid, discreteSet.strName, discreteSet.devName, discreteSet.off, discreteSet.f_usable, discreteSet.type_name TO_CSV file2;
+
+
+  statusSet = {status.*};  
+  PRINT statusSet.SCADA_time, statusSet.last_history_time, statusSet.analog_meas_number, statusSet.analog_point_number, statusSet.NTP_data_time TO_CSV file3;
+
+}

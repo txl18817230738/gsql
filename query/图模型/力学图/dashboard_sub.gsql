@@ -1,0 +1,59 @@
+CREATE QUERY dashboard_sub(/* Parameters here */) FOR GRAPH gsql_EMS { 
+  /* Write query logic here */ 
+	SumAccum<INT> @@count500;
+	SumAccum<INT> @@count220;
+	SumAccum<INT> @@count110;
+	SumAccum<INT> @@count35;
+	SumAccum<INT> @@count10;
+	SetAccum<INT> @@vol;
+
+	SumAccum<INT> @from_vol;
+	SumAccum<INT> @to_vol;
+	SumAccum<STRING> @sub_id;
+	SumAccum<INT> @voltage;
+	OrAccum<BOOL> @match_aclinedot;
+	OrAccum<BOOL> @match_substation;
+	OrAccum<BOOL> @aclinedot_on_island;
+
+
+	@@vol = (1003,1005,1006,1008,1010);
+	//@@vol = (281474977366018,281474977431554,281474977497090,281474977562626,281474978021378);
+	subSet = {Substation.*};
+	subset = select s from subSet:s accum 
+		if s.volt == 500 or s.volt == 525 then s.@voltage = 1003 end,
+		if s.volt == 220 or s.volt == 230 then s.@voltage = 1005 end,
+		if s.volt == 110 or s.volt == 115 then s.@voltage = 1006 end,
+		if s.volt == 35 or s.volt == 34.5 then s.@voltage = 1008 end,
+		if s.volt == 10 or s.volt == 10.5 then s.@voltage = 1010 end;
+
+	aclinedotSet = {ACline_dot.*};
+	aclinedotSet = select s from aclinedotSet:s-(connected_Aclinedot_Sub:e)->:t accum 
+		s.@voltage = t.@voltage, s.@sub_id = t.strid;
+	aclinedotSet_onisland = select s from aclinedotSet:s-(topo_aclinedot:e)->:t where t.island == 1 accum s.@aclinedot_on_island += true;
+	aclinedotSet = select s from aclinedotSet:s-(aclinedot_aclinedot:e)->:t accum
+		if s.@voltage in @@vol and t.@voltage in @@vol and s.@aclinedot_on_island == true and t.@aclinedot_on_island == true then 
+			s.@match_aclinedot += true, t.@match_aclinedot += true end;
+	aclinedotSet = {ACline_dot.*};
+	subset = select t from aclinedotSet:s-(connected_Aclinedot_Sub)->:t accum t.@match_substation += s.@match_aclinedot;
+
+	subSet = {Substation.*};
+	sub = select s from subSet:s where s.@match_substation == true and s.@voltage in @@vol and s.strid != "113997367446863940" accum
+			if s.volt == 500 or s.volt == 525 then
+				@@count500 += 1
+			else if s.volt == 220 or s.volt == 230 then
+				@@count220 += 1
+			else if s.volt == 110 or s.volt == 115 then
+				@@count110 += 1
+			else if s.volt == 35 or s.volt == 34.5 then
+				@@count35 += 1
+			else if s.volt == 10 or s.volt == 10.5 then
+				@@count10 += 1
+			end;
+
+	print @@count500;
+	print @@count220;
+	print @@count110;
+	print @@count35;
+	print @@count10;
+	
+}

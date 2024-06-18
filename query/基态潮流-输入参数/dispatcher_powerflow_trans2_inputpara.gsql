@@ -1,0 +1,294 @@
+CREATE QUERY dispatcher_powerflow_trans2_inputpara(string companyID="113715890758877224", bool return_all=true) FOR GRAPH gsql_EMS { 
+  TYPEDEF TUPLE < string edge_name, string from_sub_name, string from_sub_id, string tap_bus_name, double from_volt, string z_bus_name, double to_volt, double R, double X, double transformer_final_turns_ratio, double Line1_MVA, double Line2_MVA, double Line3_MVA, string from_vertex_id, string to_vertex_id, int Decision> row;
+	
+	SetAccum<string> @@Comp_ID;
+  SumAccum<string> @sub_name;
+  SumAccum<string> @sub_id;
+  SumAccum<int> @island;
+  SumAccum<string> @bus_name;
+
+	SumAccum<INT> @@count_all;
+  SumAccum<INT> @@count_low;
+  SumAccum<INT> @@count_normal;
+  SumAccum<INT> @@count_high;
+  
+  SumAccum<INT> @@count_500;
+  SumAccum<INT> @@count_500_low;
+  SumAccum<INT> @@count_500_normal;
+  SumAccum<INT> @@count_500_high;
+  
+  SumAccum<INT> @@count_220;
+  SumAccum<INT> @@count_220_low;
+  SumAccum<INT> @@count_220_normal;
+  SumAccum<INT> @@count_220_high;
+  
+  SumAccum<INT> @@count_110;
+  SumAccum<INT> @@count_110_low;
+  SumAccum<INT> @@count_110_normal;
+  SumAccum<INT> @@count_110_high;
+  
+  SumAccum<INT> @@count_35;
+  SumAccum<INT> @@count_35_low;
+  SumAccum<INT> @@count_35_normal;
+  SumAccum<INT> @@count_35_high;
+  
+  SumAccum<INT> @@count_10;
+  SumAccum<INT> @@count_10_low;
+  SumAccum<INT> @@count_10_normal;
+  SumAccum<INT> @@count_10_high;
+  
+  SumAccum<INT> @@count_other;
+  SumAccum<INT> @@count_other_low;
+  SumAccum<INT> @@count_other_normal;
+  SumAccum<INT> @@count_other_high;
+ 
+  SumAccum<INT> @@count_select;
+  SumAccum<INT> @@count_no;
+  SumAccum<INT> @@count_500_select;
+  SumAccum<INT> @@count_500_no;
+  SumAccum<INT> @@count_220_select;
+  SumAccum<INT> @@count_220_no;
+  SumAccum<INT> @@count_110_select;
+  SumAccum<INT> @@count_110_no;
+  SumAccum<INT> @@count_35_select;
+  SumAccum<INT> @@count_35_no;
+  SumAccum<INT> @@count_10_select;
+  SumAccum<INT> @@count_10_no;
+  SumAccum<INT> @@count_other_select;
+  SumAccum<INT> @@count_other_no;
+
+
+  HeapAccum<row>(50, edge_name DESC, tap_bus_name DESC) @@result_part;
+  HeapAccum<row>(1000000, edge_name DESC, tap_bus_name DESC) @@result;
+	
+	T0 = {TopoND.*};
+  comp = {gridcom.*};
+  
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID; 
+        
+  trans2tSet = SELECT t FROM sub:s - (connected_Sub_Trans_two:e) ->:t
+                accum
+                t.@sub_id = s.strid;
+                
+
+    Ttrans2 = select t from T0:s- (topo_Tx_Two:e) -:t
+            accum
+                t.@island = s.island,
+                t.@bus_name = s.bus_name;
+         
+    Tacline = select s from trans2tSet:s -(txI_txJ_transformerline:e) -> :t
+	  where s.@island == 1 and t.@island == 1 
+	  accum 
+        //double ratio = s.Rstar/s.Xstar,
+        double tap_ratio = s.t/t.t,
+        if (tap_ratio < 1.0) then 
+           tap_ratio = 1
+        end,
+       double normalLimit = s.S/100,
+       double emerLimit = 1.1*normalLimit,
+       double ldshdLimit = 1.2*normalLimit,
+       if (normalLimit < 0.1) then 
+         normalLimit = 9999,
+         emerLimit = 9999,
+         ldshdLimit = 9999
+       end,
+          @@result+=row(s.name, s.Substation, s.@sub_id, s.@bus_name, s.volt, t.@bus_name, t.volt, s.Rstar, s.Xstar, tap_ratio, normalLimit, emerLimit, ldshdLimit, s.strid, t.strid, s.Decision),
+            @@result_part+=row(s.name, s.Substation, s.@sub_id, s.@bus_name, s.volt, t.@bus_name, t.volt, s.Rstar, s.Xstar, tap_ratio, normalLimit, emerLimit, ldshdLimit, s.strid, t.strid, s.Decision),
+          @@count_all += 1,
+				   double volt = s.volt,
+      double current_x = s.Xstar,
+      if volt >= 500 then
+                  @@count_500 += 1,
+                  if current_x<=0.01 then
+                    @@count_500_low+=1,
+                    @@count_low+=1
+                  else if current_x > 0.01 and current_x<=1.0 then
+                    @@count_500_normal+=1,
+                    @@count_normal+=1
+                  else if current_x > 1.0 then
+                    @@count_500_high+=1,
+                    @@count_high+=1            
+                  end,
+                  if s.Decision == 1 then
+                    @@count_500_select+=1,
+                    @@count_select+=1
+                  else if s.Decision == 0 then
+                    @@count_500_no += 1,
+                    @@count_no += 1
+                  end            
+                
+                else if volt >= 220 then
+                  @@count_220+=1,
+                  if current_x<=0.01 then
+                    @@count_220_low+=1,
+                    @@count_low+=1
+                  else if current_x > 0.01 and current_x<=1.0 then
+                    @@count_220_normal+=1,
+                    @@count_normal+=1
+                  else if current_x > 1.0 then
+                    @@count_220_high+=1,
+                    @@count_high+=1            
+                  end,
+                  if s.Decision == 1 then
+                    @@count_220_select+=1,
+                    @@count_select+=1
+                  else if s.Decision == 0 then
+                    @@count_220_no += 1,
+                    @@count_no += 1
+                  end
+                  
+                else if volt >= 110 then
+                  @@count_110+=1,
+                  if current_x<=0.01 then
+                    @@count_110_low+=1,
+                    @@count_low+=1
+                  else if current_x > 0.01 and current_x<=1.0 then
+                    @@count_110_normal+=1,
+                    @@count_normal+=1
+                  else if current_x > 1.0 then
+                    @@count_110_high+=1,
+                    @@count_high+=1            
+                  end,
+                  if s.Decision == 1 then
+                    @@count_110_select+=1,
+                    @@count_select+=1
+                  else if s.Decision == 0 then
+                    @@count_110_no += 1,
+                    @@count_no += 1
+                  end
+                  
+                else if volt >= 34.5 then
+                  @@count_35+=1,
+                  if current_x<=0.01 then
+                    @@count_35_low+=1,
+                    @@count_low+=1
+                  else if current_x > 0.01 and current_x<=1.0 then
+                    @@count_35_normal+=1,
+                    @@count_normal+=1
+                  else if current_x > 1.0 then
+                    @@count_35_high+=1,
+                    @@count_high+=1            
+                  end,
+                  if s.Decision == 1 then
+                    @@count_35_select+=1,
+                    @@count_select+=1
+                  else if s.Decision == 0 then
+                    @@count_35_no += 1,
+                    @@count_no += 1
+                  end
+  
+                else if volt >= 10 then
+                  @@count_10+=1,
+                  if current_x<=0.01 then
+                    @@count_10_low+=1,
+                    @@count_low+=1
+                  else if current_x > 0.01 and current_x<=1.0 then
+                    @@count_10_normal+=1,
+                    @@count_normal+=1
+                  else if current_x > 1.0 then
+                    @@count_10_high+=1,
+                    @@count_high+=1            
+                  end,
+                  if s.Decision == 1 then
+                    @@count_10_select+=1,
+                    @@count_select+=1
+                  else if s.Decision == 0 then
+                    @@count_10_no += 1,
+                    @@count_no += 1
+                  end
+                  
+                else
+                  @@count_other+=1,
+                  if current_x<=0.01 then
+                    @@count_other_low+=1,
+                    @@count_low+=1
+                  else if current_x > 0.01 and current_x<=1.0 then
+                    @@count_other_normal+=1,
+                    @@count_normal+=1
+                  else if current_x > 1.0 then
+                    @@count_other_high+=1,
+                    @@count_high+=1            
+                  end,
+                  if s.Decision == 1 then
+                    @@count_other_select+=1,
+                    @@count_select+=1
+                  else if s.Decision == 0 then
+                    @@count_other_no += 1,
+                    @@count_no += 1
+                  end
+          end;              
+  
+  if return_all then
+    print @@result;
+  else
+    print @@result_part;
+  end;
+  
+  print @@count_all;
+  print @@count_low;
+  print @@count_normal;
+  print @@count_high;
+  
+
+  
+  print @@count_500;
+  print @@count_500_low;
+  print @@count_500_normal;
+  print @@count_500_high;
+  
+  
+  print @@count_220;
+  print @@count_220_low;
+  print @@count_220_normal;
+  print @@count_220_high;
+  
+  
+  print @@count_110;
+  print @@count_110_low;
+  print @@count_110_normal;
+  print @@count_110_high;
+  
+  
+  print @@count_35;
+  print @@count_35_low;
+  print @@count_35_normal;
+  print @@count_35_high;
+  
+  print @@count_10;
+  print @@count_10_low;
+  print @@count_10_normal;
+  print @@count_10_high;
+  
+  print @@count_other;
+  print @@count_other_low;
+  print @@count_other_normal;
+  print @@count_other_high;
+
+  print @@count_select;
+  print @@count_no;
+
+  print @@count_500_select;
+  print @@count_500_no;
+
+  print @@count_220_select;
+  print @@count_220_no;
+
+  print @@count_110_select;
+  print @@count_110_no;
+
+  print @@count_35_select;
+  print @@count_35_no;
+
+  print @@count_10_select;
+  print @@count_10_no;
+
+  print @@count_other_select;
+  print @@count_other_no;
+
+}

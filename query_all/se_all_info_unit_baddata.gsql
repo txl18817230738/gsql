@@ -1,0 +1,357 @@
+CREATE QUERY se_all_info_unit_baddata(string companyID="113715890758877224", bool return_all=true) FOR GRAPH gsql_EMS { 
+  /**
+  TYPEDEF TUPLE<string unit_name,  string sub_name, string subid, string Gentype, string bus_name, double volt, string P_mark, int P_mark_num, double Pimeas, double P,  double P_residual_abs, double P_residual_pct, string Q_mark, int Q_mark_num, double Qimeas, double Q, double Q_residual_abs, double Q_residual_pct, double sub_use_load> unit_list;
+  **/
+  TYPEDEF TUPLE <string meas_id,string sub_name,string sub_id,string unittype,string unit_name,string device_type,double volt,string P_mark, int p_quality,double unit_P_meas, double unit_P, double P_diff, string P_diff_pct, string Q_mark, int q_quality, double unit_Q_meas, double unit_Q, double Q_diff, string Q_diff_pct> unit_list;
+	SumAccum<INT> @@count_all;
+	SumAccum<string> @sub_name;
+	SumAccum<string> @bus_name;
+  SumAccum<string> @sub_id;
+    SumAccum<int> @island;
+    SumAccum<double> @P_error;
+    SumAccum<double> @Q_error;
+    SumAccum<double> @P_error_abs;
+    SumAccum<double> @Q_error_abs;
+    SumAccum<double> @P_error_pct;
+    SumAccum<double> @Q_error_pct;
+  HeapAccum<unit_list>(10000000, volt DESC, unit_P_meas DESC, unit_Q_meas DESC) @@result;
+  HeapAccum<unit_list>(50, volt DESC, unit_P_meas DESC, unit_Q_meas DESC) @@result_part;
+ 
+  SetAccum<string> @@Comp_ID;
+  SumAccum<INT> @@count_P_abovelimit;
+  SumAccum<INT> @@count_P_belowlimit;
+  SumAccum<INT> @@count_Q_abovelimit;
+  SumAccum<INT> @@count_Q_belowlimit;
+  
+  SumAccum<INT> @@count_P_abovelimit10;
+  SumAccum<INT> @@count_Q_abovelimit10;
+  
+  SumAccum<INT> @@count_fire;
+  
+  SumAccum<INT> @@count_fire_P_abovelimit10;
+  SumAccum<INT> @@count_fire_Q_abovelimit10;
+ 
+  SumAccum<INT> @@count_water;
+  
+  SumAccum<INT> @@count_water_P_abovelimit10;
+  SumAccum<INT> @@count_water_Q_abovelimit10;
+
+  SumAccum<INT> @@count_wind;
+  
+  
+  SumAccum<INT> @@count_wind_P_abovelimit10;
+  SumAccum<INT> @@count_wind_Q_abovelimit10;
+
+  SumAccum<INT> @@count_light;
+  //SumAccum<INT> @@count_light_P_abovelimit;
+  //SumAccum<INT> @@count_light_P_belowlimit;
+  //SumAccum<INT> @@count_light_Q_abovelimit;
+  //SumAccum<INT> @@count_light_Q_belowlimit;
+  
+  SumAccum<INT> @@count_light_P_abovelimit10;
+  SumAccum<INT> @@count_light_Q_abovelimit10;
+
+  SumAccum<INT> @@count_virtual;
+  //SumAccum<INT> @@count_virtual_P_abovelimit;
+  //SumAccum<INT> @@count_virutal_P_belowlimit;
+  //SumAccum<INT> @@count_virtual_Q_abovelimit;
+  //SumAccum<INT> @@count_virtual_Q_belowlimit; 
+  
+  SumAccum<INT> @@count_virtual_P_abovelimit10;
+  SumAccum<INT> @@count_virtual_Q_abovelimit10;
+ 
+  SumAccum<INT> @@count_switch;
+  //SumAccum<INT> @@count_switch_P_abovelimit;
+  //SumAccum<INT> @@count_switch_P_belowlimit;
+  //SumAccum<INT> @@count_switch_Q_abovelimit;
+  //SumAccum<INT> @@count_switch_Q_belowlimit;
+  
+  SumAccum<INT> @@count_switch_P_abovelimit10;
+  SumAccum<INT> @@count_switch_Q_abovelimit10;
+
+  SumAccum<INT> @@count_nuclear;
+  //SumAccum<INT> @@count_nuclear_P_abovelimit;
+  //SumAccum<INT> @@count_nuclear_P_belowlimit;
+  //SumAccum<INT> @@count_nuclear_Q_abovelimit;
+  //SumAccum<INT> @@count_nuclear_Q_belowlimit;
+  SumAccum<INT> @@count_nuclear_P_abovelimit10;
+  SumAccum<INT> @@count_nuclear_Q_abovelimit10;
+  
+
+  SumAccum<INT> @@count_pumping;
+  //SumAccum<INT> @@count_pumping_P_abovelimit;
+  //SumAccum<INT> @@count_pumping_P_belowlimit;
+  //SumAccum<INT> @@count_pumping_Q_abovelimit;
+  //SumAccum<INT> @@count_pumping_Q_belowlimit;
+  SumAccum<INT> @@count_pumping_P_abovelimit10;
+  SumAccum<INT> @@count_pumping_Q_abovelimit10;
+
+  SumAccum<INT> @@count_other;
+  //SumAccum<INT> @@count_other_P_abovelimit;
+  //SumAccum<INT> @@count_other_P_belowlimit;
+  //SumAccum<INT> @@count_other_Q_abovelimit;
+  //SumAccum<INT> @@count_other_Q_belowlimit;
+  
+  SumAccum<INT> @@count_other_P_abovelimit10;
+  SumAccum<INT> @@count_other_Q_abovelimit10;
+  
+  SumAccum<double> @@error_limit_P;
+  SumAccum<double> @@error_limit_Q;
+  SumAccum<double> @@error_p_baddata;
+  SumAccum<double> @@error_q_baddata;
+  
+  SumAccum<int> @p_meas_flag;
+  SumAccum<int> @q_meas_flag;
+  SumAccum<int> @p_meas_quality_flag;
+  SumAccum<int> @q_meas_quality_flag;
+  SumAccum<string> @meas_id;
+
+  T0 = {TopoND.*};
+  sub = {Substation.*};
+  comp = {gridcom.*};
+  Tparameter = {parameters.*};
+  
+  //parameter setting
+  Tparameter = select s from Tparameter:s
+     post-accum
+     @@error_limit_P += s.error_limit_P,
+     @@error_limit_Q += s.error_limit_Q,
+     @@error_p_baddata += s.backup1,
+     @@error_q_baddata += s.backup2;
+
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID; 
+
+  unitSet = SELECT t FROM sub:s - (connected_Sub_Unit:e) ->:t where t.off ==0
+                accum
+                t.@sub_name = s.name,
+                t.@sub_id = s.strid;
+  
+  unitSet = select s from unitSet:s -(Meas_Unit:e)-:t 
+                   ACCUM
+                  s.@p_meas_flag = t.P_PseudoFlag,
+                  s.@q_meas_flag = t.Q_PseudoFlag,
+                  s.@p_meas_quality_flag = t.PFlag,
+                  s.@q_meas_quality_flag = t.QFlag,
+                  s.@meas_id = t.id;
+
+
+  unitSet = select t from unitSet:t- (topo_unit:e) -:s where s.island == 1 and t.off==0 and t.Gentype != "虚拟机组" and t.Gentype != "交换机组"
+            accum
+                t.@island = s.island,
+                  if (t.@p_meas_flag == 0) then
+                    t.@P_error = t.Pimeas - t.P - t.Genload,
+                    t.@P_error_abs = abs(t.Pimeas - t.P - t.Genload),
+                    if (t.P_rate >= 300) then
+                       t.@P_error_pct = abs(t.Pimeas - t.P - t.Genload)/t.P_rate*100
+                    else
+                       t.@P_error_pct = abs(t.Pimeas - t.P - t.Genload)/300*100
+                    end
+                  else
+                    t.@P_error = 0,
+                    t.@P_error_abs = 0,
+                    t.@P_error_pct = 0
+                  end,
+                  if (s.@q_meas_flag == 0) then
+                    t.@Q_error = t.Q - t.Qimeas,
+                    t.@Q_error_abs = abs(t.Q - t.Qimeas),
+                    if (t.P_rate >= 300) then
+                       t.@Q_error_pct = abs(t.Q - t.Qimeas)/t.P_rate*100
+                    else
+                       t.@Q_error_pct = abs(t.Q - t.Qimeas)/300*100
+                    end
+                  else
+                    t.@Q_error = 0,
+                    t.@Q_error_abs = 0,
+                    t.@Q_error_pct = 0
+                  end;
+      
+			
+      T_unit = SELECT s FROM unitSet:s where s.@island ==1 and (s.@P_error_pct >=@@error_p_baddata or s.@Q_error_pct >=@@error_q_baddata)  
+		            ACCUM
+		                    string P_mark = "",
+                        string Q_mark = "",
+                        string P_res_pct = "",
+                        string Q_res_pct = "",
+                        
+                        IF(s.@p_meas_flag == 0) THEN
+                                P_mark = "实测",
+                                P_res_pct = ToString(s.@P_error_pct)
+                        ELSE
+                                P_mark = "无实测",
+                                P_res_pct = "——"
+                        END,
+                        IF(s.@q_meas_flag == 0) THEN
+                                Q_mark = "实测",
+                                Q_res_pct = ToString(s.@Q_error_pct)
+                        ELSE
+                                Q_mark = "无实测",
+                                Q_res_pct = "——"
+                        END,
+                        
+	                      @@result += unit_list(s.@meas_id, s.@sub_name, s.@sub_id, s.Gentype, s.name, "机组", s.volt, P_mark, s.@p_meas_quality_flag,s.Pimeas, s.P, s.@P_error_abs, P_res_pct, Q_mark, s.@q_meas_quality_flag,s.Qimeas, s.Q, s.@Q_error_abs, Q_res_pct),
+                        @@result_part += unit_list(s.@meas_id, s.@sub_name, s.@sub_id, s.Gentype, s.name, "机组", s.volt, P_mark, s.@p_meas_quality_flag,s.Pimeas, s.P, s.@P_error_abs, P_res_pct, Q_mark, s.@q_meas_quality_flag,s.Qimeas, s.Q, s.@Q_error_abs, Q_res_pct),
+                        @@count_all += 1,
+                        //END,
+                if (s.Gentype == "火电机组") then
+                        @@count_fire += 1,
+                          IF (s.@p_meas_flag ==0) THEN
+                            if s.@P_error_pct >= @@error_p_baddata then
+                                @@count_fire_P_abovelimit10 +=1,
+                                @@count_P_abovelimit10 +=1
+                            end
+                            end,
+                            IF (s.@q_meas_flag == 0) THEN
+                            if s.@Q_error_pct >= @@error_q_baddata then
+                                @@count_fire_Q_abovelimit10 +=1,
+                                @@count_Q_abovelimit10 +=1
+                            end
+                            end
+                else if (s.Gentype == "水电机组") then
+                        @@count_water += 1,
+                            IF (s.@p_meas_flag == 0) THEN
+                            if s.@P_error_pct >= @@error_p_baddata then
+                                @@count_water_P_abovelimit10 +=1,
+                                @@count_P_abovelimit10 +=1
+                            end
+                            end,
+                            IF (s.@q_meas_flag == 0) THEN
+                            if s.@Q_error_pct >= @@error_q_baddata then
+                                @@count_water_Q_abovelimit10 +=1,
+                                @@count_Q_abovelimit10 +=1
+                            end
+                          end
+                else if (s.Gentype == "风电机组") then
+                        @@count_wind += 1,
+                          IF (s.@p_meas_flag == 0) THEN
+                            if s.@P_error_pct >= @@error_p_baddata then
+                                @@count_wind_P_abovelimit10 +=1,
+                                @@count_P_abovelimit10 +=1
+                            end
+                            end,
+                          IF (s.@q_meas_flag == 0) THEN
+                            if s.@Q_error_pct >= @@error_q_baddata then
+                                @@count_wind_Q_abovelimit10 +=1,
+                                @@count_Q_abovelimit10 +=1
+                            end
+                          end
+                else if (s.Gentype == "光伏机组") then
+                          @@count_light += 1,
+                          IF (s.@p_meas_flag == 0) THEN
+                            if s.@P_error_pct >= @@error_p_baddata then
+                                @@count_light_P_abovelimit10 +=1,
+                                @@count_P_abovelimit10 +=1
+                            end
+                            end,
+                            IF (s.@q_meas_flag == 0) THEN
+                            if s.@Q_error_pct >= @@error_q_baddata then
+                                @@count_light_Q_abovelimit10 +=1,
+                                @@count_Q_abovelimit10 +=1
+                            end
+                            end
+				  
+				 else if (s.Gentype == "核电机组") then
+                        @@count_nuclear += 1,
+                            IF (s.@p_meas_flag == 0) THEN
+                            if s.@P_error_pct >= @@error_p_baddata then
+                                @@count_nuclear_P_abovelimit10 +=1,
+                                @@count_P_abovelimit10 +=1
+                            end
+                            end,
+                            IF (s.@q_meas_flag == 0) THEN
+                            if s.@Q_error_pct >= @@error_q_baddata then
+                                @@count_nuclear_Q_abovelimit10 +=1,
+                                @@count_Q_abovelimit10 +=1
+                            end
+                            end
+                 else if (s.Gentype == "抽蓄机组") then
+                        @@count_pumping += 1,
+                            IF (s.@p_meas_flag == 0) THEN
+                            if s.@P_error_pct >= @@error_p_baddata then
+                                @@count_pumping_P_abovelimit10 +=1,
+                                @@count_P_abovelimit10 +=1
+                            end
+                            end,
+                            IF (s.@q_meas_flag == 0) THEN
+                            if s.@Q_error_pct >= @@error_q_baddata then
+                                @@count_pumping_Q_abovelimit10 +=1,
+                                @@count_Q_abovelimit10 +=1
+                            end
+                            end
+                else   //if (s.Gentype == "其他机组") then
+                        @@count_other += 1,
+                            IF (s.@p_meas_flag == 0) THEN
+                            if s.@P_error_pct >= @@error_p_baddata then
+                                @@count_other_P_abovelimit10 +=1,
+                                @@count_P_abovelimit10 +=1
+                            end
+                            end,
+                            IF (s.@q_meas_flag == 0) THEN
+                            if s.@Q_error_pct >= @@error_q_baddata then
+                                @@count_other_Q_abovelimit10 +=1,
+                                @@count_Q_abovelimit10 +=1
+                            end
+                           end
+                end;
+	
+		
+	if return_all then
+    print @@result;
+  else
+    print @@result_part;
+  end;
+  
+  print @@count_P_abovelimit10;
+  //print @@count_P_belowlimit;
+  print @@count_Q_abovelimit10;
+  //print @@count_Q_belowlimit;
+
+  print @@count_fire;
+  print @@count_fire_P_abovelimit10;
+  //print @@count_fire_P_belowlimit;
+  print @@count_fire_Q_abovelimit10;
+  //print @@count_fire_Q_belowlimit;
+
+  print @@count_water;
+  print @@count_water_P_abovelimit10;
+  //print @@count_water_P_belowlimit;
+  print @@count_water_Q_abovelimit10;
+  //print @@count_water_Q_belowlimit;  
+
+  print @@count_light;
+  print @@count_light_P_abovelimit10;
+  //print @@count_light_P_belowlimit;
+  print @@count_light_Q_abovelimit10;
+  //print @@count_light_Q_belowlimit;
+
+  print @@count_wind;
+  print @@count_wind_P_abovelimit10;
+  //print @@count_wind_P_belowlimit;
+  print @@count_wind_Q_abovelimit10;
+  //print @@count_wind_Q_belowlimit;
+
+  print @@count_nuclear;
+  print @@count_nuclear_P_abovelimit10;
+  //print @@count_nuclear_P_belowlimit;
+  print @@count_nuclear_Q_abovelimit10;
+  //print @@count_nuclear_Q_belowlimit;
+
+  print @@count_pumping;
+  print @@count_pumping_P_abovelimit10;
+  //print @@count_pumping_P_belowlimit;
+  print @@count_pumping_Q_abovelimit10;
+  //print @@count_pumping_Q_belowlimit;
+
+  print @@count_other;
+  print @@count_other_P_abovelimit10;
+  //print @@count_other_P_belowlimit;
+  print @@count_other_Q_abovelimit10;
+  //print @@count_other_Q_belowlimit;
+
+  print @@count_all;
+}

@@ -1,0 +1,643 @@
+CREATE QUERY Update_increment(SET<INT> changed_equipment) FOR GRAPH gsql_EMS{
+  typedef tuple<int exId, int ep, double M_Vm, double M_Va, double GenP, double GenQ, double LdP, double LdQ, double M_C_P> sort_vertex_NTPUpdate;
+ typedef tuple<int exId, double eM_P_TLPF, double eM_Q_TLPF, double eRi_eP, double eRi_eQ, double efrom_CP, double eto_CP, int ei> sort_edge_NTPUpdate;
+ //*************************************************************
+ SumAccum<int>@hasSthMoreThanAclinedot = 1;
+  SumAccum<int>@offpoint = 0;
+  SumAccum<int>@offValue = 0;
+  ListAccum<edge>@@listedge;
+  MaxAccum<int> @topoID =0 ;
+  SumAccum<int> @iid =0;
+  SumAccum<int> @jid =0;
+  MaxAccum<int>@toid = 0;
+  MinAccum<int> @zhongxing = 0;
+  SetAccum<edge> @@setedge;
+  SumAccum<STRING> @area;
+  SumAccum<int>@@counter = 0;
+  SumAccum<int>@@oldcounter = 1;
+  SumAccum<int>@@cpcounter = 0;
+  SumAccum<int>@@debugcounter = 0;
+  SumAccum<int>@@load_debugcounter = 0;
+  SumAccum<int>@@unit_debugcounter = 0;
+  SumAccum<int> @aclinecount = 0;
+ 
+  MaxAccum<DOUBLE> @latitude;
+  MaxAccum<DOUBLE> @longitude;
+  
+  MaxAccum<DOUBLE> @@max_genp = 0;
+  MaxAccum<DOUBLE> @vm =0;
+  MaxAccum<DOUBLE> @va =0;
+  MaxAccum<DOUBLE> @mvm =0;
+  MaxAccum<DOUBLE> @mva =0;
+  MaxAccum<DOUBLE> @base_kv =0;
+  MaxAccum<DOUBLE> @desired_volt =0;
+  SumAccum<double> @M_Vm = 0;
+  SumAccum<double> @M_Va = 0;
+
+  SumAccum<double> @genp;
+  SumAccum<double> @genq;
+  SumAccum<double> @mgenp;
+  SumAccum<double> @mgenq;
+  SumAccum<double> @qup;
+  SumAccum<double> @qlower;
+  SumAccum<double> @GenP = 0;
+  SumAccum<double> @GenQ = 0;
+
+  SumAccum<double> @ldp;
+  SumAccum<double> @ldq;
+  SumAccum<double> @mloadp;
+  SumAccum<double> @mloadq;
+  SumAccum<double> @LdP = 0;
+  SumAccum<double> @LdQ = 0; 
+ 
+  SumAccum<double> @mcp;
+  SumAccum<double> @p;
+  SumAccum<double> @q;
+  MaxAccum<double> @v_rate;
+  SumAccum<double> @M_C_P = 0;  
+
+  SumAccum<STRING> @name;
+  SumAccum<STRING> @bus_name;
+  SumAccum<STRING> @sub_name;
+  OrAccum @busnameUpdated;
+
+  SumAccum<int> @Pflag = 0;
+  SumAccum<int> @Qflag = 0;
+
+  AvgAccum @@upv;
+  AvgAccum @@lov;
+  AvgAccum @@rivp;
+  AvgAccum @@rivq;
+  
+ //Add declaration of topond.@hasBeenTraversed to innitial value of 0
+  SumAccum<int> @hasBeenTraversed = 0 ;
+
+ //Add declaration of @@oldtoponodecounter
+  SumAccum<int>@@oldtoponodecounter = 1;
+
+//Add declaration of @@toponodecounter
+  SumAccum<int>@@toponodecounter = 0;
+  
+  SumAccum<int>@busType = 0;
+  SumAccum<int>@control_bus = 0;
+  
+  SumAccum<int>@@counter_island = 0;
+ SumAccum<string> @@slack_bus;
+  SumAccum<int> @aclinedot_flag = 0;
+  SumAccum<int> @bus_flag = 0;
+  SumAccum<int> @two_port_flag = 0;
+  SumAccum<int> @three_port_flag = 0;
+  SumAccum<int> @onesideopen_flag = 0;
+//------------------------------------------------------------------------------------------------------ 
+//*********************************Parameters for preprocessing code *********************
+ 
+ MapAccum<int, int> @@counterMap;
+ SumAccum<int> @ZJP = 1;
+ SumAccum<int> @ZJQ = 1;
+ SumAccum<double> @subvolt;
+ // ********************************* Countinuous exId Attributes ************************
+ ListAccum<int> @@nodeList;
+ SumAccum<int> @island = 0;
+ SumAccum<int> @exId;
+ SumAccum<int> @@exIdcount = 0;
+ SetAccum<string> @@Sublist;
+ // ******************************** Outdegree Calculation **************************
+ SumAccum<int> @outdegree = 0;
+ SumAccum<int> @alldgr = 0; // the degree (number of edges connecting to) a bus
+ // ******************************** Attributes save**************************
+ HeapAccum<sort_vertex_NTPUpdate>(1000000000, exId asc) @@vertex; 
+ HeapAccum<sort_edge_NTPUpdate>(1000000000, exId asc) @@edge;
+
+ //*************************************************************
+  //Map(Key, Value)
+  //Maps for edge p,q measure updating
+  MapAccum<INT, double> @@acline_p_MapAccum;
+  MapAccum<INT, double> @@acline_q_MapAccum;
+
+  MapAccum<INT, double> @@two_port_p_MapAccum;
+  MapAccum<INT, double> @@two_port_q_MapAccum;
+  MapAccum<INT, double> @@three_port_p_MapAccum;
+  MapAccum<INT, double> @@three_port_q_MapAccum;
+  busSet = {BUS.*};
+ // ************************************************************************************
+
+//get salck bus name
+  parameterSet = {parameters.*};
+
+  Tparameter = select s from parameterSet:s
+    post-accum
+      @@slack_bus += s.slack_bus_name;
+
+ // End of variable definition
+log(true, "timepoint_NTP_update_start");
+  
+  total_topo = {TopoND.*};
+  print total_topo.size();
+  T0= {TopoND.*};   //start from all vertices in the graph
+  T_status = {status.*};
+  start_set = {TopoND.*};
+
+//  print start_set.size();
+/////////////////////////////////////////main_island////////////////////////////////////////
+  // ***************** logic needs to be changed to avoid hard_code *****************
+// *********Get increment nodes********************************************************************************^M
+  Tsub = {Substation.*};
+  Tthree = {three_port_transformer.*};
+
+  breakerset = {Breaker.*};
+  disset = {Disconnector.*};
+  Set_of_Changed_Breaker_or_Disconnectors1(ANY) = select t from breakerset:t where t.id in changed_equipment;// and t.connecting_type!="CP_Switching" and t.connecting_type!="load_Switching" and t.connecting_type!="unit_Switching";
+  Set_of_Changed_Breaker_or_Disconnectors2(ANY) = select t from disset:t where t.id in changed_equipment;// and t.connecting_type!="CP_Switching" and t.connecting_type!="load_Switching" and t.connecting_type!="unit_Switching";
+log(true, "timepoint_NTP_update_endof_island1");
+
+//===============add the changeds from manual entry====================
+  discreteSet = {discrete.*};
+  breaker_manual = SELECT t
+            FROM discreteSet:s - (discrete_breaker:e) -:t
+            where s.flagM == 1 and s.updateFlag == 1
+            post-accum
+            s.updateFlag = 0;
+
+  dis_manual = SELECT t
+            FROM discreteSet:s - (discrete_dis:e) -:t
+            where s.flagM == 1 and s.updateFlag == 1
+            post-accum
+            s.updateFlag = 0;
+
+  unit_manual_sub = select s from Tsub:s
+        where s.manual_unit_flag  == 1 or s.manual_off_flag == 1
+        post-accum
+        s.manual_unit_flag  = 0,
+        s.manual_off_flag = 0;
+
+  Set_of_Changed_Breaker_or_Disconnectors = Set_of_Changed_Breaker_or_Disconnectors2 union Set_of_Changed_Breaker_or_Disconnectors1 union breaker_manual union dis_manual;
+
+//Set_of_Changed_Breaker_or_Disconnectors = Set_of_Changed_Breaker_or_Disconnectors2 union Set_of_Changed_Breaker_or_Disconnectors1;
+
+  select_substation = SELECT sub
+                        FROM Set_of_Changed_Breaker_or_Disconnectors:s-((connected_Breaker_Sub|connected_Disconnector_Sub):e) ->:sub;
+
+  select_substation = select_substation UNION unit_manual_sub;
+
+  select_TopoND_set = select t from select_substation:s - (topoid_subid:e)-:t
+              accum
+                  t.@sub_name = s.name
+              post-accum
+                  t.Sub = t.@sub_name;
+
+
+  start_set = select s
+              FROM start_set:s
+              //WHERE s.TOPOID == 23839 //23839 is one of the toponode in main island
+        WHERE s.start_pt == 1
+              POST-ACCUM
+              s.@hasBeenTraversed = 1,
+              s.@island = 1,
+              s.island = 1;
+
+  sub_TopoND_set = start_set;
+
+  WHILE @@oldtoponodecounter != @@toponodecounter DO
+
+      @@oldtoponodecounter = @@toponodecounter;
+
+      start_set = SELECT t
+                  FROM start_set:s - ((topo_connect):e) -> :t
+                  WHERE t.@hasBeenTraversed == 0 and (e.from_off.size() > 1 or e.to_off.get(0) == 0)
+            POST-ACCUM
+                  t.@hasBeenTraversed = 1,
+                  @@toponodecounter += 1,
+                  t.@island = 1,
+                  t.island = 1;
+
+      sub_TopoND_set = sub_TopoND_set UNION start_set;
+
+ END;
+
+// set untraversed node to island 0
+mainislandSet = select s from total_topo:s where s.@hasBeenTraversed==1;
+isolatedSet = total_topo MINUS mainislandSet;
+island0 = select s from isolatedSet:s
+  POST-ACCUM
+    s.@island = 0,
+    s.island=0;
+
+log(true, "timepoint_NTP_update_endof_island5");
+               
+//******************************* Outdegree and continuous exId calculation ******************************
+
+ sub_TopoND_set = SELECT s
+          FROM T0:s-(topo_connect:e)->TopoND:t
+          WHERE s.@island == 1
+          ACCUM
+            s.@outdegree += 1
+          POST-ACCUM
+            s.outdegree = s.@outdegree,
+            @@nodeList += s.TOPOID;
+log(true, "timepoint_NTP_update_endof_exId1");
+ setTopoIDToExIdMap(@@counterMap, @@nodeList);
+log(true, "timepoint_NTP_update_endof_exId2");
+ T2 = select s
+          from T0:s
+          WHERE s.@island == 1
+          post-accum
+          s.@exId = @@counterMap.get(s.TOPOID),
+          s.exId = s.@exId;
+
+//print sub_TopoND_set[sub_TopoND_set.bus_name, sub_TopoND_set.@exId, sub_TopoND_set.@island];
+/*
+ T0 = select s from T0:s 
+          where s.@island == 1
+          post-accum
+          @@exIdcount += 1,
+          s.@exId = @@exIdcount,
+          s.exId = s.@exId;
+print T0[T0.bus_name, T0.@exId, T0.exId];
+print @@exIdcount;
+*/
+
+ print sub_TopoND_set.size();
+ print select_TopoND_set.size();
+
+log(true, "timepoint_NTP_update_endof_exId3");
+            
+
+//////pass attribute from each component to toponode and build relationship between them/////////
+////Vm double/////
+
+aclinedotSet = {ACline_dot.*};
+two_port = {two_port_transformer.*};
+three_port = {three_port_transformer.*};
+
+   Vm_topo = SELECT s
+            FROM sub_TopoND_set: s-(topo_bus:e)->:t
+        ACCUM
+        s.@vm += t.V,
+        s.@va += t.Ang,
+        s.@mvm += t.Pimeas,
+        s.@mva += t.Ang_meas,
+        s.@base_kv += t.volt, 
+        s.@desired_volt += t.base_value,
+        s.@bus_name = t.name,
+        s.@busnameUpdated += true
+        POST-ACCUM
+        s.bus_name = s.@bus_name,
+      CASE
+        WHEN abs(s.@base_kv) > 0.0001 THEN
+        s.Vm = s.@vm/s.@base_kv,
+        s.Va = s.@va/s.@base_kv,
+        s.base_kV = s.@base_kv,
+        s.desired_volts = s.@desired_volt,
+        s.@M_Vm = s.@mvm/s.@base_kv,
+        s.@M_Va = s.@mva/s.@base_kv
+        ELSE
+        s.Vm = s.@vm,
+        s.Va = s.@va,
+        s.@M_Vm = s.@mvm,
+        s.@M_Va = s.@mva
+      END;
+//print Vm_topo;
+
+
+//==========================================================================
+
+ gen_topo = SELECT s
+             FROM sub_TopoND_set: s-(topo_unit:e)->:t
+             where t.off == 0 
+             ACCUM
+             s.@mgenp += t.Pimeas/100,
+             s.@mgenq += t.Qimeas/100,
+             s.@control_bus = t.@topoID,
+             s.@vm += t.Ue,
+             s.@base_kv += t.volt,
+             s.@desired_volt += t.base_value,
+             IF s.@busnameUpdated==false THEN
+                s.@bus_name = t.name,
+                s.@busnameUpdated += true
+             END
+             POST-ACCUM
+              s.busType = 2,
+               s.bus_name = s.@bus_name,
+             CASE
+             WHEN abs(s.@base_kv - 0) > 0.0001 THEN
+                  s.Vm = s.@vm/s.@base_kv
+             ELSE
+                s.Vm = 1
+             END,
+             s.base_kV = s.@base_kv,
+             s.desired_volts = s.@desired_volt,
+             s.@GenP = s.@mgenp,
+             s.@GenQ = s.@mgenq;
+
+
+  load_topo = SELECT s
+              FROM sub_TopoND_set: s-(topo_load:e)->:t
+              ACCUM
+              s.@mloadp += t.Pimeas/100,
+              s.@mloadq += t.Qimeas/100,
+              s.@base_kv += t.volt,
+              s.@desired_volt += t.base_value,
+              IF s.@busnameUpdated==false THEN
+                 s.@bus_name = t.name,
+                 s.@busnameUpdated += true
+              END
+              POST-ACCUM
+              s.bus_name = s.@bus_name,
+              s.base_kV = s.@base_kv,
+              s.desired_volts = s.@desired_volt,
+              s.@LdP = s.@mloadp,
+              s.@LdQ = s.@mloadq;
+
+  compensatorP_topo = SELECT s
+                      FROM sub_TopoND_set: s-(topo_compensatorP:e)->:t
+                      ACCUM
+                      s.@mcp += t.Qimeas,
+                      s.@v_rate += 1,  //t.V_rate / t.V_rate, /////////////need double check in the future////////
+                      s.@base_kv += t.volt,
+                      s.@desired_volt += t.base_value,
+                      IF s.@busnameUpdated==false THEN
+                         s.@bus_name = t.name,
+                         s.@busnameUpdated += true
+                      END
+                      POST-ACCUM
+                      s.bus_name = s.@bus_name,
+                      s.@M_C_P = s.@mcp,
+                      s.bus_name = s.@bus_name,
+                      s.base_kV = s.@base_kv,
+                      s.G = s.@p / s.@v_rate / s.@v_rate,
+                      s.B = s.@q / s.@v_rate / s.@v_rate;
+ 
+
+ updateZJP_ZJQ = SELECT s
+                 FROM select_TopoND_set:s-((topo_unit | topo_load ):e) ->:t
+                 where t.off == 0
+                 accum
+                 s.@ZJP = 0;
+ updateZJP_ZJQ = SELECT s
+                 FROM select_TopoND_set:s-((topo_unit | topo_load | topo_compensatorP):e) ->:t
+                 where t.off == 0
+                 accum
+                 s.@ZJQ = 0;
+  
+ updateZJP_ZJQ = SELECT s
+                 FROM select_TopoND_set:s
+                 post-accum
+                 s.ZJP = s.@ZJP,
+                 s.ZJQ = s.@ZJQ;
+
+
+ ManualUpdateZJP_ZJQ_220 = select s from sub_TopoND_set:s
+                 where s.bus_name == "基地站.1主变-中"
+                 post-accum
+                     s.ZJP = 0,
+                     s.ZJQ = 0;
+
+ print updateZJP_ZJQ.size();
+
+  TopoND_name = SELECT s
+                FROM select_TopoND_set:s-(topoid_subid:e) ->:t
+                ACCUM
+                s.@latitude = t.pos_x,
+                s.@longitude = t.pos_y,
+                s.@subvolt = t.volt,
+                s.@area = t.dvname
+                POST-ACCUM
+    case when (s.@ZJP == 1) then
+      if (s.base_kV >= 500) then
+        s.Ri_vP = 20000
+        //log(true, "500 ZJP", s.exId, s.bus_name, s.Sub, s.base_kV)
+      else if (s.base_kV >= 110) then
+        s.Ri_vP = 10000
+      else if (s.base_kV >= 34.5) then
+        if (s.@subvolt == 34.5 or s.@subvolt == 35) then
+            s.Ri_vP = 1000
+        else
+            s.Ri_vP = 100
+        end
+      else if (s.base_kV > 1) then
+        s.Ri_vP = 1
+      else if (s.base_kV == 1) then
+        s.Ri_vP = 20000
+      end
+    end,
+    case when (s.@ZJQ == 1) then
+      case when (s.@base_kv > 400) then
+        s.Ri_vQ = 1000
+        //log(true, "500kV ZJQ", s.exId, s.bus_name, s.Sub, s.base_kV)
+      else
+        s.Ri_vQ = 0.5
+        //log(false, "ZJQ", s.exId, s.bus_name, s.Sub, s.base_kV)
+      end
+    end,
+                s.control_bus_number = s.@control_bus,
+        s.P = s.@genp - s.@ldp,
+        s.Q = s.@genq - s.@ldq,
+                s.latitude = s.@latitude,
+                s.longitude = s.@longitude,
+             s.area = s.@area;
+
+   assign_Ri_V = select s from sub_TopoND_set:s
+         post-accum
+         if (s.bus_name == @@slack_bus) then
+          s.busType = 3,
+          s.Ri_V = 100000
+         end,
+         if (s.@M_Vm > 0.9 and s.@M_Vm < 1.1 and s.desired_volts >= 220) then
+          s.Ri_V = 160000
+         else if (s.@M_Vm > 0.9 and s.@M_Vm < 1.1 and s.desired_volts >= 110 and s.desired_volts < 220) then
+          s.Ri_V = 80000
+         else if (s.@M_Vm > 0.9 and s.@M_Vm < 1.1 and s.desired_volts >= 35 and s.desired_volts < 110) then
+          s.Ri_V = 50000
+         else if (s.@M_Vm > 0.9 and s.@M_Vm < 1.1 and s.desired_volts < 35) then
+          s.Ri_V = 1000
+         end;
+
+  bus_need_change = select s from busSet:t - (topo_bus:e) -:s where t.name == @@slack_bus
+                    post-accum
+                        s.busType = 3,
+                        s.Ri_V = 100000;
+
+
+//找到单端开端的线路
+ AClinedot_topo = select t from aclinedotSet:s -(topo_aclinedot)-:t
+                accum
+                    t.@aclinedot_flag = 1;
+
+ Bus_topo = select t from busSet:s -(topo_bus)-:t
+                accum
+                    t.@bus_flag = 1;
+
+ two_topo = select t from two_port:s -(topo_Tx_Two:e)-:t
+                accum
+                    t.@two_port_flag = 1;
+
+ three_topo = select t from three_port:s -(topo_Tx_Three:e)-:t                accum
+                    t.@three_port_flag = 1;
+
+ Tline = select s from  sub_TopoND_set:s-(topo_connect:e)-> TopoND:t
+        where s.@aclinedot_flag == 1 and (s.@bus_flag == 1 or s.@two_port_flag == 1 or s.@three_port_flag == 1) and t.@aclinedot_flag== 1 and t.@bus_flag == 0
+           accum
+              s.@onesideopen_flag = 1,
+              t.@onesideopen_flag = 1;
+
+
+ edge_control_bus = SELECT s
+          FROM select_TopoND_set:s-(topo_connect:e)-> TopoND:t
+          where s.@island == 1
+          ACCUM
+          IF s.busType == 2 THEN
+            e.control_bus = s.@topoID,
+            IF s.@control_bus == e.tap_bus THEN
+              e.side = 1
+            ELSE IF s.@control_bus == e.z_bus THEN
+              e.side = 2
+            END
+          END,
+
+          CASE WHEN e.device_type == "三绕组变压器" THEN
+            IF e.reverse == 1 THEN
+                IF (s.@desired_volt > 100 - 0.000001) THEN
+                  e.Ri_eP = 100
+                ELSE IF (s.@desired_volt > 34.5 - 0.00001) THEN
+                  e.Ri_eP = 10
+                ELSE
+                  e.Ri_eP = 2
+                END,
+              IF (s.@desired_volt > 115 - 0.00001) THEN
+                e.Ri_eQ = 100
+              ELSE IF (s.@desired_volt > 34.5 - 0.00001) THEN
+                e.Ri_eQ = 10
+              ELSE
+                e.Ri_eQ = 2
+              END
+            ELSE
+              e.Ri_eP = 0,
+              e.Ri_eQ = 0
+            END
+          END,
+          CASE WHEN e.device_type == "CS传输线" THEN
+              e.Ri_eP = 0.01,
+              e.Ri_eQ = 0.01
+          END,
+          CASE WHEN e.device_type == "AC传输线" THEN
+                    IF (s.@desired_volt > 400 - 0.00001) THEN
+                         e.Ri_eP = 1000
+                    ELSE IF (s.@desired_volt > 110 - 0.00001) THEN
+                         e.Ri_eP = 100
+                    ELSE IF (s.@desired_volt > 34.5 - 0.00001) THEN
+                         e.Ri_eP = 10
+                    ELSE
+                         e.Ri_eP = 2
+                    END,
+                    IF (s.@desired_volt > 110 - 0.00001) THEN
+                         e.Ri_eQ = 100
+                    ELSE IF (s.@desired_volt > 34.5 - 0.00001) THEN
+                         e.Ri_eQ = 10
+                    ELSE
+                         e.Ri_eQ = 2
+                    END
+          END,
+          CASE WHEN e.device_type == "双绕组变压器" THEN
+              IF (s.@desired_volt > 110 - 0.00001) THEN
+                e.Ri_eP = 100
+              ELSE IF (s.@desired_volt > 34.5 - 0.00001) THEN
+                e.Ri_eP = 10
+              ELSE
+                e.Ri_eP = 2
+              END,
+
+            IF (s.@desired_volt > 110 - 0.00001) THEN
+              e.Ri_eQ = 100
+            ELSE IF (s.@desired_volt > 34.5 - 0.00001) THEN
+              e.Ri_eQ = 10
+            ELSE
+              e.Ri_eQ = 2
+            END
+        END;
+
+ edge_control_bus = SELECT s
+          FROM sub_TopoND_set:s-(topo_connect:e)-> TopoND:t
+          ACCUM
+           if s.@onesideopen_flag == 1 and t.@onesideopen_flag == 1 then
+                   e.Ri_eP = 1000,
+                   e.Ri_eQ = 1000
+           end;
+//--------------update edges------------------------//
+       Taclinedot = select t from sub_TopoND_set:s-(topo_aclinedot:e)-:t;
+
+        X = select s from Taclinedot:s -(aclinedot_aclinedot:e) - :t
+                accum
+                        int id = e.id,
+                        if s.id == e.I_mRID then
+                        //log(TRUE, "ACLINE_+", id, s.pimeas, s.qimeas),
+                                @@acline_p_MapAccum += (id -> s.Pimeas/100),
+                                @@acline_q_MapAccum += (id -> s.Qimeas/100)
+                        else
+                        //log(TRUE, "ACLINE_-", -id, s.pimeas, s.qimeas),
+                                @@acline_p_MapAccum += (-id -> s.Pimeas/100),
+                                @@acline_q_MapAccum += (-id -> s.Qimeas/100)
+                        end;
+        X2 = select s from Taclinedot:s -(aclinedot_aclinedot_reverse:e) - :t
+                accum
+                        int id = e.id,
+                        if s.id == e.I_mRID then
+                        //log(TRUE, "ACLINE_+", id, s.pimeas, s.qimeas),
+                                @@acline_p_MapAccum += (id -> s.Pimeas/100),
+                                @@acline_q_MapAccum += (id -> s.Qimeas/100)
+                        else
+                        //log(TRUE, "ACLINE_-", -id, s.pimeas, s.qimeas),
+                                @@acline_p_MapAccum += (-id -> s.Pimeas/100),
+                                @@acline_q_MapAccum += (-id -> s.Qimeas/100)
+                        end;
+                        //log(TRUE, "inserted_ACLINE_+", id, @@acline_p_MapAccum.get(id), @@acline_q_MapAccum.get(id)),
+                       //log(TRUE, "inserted_ACLINE_-", -id, @@acline_p_MapAccum.get(-id), @@acline_q_MapAccum.get(-id));
+
+
+//log(TRUE, @@acline_p_MapAccum.size());
+//log(TRUE, @@acline_q_MapAccum.size());
+
+  Y = Select t from sub_TopoND_set:s-(topo_Tx_Two:e)-:t
+      ACCUM
+      @@two_port_p_MapAccum += (t.id -> t.Pimeas/100),
+      @@two_port_q_MapAccum += (t.id -> t.Qimeas/100);
+
+  Z = Select t from sub_TopoND_set:s-(topo_Tx_Three:e)-:t
+      ACCUM
+      @@three_port_p_MapAccum += (t.id -> t.Pimeas/100),
+      @@three_port_q_MapAccum += (t.id -> t.Qimeas/100),
+      @@three_port_p_MapAccum += (-t.id -> -t.Pimeas/100),
+      @@three_port_q_MapAccum += (-t.id -> -t.Qimeas/100);
+
+
+  update_edge = select s
+                from sub_TopoND_set:s-(topo_connect:e)->:t
+    where s.island == 1 and t.island == 1
+                ACCUM
+                CASE WHEN (e.device_type == "AC传输线") THEN
+                        e.M_P_TLPF = GetEdgeValuesFromList(@@acline_p_MapAccum, e.key_list),
+                        e.M_Q_TLPF = GetEdgeValuesFromList(@@acline_q_MapAccum, e.key_list)                    
+                     WHEN (e.device_type == "双绕组变压器") THEN
+                        e.M_P_TLPF = GetEdgeValuesFromList(@@two_port_p_MapAccum, e.key_list),
+                        e.M_Q_TLPF = GetEdgeValuesFromList(@@two_port_q_MapAccum, e.key_list)
+                     WHEN (e.device_type == "三绕组变压器") THEN
+                        e.M_P_TLPF = GetEdgeValuesFromList(@@three_port_p_MapAccum, e.key_list),
+                        e.M_Q_TLPF = GetEdgeValuesFromList(@@three_port_q_MapAccum, e.key_list)
+                END;
+
+
+
+ //********************************* save data to memory *****************************
+
+    T5 = SELECT s from T0:s-(topo_connect:e)-> TopoND:t
+      WHERE s.island == 1 and t.island == 1
+      ACCUM
+          @@edge += sort_edge_NTPUpdate(s.@exId*100000 + t.@exId, e.M_P_TLPF, e.M_Q_TLPF, e.Ri_eP, e.Ri_eQ, e.from_CP, e.to_CP, t.exId),
+          s.@alldgr += 1
+      POST-ACCUM
+          @@vertex += sort_vertex_NTPUpdate(s.@exId, s.@alldgr, s.@M_Vm, s.@M_Va, s.@GenP, s.@GenQ, s.@LdP, s.@LdQ, s.@M_C_P);
+
+      AttrSave_NTP_update_v7(@@vertex,@@edge);
+
+log(true, "timepoint_NTP_update_endof_save");
+
+}

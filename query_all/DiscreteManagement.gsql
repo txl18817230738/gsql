@@ -1,0 +1,16 @@
+CREATE QUERY DiscreteManagement() FOR GRAPH gsql_EMS{
+
+  discreteSet = {discrete.*};
+  SumAccum<int> @statusM = 0;
+  SumAccum<int> @flagM = 0;
+  SumAccum<int> @updateFlag = 0;
+
+  Tdiscrete = select s from discreteSet:s-(discrete_disManage:e)-:t
+            accum
+              s.@statusM = t.statusM,
+              s.@flagM = t.flagM
+            post-accum
+              s.statusM = s.@statusM,
+              s.flagM = s.@flagM,
+              s.updateFlag = 0;
+}

@@ -1,0 +1,232 @@
+create query cal_bus_observability_analysis(string companyID="113715890758877224", bool return_all=true)
+for graph gsql_EMS {	
+	TYPEDEF TUPLE<string bus_name, string sub_name, string sub_id, int volt, double volt_meas, string  ZJP, string ZJQ, int branch_N, int branch_MNP, int branch_MNQ, int node_MNP, int node_MNQ, string obstatus>  bus_list;
+	
+	//SumAccum<string> @sub_name;
+	HeapAccum<bus_list>(10000000, bus_name DESC, sub_name DESC, volt DESC) @@bus_all;
+        HeapAccum<bus_list>(50, bus_name DESC, sub_name DESC, volt DESC) @@bus_part;
+	SetAccum<string> @@Comp_ID;
+  	SumAccum<string> @sub_id;
+        SumAccum<string> @ZJP;
+        SumAccum<string> @ZJQ;
+        SumAccum<int> @branch_N = 0;
+        SumAccum<int> @branch_MNP = 0;
+        SumAccum<int> @branch_MNQ = 0;
+        SumAccum<int> @node_MNP = 0;
+        SumAccum<int> @node_MNQ = 0;
+        SumAccum<int> @node_MPcount = 0;
+        SumAccum<int> @node_MQcount = 0;
+        SumAccum<int> @Pflag = 0;
+        SumAccum<int> @Qflag = 0;
+        SumAccum<string> @obstatus = "可观测";
+        SumAccum<INT> @@count_all;
+        SumAccum<INT> @@count_other;
+        SumAccum<INT> @@count_10kV;
+        SumAccum<INT> @@count_35kV;
+        SumAccum<INT> @@count_110kV;
+        SumAccum<INT> @@count_220kV;
+        SumAccum<INT> @@count_500kV;
+        SumAccum<INT> @@count_all_ob;
+        SumAccum<INT> @@count_other_ob;
+        SumAccum<INT> @@count_10kV_ob;
+        SumAccum<INT> @@count_35kV_ob;
+        SumAccum<INT> @@count_110kV_ob;
+        SumAccum<INT> @@count_220kV_ob;
+        SumAccum<INT> @@count_500kV_ob;
+        SumAccum<INT> @@count_all_uob;
+        SumAccum<INT> @@count_other_uob;
+        SumAccum<INT> @@count_10kV_uob;
+        SumAccum<INT> @@count_35kV_uob;
+        SumAccum<INT> @@count_110kV_uob;
+        SumAccum<INT> @@count_220kV_uob;
+        SumAccum<INT> @@count_500kV_uob;
+        MapAccum<INT, double> @@three_port_Pflag;
+        MapAccum<INT, double> @@three_port_Qflag;
+
+	comp = {gridcom.*};
+
+	start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+	WHILE(start_comp.size()>0) DO
+	  start_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+	END;
+
+        T0 = {TopoND.*};
+        two_port = {two_port_transformer.*};
+        three_port = {three_port_transformer.*};
+        T_load = {l_oad.*};
+        T_unit = {unit.*};
+        T_bus ={BUS.*};
+        T_CP = {C_P.*};
+        measSet = {meas.*};
+  sub = {Substation.*};
+  comp = {gridcom.*};
+
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID;
+
+  Tsub_topo1 = SELECT t FROM sub:s - (topoid_subid:e) -:t
+                accum
+                t.@sub_id = s.strid;
+        
+  Ttrans3 = select t from sub:s - (connected_Sub_Trans_three:e)->:t
+                accum
+                t.@sub_id = s.strid;
+
+  Tneutral_point = select t from Ttrans3:s -(neutral_three:e)-:t
+                accum
+                t.@sub_id = s.@sub_id;
+
+  Tsub_topo2 = select t from Tneutral_point:s -(topo_neutral:e)-:t
+                accum
+                t.@sub_id = s.@sub_id;
+
+  Tsub_topo = Tsub_topo1 union Tsub_topo2;
+
+        DeviceSet = SELECT t
+            FROM measSet:s - ((Meas_AClinedot | Meas_CP | Meas_Bus | Meas_Load | Meas_trans2 | Meas_trans3 | Meas_Unit ):e) -> :t
+            ACCUM
+            t.@Pflag = s.PFlag + s.P_ManualFlag,
+            t.@Qflag = s.QFlag + s.Q_ManualFlag;
+
+
+       Z = Select src from three_port:src
+            ACCUM
+            @@three_port_Pflag += (src.id ->  src.@Pflag),
+            @@three_port_Qflag += (src.id -> src.@Qflag),
+            @@three_port_Pflag += (-src.id -> src.@Pflag),
+            @@three_port_Qflag += (-src.id -> src.@Qflag);
+	
+        T1 = SELECT s
+          from T0: s -(topo_connect:e)->TopoND:t
+          where s.island == 1 and t.island == 1
+          accum
+             if (abs(e.M_P_TLPF) > 0.0001 or GetEdgeValuesFromList(@@three_port_Pflag, e.key_list) >= 1 ) then
+                s.@node_MPcount += 1
+             end,
+             if (abs(e.M_Q_TLPF) > 0.0001 or GetEdgeValuesFromList(@@three_port_Qflag, e.key_list) >= 1) then
+                s.@node_MQcount += 1
+             end
+          post-accum
+             if (abs(s.M_Gen_P + s.M_Load_P) > 0.0001) then
+                s.@node_MPcount += 1
+             end,
+             if (abs(s.M_Gen_Q + s.M_Load_Q + s.M_C_P) > 0.0001) then
+                s.@node_MQcount += 1
+             end;
+
+        T2 = SELECT s
+          from Tsub_topo: s -(topo_connect:e)->TopoND:t
+          where s.island == 1 and t.island == 1
+          accum
+             s.@branch_N += 1,
+             if (abs(e.M_P_TLPF) > 0.0001) then
+                s.@branch_MNP += 1
+             end,
+             if (abs(e.M_Q_TLPF) > 0.0001) then
+                s.@branch_MNQ += 1
+             end,
+             if (t.@node_MPcount >= 1) then
+                s.@node_MNP += 1
+             end,
+             if (t.@node_MQcount >= 1) then
+                s.@node_MNQ += 1
+             end
+          post-accum
+             @@count_all += 1,
+             if s.base_kV >= 500 then
+                   @@count_500kV += 1
+             else if s.base_kV >= 220 then
+                   @@count_220kV += 1
+             else if s.base_kV >= 110 then
+                   @@count_110kV += 1
+             else if s.base_kV >= 34.5 then
+                   @@count_35kV += 1
+             else if s.base_kV >= 10 then
+                   @@count_10kV += 1
+             else
+		   @@count_other +=1
+             end,
+             if (s.ZJP == 1) then
+                 s.@ZJP = "零注入"
+             else if (abs(s.M_Gen_Q + s.M_Load_Q) > 0.0001) then
+                 s.@ZJP = "实测"
+             else
+                 s.@ZJP = "无实测"
+             end,
+             if (s.ZJQ == 1) then
+                 s.@ZJQ = "零注入"
+             else if (abs(s.M_Gen_Q + s.M_Load_Q + s.M_C_P) > 0.0001) then
+                 s.@ZJQ = "实测"
+             else
+                 s.@ZJQ = "无实测"
+             end,
+             if (s.@ZJP != "实测" and s.@ZJQ != "实测" and s.@branch_MNP == 0 and s.@branch_MNQ ==0 and s.@node_MNP ==0 and s.@node_MNQ== 0 and s.ZJP == 0 and s.ZJQ == 0) then
+                 s.@obstatus = "不可观测",
+   		 @@count_all_uob+=1,
+             if s.base_kV >= 500 then
+                   @@count_500kV_uob += 1
+             else if s.base_kV >= 220 then
+                   @@count_220kV_uob += 1
+             else if s.base_kV >= 110 then
+                   @@count_110kV_uob += 1
+             else if s.base_kV >= 34.5 then
+                   @@count_35kV_uob += 1
+             else if s.base_kV >= 10 then
+                   @@count_10kV_uob += 1
+             else
+                   @@count_other_uob +=1
+             end
+             else
+                 s.@obstatus = "可观测",
+		 @@count_all_ob +=1,
+             if s.base_kV >= 500 then
+                   @@count_500kV_ob += 1
+             else if s.base_kV >= 220 then
+                   @@count_220kV_ob += 1
+             else if s.base_kV >= 110 then
+                   @@count_110kV_ob += 1
+             else if s.base_kV >= 34.5 then
+                   @@count_35kV_ob += 1
+             else if s.base_kV >= 10 then
+                   @@count_10kV_ob += 1
+             else
+                   @@count_other_ob +=1
+             end
+             end,
+             @@bus_part += bus_list(s.bus_name, s.Sub, s.@sub_id, s.base_kV, s.M_Vm*s.desired_volts, s.@ZJP, s.@ZJQ, s.@branch_N, s.@branch_MNP, s.@branch_MNQ, s.@node_MNP, s.@node_MNQ, s.@obstatus),
+             @@bus_all += bus_list(s.bus_name, s.Sub, s.@sub_id, s.base_kV, s.M_Vm*s.desired_volts, s.@ZJP, s.@ZJQ, s.@branch_N, s.@branch_MNP, s.@branch_MNQ, s.@node_MNP, s.@node_MNQ, s.@obstatus);
+
+	if return_all then
+		print @@bus_all;
+ 	else
+    		print @@bus_part;
+  	end;
+
+        print @@count_all;
+        print @@count_all_ob;
+        print @@count_all_uob;
+        print @@count_10kV;
+        print @@count_10kV_ob;
+        print @@count_10kV_uob;
+        print @@count_35kV;
+        print @@count_35kV_ob;
+        print @@count_35kV_uob;
+        print @@count_110kV;
+        print @@count_110kV_ob;
+        print @@count_110kV_uob;
+        print @@count_220kV;
+        print @@count_220kV_ob;
+        print @@count_220kV_uob;
+        print @@count_500kV;
+        print @@count_500kV_ob;
+        print @@count_500kV_uob;
+	print @@count_other;
+	print @@count_other_ob;
+	print @@count_other_uob;
+}

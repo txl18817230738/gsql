@@ -1,0 +1,15 @@
+"""
+use ems match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:connected_Sub_Unit]->(F6:`unit`) filter where startid.id = "113715890758877224"
+let
+p_rate = case when F6.P_rate < 0.0 then 300.0 ELSE F6.P_rate end,
+piMeas = case when F6.Pimeas is not NULL then F6.Pimeas ELSE 0.0 end
+let
+meas_overload = case when abs(p_rate) > 0 then abs(piMeas/p_rate)*100 else 0.0 end
+let
+subName = s.name, 
+overload_type = case when meas_overload >= 0.0 and meas_overload <= 20.0 then "轻载" when meas_overload > 20.0 and meas_overload <= 80.0 then "正常" when meas_overload > 80.0 and meas_overload <= 100.0 then "重载" when meas_overload > 100.0 then "过载" end,
+volt_mark = case when F6.Gentype <> "虚拟机组" and F6.Gentype <> "交换机组" and F6.Ue_meas <> 0.0 then "实测" ELSE "无实测" end,
+p_mark = case when F6.Gentype <> "虚拟机组" and F6.Gentype <> "交换机组" and F6.Pimeas <> 0.0 then "实测" else "无实测" end,
+q_mark = case when F6.Gentype <> "虚拟机组" and F6.Gentype <> "交换机组" and F6.Qimeas <> 0.0 then "实测" else "无实测" end
+return F6.name as name, subName, s.strid as subId, F6.Gentype as genType, F6.volt as volt, F6.base_value as baseValue, volt_mark, F6.Ue_meas as ueMeas,p_mark,F6.Pimeas as piMeas,meas_overload,q_mark,F6.Qimeas as qiMeas, overload_type, F6.meas_t_next as measTNext
+"""

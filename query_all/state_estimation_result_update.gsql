@@ -1,0 +1,1336 @@
+CREATE QUERY state_estimation_result_update() FOR GRAPH gsql_EMS{
+
+  SumAccum<double> @P_est = 0;
+  SumAccum<double> @Q_est = 0;
+  SumAccum<double> @Pest = 0;
+  SumAccum<double> @Qest = 0;
+  SumAccum<double> @Perror = 0;
+  SumAccum<double> @Qerror = 0;
+  SumAccum<double> @Vest = 0;
+  SumAccum<double> @Verror = 0;
+  SumAccum<double> @@Paccuracy = 0;
+  SumAccum<double> @@Qaccuracy = 0;
+  SumAccum<double> @@Vaccuracy = 0;
+  SumAccum<double> @@PaccuracySum = 0;
+  SumAccum<double> @@QaccuracySum = 0;
+  SumAccum<double> @@VaccuracySum = 0;
+  SumAccum<double> @@Totalaccuracy = 0;
+  SumAccum<double> @@PNum = 0;
+  SumAccum<double> @@QNum = 0;  
+  SumAccum<double> @@VNum = 0;
+  SumAccum<double> @@TotalNum = 0;
+  SumAccum<double> @@se_meas_OKNum = 0;
+  SumAccum<double> @@Tsub_select_size;
+  SumAccum<double> @@Tsub_cover_size;
+  SumAccum<double> @@se_cover_range;
+  SumAccum<double> @@se_converge_Num = 0;
+  SumAccum<double> @@se_noneconverge_Num = 0;
+  SumAccum<double> @meas_B = 0;
+  MapAccum<INT, double> @@acline_P_est;
+  MapAccum<INT, double> @@acline_Q_est;
+
+        SumAccum<double> @Pg = 0;
+        SumAccum<double> @Qg = 0;
+        SumAccum<double> @cal_P = 0;
+        SumAccum<double> @cal_Q = 0;
+        SumAccum<double> @total_gen_P = 0;
+        SumAccum<double> @total_gen_Q = 0;
+        SumAccum<int> @total_number_gen = 0;
+        SumAccum<int> @total_number_gen_neg = 0;
+        SumAccum<double> @total_gen_P_neg = 0;
+        SumAccum<double> @total_gen_Q_neg = 0;
+        SumAccum<double> @factor = 0;
+        SumAccum<int> @total_number_load = 0;
+        SumAccum<double> @T_load_P = 0;
+        SumAccum<double> @T_load_Q = 0;
+        SumAccum<int> @total_number_load_neg = 0;
+        SumAccum<double> @T_load_P_neg = 0;
+        SumAccum<double> @T_load_Q_neg = 0;
+        SumAccum<double> @Pld = 0;
+        SumAccum<double> @Qld = 0;
+        SumAccum<double> @sumG  = 0; // store for each node the total G on all of its edges
+        SumAccum<double> @sumB  = 0; //similar...
+        SumAccum<double> @Q;
+        SumAccum<int> @gen_flag = 0;
+        SumAccum<int> @subuseload_flag = 0;
+        SumAccum<double> @Psubuseload = 0;
+        SumAccum<double> @Qsubuseload = 0;
+ SumAccum<double> @cal_error_P = 0;
+ SumAccum<double> @cal_error_Q = 0;
+ SumAccum<double> @cal_P_allocation = 0;
+ SumAccum<double> @cal_Q_allocation = 0;
+
+  SetAccum<string> @@Comp_ID;
+  SumAccum<double> @@count_all;
+  SumAccum<double> @@count_AClinedot;
+  SumAccum<double> @@count_AClinedotP;
+  SumAccum<double> @@count_AClinedotQ;
+  SumAccum<double> @@count_unit;
+  SumAccum<double> @@count_unitP;
+  SumAccum<double> @@count_unitQ;
+  SumAccum<double> @@count_load;
+  SumAccum<double> @@count_loadP;
+  SumAccum<double> @@count_loadQ;
+  SumAccum<double> @@count_twoport;
+  SumAccum<double> @@count_twoportP;
+  SumAccum<double> @@count_twoportQ;  
+  SumAccum<double> @@count_threeport;
+  SumAccum<double> @@count_threeportP;
+  SumAccum<double> @@count_threeportQ;
+  SumAccum<double> @@count_CP;
+  SumAccum<double> @@count_bus;
+  SumAccum<double> @@se_OKNum_AClinedot;
+  SumAccum<double> @@se_OKNum_AClinedotP;
+  SumAccum<double> @@se_OKNum_AClinedotQ;
+  SumAccum<double> @@se_OKNum_unit;
+  SumAccum<double> @@se_OKNum_unitP;
+  SumAccum<double> @@se_OKNum_unitQ;
+  SumAccum<double> @@se_OKNum_load;
+  SumAccum<double> @@se_OKNum_loadP;
+  SumAccum<double> @@se_OKNum_loadQ;
+  SumAccum<double> @@se_OKNum_twoport;
+  SumAccum<double> @@se_OKNum_twoportP;
+  SumAccum<double> @@se_OKNum_twoportQ;
+  SumAccum<double> @@se_OKNum_threeport;
+  SumAccum<double> @@se_OKNum_threeportP;
+  SumAccum<double> @@se_OKNum_threeportQ;
+  SumAccum<double> @@se_OKNum_CP;
+  SumAccum<double> @@se_OKNum_bus;
+  SumAccum<double> @@total_load_p;
+  SumAccum<double> @@total_load_pest;
+  SumAccum<double> @@total_unit_p;
+  SumAccum<double> @@total_unit_pest;
+  SumAccum<double> @sub_unit_pest;
+  SumAccum<double> @sub_load_pest;
+  SumAccum<double> @@seNum;
+  SumAccum<double> @@se_meas_yield;
+  SumAccum<double> @@se_yield_AClinedot;
+  SumAccum<double> @@se_yield_AClinedotP;
+  SumAccum<double> @@se_yield_AClinedotQ;
+  SumAccum<double> @@se_yield_unit;
+  SumAccum<double> @@se_yield_unitP;
+  SumAccum<double> @@se_yield_unitQ;
+  SumAccum<double> @@se_yield_load;
+  SumAccum<double> @@se_yield_loadP;
+  SumAccum<double> @@se_yield_loadQ;
+  SumAccum<double> @@se_yield_twoport;
+  SumAccum<double> @@se_yield_twoportP;
+  SumAccum<double> @@se_yield_twoportQ;
+  SumAccum<double> @@se_yield_threeport;
+  SumAccum<double> @@se_yield_threeportP;
+  SumAccum<double> @@se_yield_threeportQ;
+  SumAccum<double> @@se_yield_CP;
+  SumAccum<double> @@se_yield_bus;
+  SumAccum<double> @@se_yield_busV;
+  SumAccum<double> @@count_sub;
+  SumAccum<double> @@count_sub_cover;
+  SumAccum<double> @@error_limit_P;
+  SumAccum<double> @@error_limit_Q;
+
+  two_port = {two_port_transformer.*};
+  three_port = {three_port_transformer.*};
+  aclinedotSet = {ACline_dot.*};
+  T_load = {l_oad.*};
+  T_unit = {unit.*};
+  T_CP = {C_P.*};
+  busSet = {BUS.*};
+  analogSet = {meas.*};
+  Tsub = {Substation.*};
+  T0 = {TopoND.*};
+
+  sub = {Substation.*};
+  comp = {gridcom.*};
+  unitSet = {unit.*};
+  loadSet = {l_oad.*};
+  twoportSet = {two_port_transformer.*};
+  threeportSet = {three_port_transformer.*};
+  CPSet = {C_P.*};
+  Tparameter = {parameters.*};
+
+  start_comp = select s from comp:s where s.parent_id == "" accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  Tparameter = select s from Tparameter:s
+     post-accum
+     @@error_limit_P += s.error_limit_P/100,
+     @@error_limit_Q += s.error_limit_Q/100;
+
+  Tsub = select t from comp:s-(connected_grid_sub:e)->:t
+        where s.id in @@Comp_ID;
+
+// ACline
+  TAClinedotSet = select t from Tsub:s - (connected_Sub_Aclinedot) ->:t;
+
+  TAClinedot = SELECT s
+                FROM TAClinedotSet:s - (topo_aclinedot:e) -:t
+                where t.island == 1
+                POST-ACCUM
+                IF (s.volt >= 500) THEN
+                    IF (abs(s.Pimeas) > 0 and abs(s.P) > 0) THEN
+                        s.@Perror = abs(s.P - s.Pimeas)/1082,
+                        if (s.@Perror < @@error_limit_P) then
+                           @@se_OKNum_AClinedot += 1,
+                            @@se_OKNum_AClinedotP += 1
+                        end,
+                        @@count_AClinedot += 1,
+                        @@count_AClinedotP += 1
+                    END,
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = abs(s.Q - s.Qimeas)/1082,
+                        if (s.@Qerror < @@error_limit_Q) then
+                           @@se_OKNum_AClinedot += 1,
+                           @@se_OKNum_AClinedotQ += 1
+                        end,
+                        @@count_AClinedot += 1,
+                        @@count_AClinedotQ += 1
+                    END
+                ELSE IF (s.volt >= 330 and s.volt < 500) THEN
+                    IF (abs(s.Pimeas) > 0 and abs(s.P) > 0) THEN
+                        s.@Perror = abs(s.P - s.Pimeas)/686,
+                        if (s.@Perror < @@error_limit_P) then
+                           @@se_OKNum_AClinedot += 1,
+                           @@se_OKNum_AClinedotP += 1
+                        end,
+                        @@count_AClinedot += 1,
+                        @@count_AClinedotP +=1
+                    END,
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = abs(s.Q - s.Qimeas)/686,
+                        if (s.@Qerror < @@error_limit_Q) then
+                           @@se_OKNum_AClinedot += 1,
+                           @@se_OKNum_AClinedotQ += 1
+                        end,
+                        @@count_AClinedot += 1,
+                        @@count_AClinedotQ += 1
+                    END
+                ELSE IF (s.volt >= 220 and s.volt < 330) THEN
+                    IF (abs(s.Pimeas) > 0 and abs(s.P) > 0) THEN
+                        s.@Perror = abs(s.P - s.Pimeas)/305,
+                        if (s.@Perror < @@error_limit_P) then
+                           @@se_OKNum_AClinedot += 1,
+                           @@se_OKNum_AClinedotP += 1
+                        end,
+                        @@count_AClinedot += 1,
+                        @@count_AClinedotP += 1
+                    END,
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = abs(s.Q - s.Qimeas)/305,
+                        if (s.@Qerror < @@error_limit_Q) then
+                           @@se_OKNum_AClinedot += 1,
+                           @@se_OKNum_AClinedotQ += 1
+                        end,
+                        @@count_AClinedot += 1,
+                        @@count_AClinedotQ += 1
+                    END
+                ELSE
+                    IF (abs(s.Pimeas) > 0 and abs(s.P) > 0) THEN
+                        s.@Perror = abs(s.P - s.Pimeas)/114,
+                        if (s.@Perror < @@error_limit_P) then
+                           @@se_OKNum_AClinedot += 1,
+                           @@se_OKNum_AClinedotP += 1
+                        end,
+                        @@count_AClinedot += 1,
+                        @@count_AClinedotP += 1
+                    END,
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = abs(s.Q - s.Qimeas)/114,
+                        if (s.@Qerror < @@error_limit_Q) then
+                           @@se_OKNum_AClinedot += 1,
+                           @@se_OKNum_AClinedotQ += 1
+                        end,
+                        @@count_AClinedot += 1,
+                        @@count_AClinedotQ += 1
+                    END
+                END;
+
+// Gen
+    TGenSet = select t from Tsub:s - (connected_Sub_Unit:e) ->:t;
+    TGen = SELECT s
+             FROM TGenSet:s - (topo_unit:e) -:t
+             where t.island == 1
+             POST-ACCUM
+             IF (abs(s.Pimeas) > 0 and abs(s.P) > 0) THEN
+                 if (s.P_rate < 300) then
+                    s.@Perror = abs(s.P - s.Pimeas)/300
+                 else
+                    s.@Perror = abs(s.P - s.Pimeas)/s.P_rate
+                 end,
+                 if (s.@Perror < @@error_limit_P) then
+                     @@se_OKNum_unit += 1,
+                     @@se_OKNum_unitP += 1
+                 end,
+                     @@count_unit += 1,
+                     @@count_unitP += 1
+             END,
+             
+             IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                 if (s.P_rate < 300) then
+                    s.@Qerror = abs(s.Q - s.Qimeas)/300
+                 else
+                    s.@Qerror = abs(s.Q - s.Qimeas)/s.P_rate
+                 end,
+                 if (s.@Qerror < @@error_limit_Q) then
+                     @@se_OKNum_unit += 1,
+                     @@se_OKNum_unitQ += 1
+                 end,
+                     @@count_unit += 1,
+                     @@count_unitQ += 1
+             END;
+             
+
+// Load
+   TLoadSet = select t from Tsub:s - (connected_Sub_Load:e) ->:t;
+   TLoad = select s
+             from TLoadSet:s - (topo_load:e) -:t
+             where t.island == 1
+             post-accum
+                    IF (abs(s.Pimeas) > 0 and abs(s.P) > 0) THEN
+                        s.@Perror = abs(s.P - s.Pimeas)/114,
+                        if (s.@Perror < @@error_limit_P) then
+                           @@se_OKNum_load += 1,
+                           @@se_OKNum_loadP += 1
+                        end,
+                        @@count_load += 1,
+                        @@count_loadP += 1
+                    END,
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = abs(s.Q - s.Qimeas)/114,
+                        if (s.@Qerror < @@error_limit_Q) then
+                           @@se_OKNum_load += 1,
+                           @@se_OKNum_loadQ += 1
+                        end,
+                        @@count_load += 1,
+                        @@count_loadQ += 1
+                    END;
+
+// Two port Trans
+   TTwoportSet = select t from Tsub:s - (connected_Sub_Trans_two:e) ->:t;
+
+   TTwoport = select s
+             from TTwoportSet:s - (topo_Tx_Two:e) -:t
+             where t.island == 1
+             post-accum
+             IF (s.volt >= 500) THEN
+                    IF (abs(s.Pimeas) > 0 and abs(s.P) > 0) THEN
+                        s.@Perror = abs(s.P - s.Pimeas)/1082,
+                        if (s.@Perror < @@error_limit_P) then
+                           @@se_OKNum_twoport += 1,
+                           @@se_OKNum_twoportP += 1
+                        end,
+                        @@count_twoport += 1,
+                        @@count_twoportP += 1
+                    END,
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = abs(s.Q - s.Qimeas)/1082,
+                        if (s.@Qerror < @@error_limit_Q) then
+                           @@se_OKNum_twoport += 1,
+                           @@se_OKNum_twoportQ += 1
+                        end,
+                        @@count_twoport += 1,
+                        @@count_twoportQ += 1
+                    END
+                ELSE IF (s.volt >= 330 and s.volt < 500) THEN
+                    IF (abs(s.Pimeas) > 0 and abs(s.P) > 0) THEN
+                        s.@Perror = abs(s.P - s.Pimeas)/686,
+                        if (s.@Perror < @@error_limit_P) then
+                           @@se_OKNum_twoport += 1,
+                           @@se_OKNum_twoportP += 1
+                        end,
+                        @@count_twoport += 1,
+                        @@count_twoportP += 1
+                    END,
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = abs(s.Q - s.Qimeas)/686,
+                        if (s.@Qerror < @@error_limit_Q) then
+                           @@se_OKNum_twoport += 1,
+                           @@se_OKNum_twoportQ += 1
+                        end,
+                        @@count_twoport += 1,
+                        @@count_twoportQ += 1
+                    END
+                ELSE IF (s.volt >= 220 and s.volt < 330) THEN
+                    IF (abs(s.Pimeas) > 0 and abs(s.P) > 0) THEN
+                        s.@Perror = abs(s.P - s.Pimeas)/305,
+                        if (s.@Perror < @@error_limit_P) then
+                           @@se_OKNum_twoport += 1,
+                           @@se_OKNum_twoportP += 1
+                        end,
+                        @@count_twoport += 1,
+                        @@count_twoportP += 1
+                    END,
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = abs(s.Q - s.Qimeas)/305,
+                        if (s.@Qerror < @@error_limit_Q) then
+                           @@se_OKNum_twoport += 1,
+                           @@se_OKNum_twoportQ += 1
+                        end,
+                        @@count_twoport += 1,
+                        @@count_twoportQ += 1
+                    END
+                ELSE
+                    IF (abs(s.Pimeas) > 0 and abs(s.P) > 0) THEN
+                        s.@Perror = abs(s.P - s.Pimeas)/114,
+                        if (s.@Perror < @@error_limit_P) then
+                           @@se_OKNum_twoport += 1,
+                           @@se_OKNum_twoportP += 1
+                        end,
+                        @@count_twoport += 1,
+                        @@count_twoportP += 1
+                    END,
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = abs(s.Q - s.Qimeas)/114,
+                        if (s.@Qerror < @@error_limit_Q) then
+                           @@se_OKNum_twoport += 1,
+                           @@se_OKNum_twoportQ += 1
+                        end,
+                        @@count_twoport += 1,
+                        @@count_twoportQ += 1
+                    END
+                END;
+
+// Three port Trans
+   TThreeportSet = select t from Tsub:s - (connected_Sub_Trans_three:e) ->:t;
+
+   TThreeport = select s
+             from TThreeportSet:s - (topo_Tx_Three:e) -:t
+             where t.island == 1
+             post-accum
+             IF (s.volt >= 500) THEN
+                    IF (abs(s.Pimeas) > 0 and abs(s.P) > 0) THEN
+                        s.@Perror = abs(s.P - s.Pimeas)/1082,
+                        if (s.@Perror < @@error_limit_P) then
+                           @@se_OKNum_threeport += 1,
+                           @@se_OKNum_threeportP += 1
+                        end,
+                        @@count_threeport += 1,
+                        @@count_threeportP += 1
+                    END,
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = abs(s.Q - s.Qimeas)/1082,
+                        if (s.@Qerror < @@error_limit_Q) then
+                           @@se_OKNum_threeport += 1,
+                           @@se_OKNum_threeportQ += 1
+                        end,
+                        @@count_threeport += 1,
+                        @@count_threeportQ += 1
+                    END
+                ELSE IF (s.volt >= 330 and s.volt < 500) THEN
+                    IF (abs(s.Pimeas) > 0 and abs(s.P) > 0) THEN
+                        s.@Perror = abs(s.P - s.Pimeas)/686,
+                        if (s.@Perror < @@error_limit_P) then
+                           @@se_OKNum_threeport += 1,
+                           @@se_OKNum_threeportP += 1
+                        end,
+                        @@count_threeport += 1,
+                        @@count_threeportP += 1
+                    END,
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = abs(s.Q - s.Qimeas)/686,
+                        if (s.@Qerror < @@error_limit_Q) then
+                           @@se_OKNum_threeport += 1,
+                           @@se_OKNum_threeportQ += 1
+                        end,
+                        @@count_threeport += 1,
+                        @@count_threeportQ += 1
+                    END
+                ELSE IF (s.volt >= 220 and s.volt < 330) THEN
+                    IF (abs(s.Pimeas) > 0 and abs(s.P) > 0) THEN
+                        s.@Perror = abs(s.P - s.Pimeas)/305,
+                        if (s.@Perror < @@error_limit_P) then
+                           @@se_OKNum_threeport += 1,
+                           @@se_OKNum_threeportP += 1
+                        end,
+                        @@count_threeport += 1,
+                        @@count_threeportP += 1
+                    END,
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = abs(s.Q - s.Qimeas)/305,
+                        if (s.@Qerror < @@error_limit_Q) then
+                           @@se_OKNum_threeport += 1,
+                           @@se_OKNum_threeportQ += 1
+                        end,
+                        @@count_threeport += 1,
+                        @@count_threeportQ += 1
+                    END
+                ELSE
+                    IF (abs(s.Pimeas) > 0 and abs(s.P) > 0) THEN
+                        s.@Perror = abs(s.P - s.Pimeas)/114,
+                        if (s.@Perror < @@error_limit_P) then
+                           @@se_OKNum_threeport += 1,
+                           @@se_OKNum_threeportP += 1
+                        end,
+                        @@count_threeport += 1,
+                        @@count_threeportP += 1
+                    END,
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = abs(s.Q - s.Qimeas)/141,
+                        if (s.@Qerror < @@error_limit_Q) then
+                           @@se_OKNum_threeport += 1,
+                           @@se_OKNum_threeportQ += 1
+                        end,
+                        @@count_threeport += 1,
+                        @@count_threeportQ += 1
+                    END
+                END;
+
+//CP
+   TCPSet = select t from Tsub:s - (connected_Sub_Compensator_P:e) ->:t;
+
+   TCP = select s
+             from TCPSet:s - (topo_compensatorP:e) -:t
+             where t.island == 1
+             post-accum
+             IF (s.volt >= 500) THEN
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = abs(s.Q - s.Qimeas)/1082,
+                        if (s.@Qerror < @@error_limit_Q) then
+                           @@se_OKNum_CP += 1
+                        end,
+                        @@count_CP += 1
+                    END
+                ELSE IF (s.volt >= 330 and s.volt < 500) THEN
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = abs(s.Q - s.Qimeas)/686,
+                        if (s.@Qerror < @@error_limit_Q) then
+                           @@se_OKNum_CP += 1
+                        end,
+                        @@count_CP += 1
+                    END
+                ELSE IF (s.volt >= 220 and s.volt < 330) THEN
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = abs(s.Q - s.Qimeas)/305,
+                        if (s.@Qerror < @@error_limit_Q) then
+                           @@se_OKNum_CP += 1
+                        end,
+                        @@count_CP += 1
+                    END
+                ELSE
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = abs(s.Q - s.Qimeas)/114,
+                        if (s.@Qerror < @@error_limit_Q) then
+                           @@se_OKNum_CP += 1
+                        end,
+                        @@count_CP += 1
+                    END
+                END;
+
+
+// bus
+   TBusSet = select t from Tsub:s - (connected_Sub_Bus:e) ->:t;
+
+   TBus = select s
+             from TBusSet:s - (topo_bus:e) -:t
+             where t.island == 1
+             post-accum
+             IF (s.volt >= 500) THEN
+                    IF (abs(s.Pimeas) > 100) THEN
+                        s.@Verror = abs(s.V - s.Pimeas)/600,
+                        if (s.@Verror < @@error_limit_P) then
+                           @@se_OKNum_bus += 1
+                        end,
+                        @@count_bus += 1
+                    END
+             ELSE IF (s.volt >= 330 and s.volt < 500) THEN
+                    IF (abs(s.Pimeas) > 100) THEN
+                        s.@Verror = abs(s.V - s.Pimeas)/396,
+                        if (s.@Verror < @@error_limit_P) then
+                           @@se_OKNum_bus += 1
+                        end,
+                        @@count_bus += 1
+                    END
+             ELSE IF (s.volt >= 220 and s.volt < 330) THEN
+                    IF (abs(s.Pimeas) > 100) THEN
+                        s.@Verror = abs(s.V - s.Pimeas)/264,
+                        if (s.@Verror < @@error_limit_P) then
+                           @@se_OKNum_bus += 1
+                        end,
+                        @@count_bus += 1
+                    END
+             ELSE
+                    IF (abs(s.Pimeas) > 100) THEN
+                        s.@Verror = abs(s.V - s.Pimeas)/132,
+                        if (s.@Verror < @@error_limit_P) then
+                           @@se_OKNum_bus += 1
+                        end,
+                        @@count_bus += 1
+                    END
+             END;
+
+@@se_meas_OKNum = @@se_OKNum_AClinedot + @@se_OKNum_unit + @@se_OKNum_load + @@se_OKNum_twoport + @@se_OKNum_threeport + @@se_OKNum_CP + @@se_OKNum_bus;
+@@seNum = @@count_AClinedot + @@count_unit + @@count_load + @@count_twoport + @@count_threeport + @@count_CP + @@count_bus;
+
+if (@@seNum != 0) then
+  @@se_meas_yield = @@se_meas_OKNum/@@seNum;
+else
+  @@se_meas_yield = 0;
+end;
+
+        T0 = select t
+        from T0:s -(topo_connect:e)->TopoND:t
+        WHERE s.island == 1 and t.island == 1
+        accum
+        double tap_ratio = abs(e.transformer_final_turns_ratio),
+        double tap_ratio_square = abs((e.transformer_final_turns_ratio)*(e.transformer_final_turns_ratio)),
+                // [Chen Yuan]
+        case when (e.transformer_final_turns_ratio == 0) then
+                e.P_TLPF = s.SE_Vm * s.SE_Vm * e.G - s.SE_Vm * t.SE_Vm * (e.G*cos(s.SE_Va - t.SE_Va) + (-e.B)*sin(s.SE_Va - t.SE_Va)),
+                e.Q_TLPF = - s.SE_Vm * s.SE_Vm * (-e.B + e.hB) - s.SE_Vm * t.SE_Vm * (e.G*sin(s.SE_Va - t.SE_Va) - (-e.B)*cos(s.SE_Va -t.SE_Va)) + e.from_CP
+        when (e.transformer_final_turns_ratio > 0) then
+                e.P_TLPF = s.SE_Vm * s.SE_Vm * e.G - s.SE_Vm * t.SE_Vm * ((e.G*tap_ratio)*cos(s.SE_Va - t.SE_Va) + (-e.B*tap_ratio)*sin(s.SE_Va - t.SE_Va)),
+                e.Q_TLPF = - s.SE_Vm * s.SE_Vm * (-e.B + e.hB) - s.SE_Vm * t.SE_Vm * ((e.G*tap_ratio)*sin(s.SE_Va - t.SE_Va) - (-e.B*tap_ratio)*cos(s.SE_Va - t.SE_Va))
+        else
+                e.P_TLPF = s.SE_Vm * s.SE_Vm * e.G * tap_ratio_square - s.SE_Vm * t.SE_Vm * ((e.G*tap_ratio)*cos(s.SE_Va - t.SE_Va) + (-e.B*tap_ratio)*sin(s.SE_Va - t.SE_Va)),
+                e.Q_TLPF = - s.SE_Vm * s.SE_Vm * (-e.B * tap_ratio_square + e.hB) - s.SE_Vm * t.SE_Vm * ((e.G*tap_ratio)*sin(s.SE_Va - t.SE_Va) - (-e.B*tap_ratio)*cos(s.SE_Va - t.SE_Va))
+        end;
+
+
+// get the estimated values for aclines and transformers
+    T1_topond = SELECT s
+             FROM T0:s-(topo_connect:e)->TopoND:t
+                 where s.island == 1 and t.island == 1
+                 ACCUM
+                 FOREACH i in range [0, e.X.size()-1] DO
+                    if (e.transformer_final_turns_ratio == 0) then
+                        @@acline_P_est += (e.key_list.get(i) -> (s.SE_Vm * s.SE_Vm * e.G_list.get(i) - s.SE_Vm * t.SE_Vm * (e.G_list.get(i)*cos(s.SE_Va - t.SE_Va) + (-e.B_list.get(i)*sin(s.SE_Va - t.SE_Va))))*100),
+                        @@acline_Q_est += (e.key_list.get(i) -> (- s.SE_Vm * s.SE_Vm * (-e.B_list.get(i)+e.hB_list.get(i)) - s.SE_Vm * t.SE_Vm * (e.G_list.get(i)*sin(s.SE_Va - t.SE_Va) - (-e.B_list.get(i))*cos(s.SE_Va - t.SE_Va)) + e.from_CP_list.get(i))*100)
+                    else
+                        @@acline_P_est += (e.key_list.get(i) -> e.P_TLPF/e.X.size()*100),
+                        @@acline_Q_est += (e.key_list.get(i) -> e.Q_TLPF/e.X.size()*100)
+                    end
+                 END;
+
+
+        X = select s from aclinedotSet:s -(aclinedot_aclinedot:e) - :t
+                accum
+                        int id = e.id,
+                        if s.id == e.I_mRID then
+                          s.@P_est = @@acline_P_est.get(id),
+                          s.@Q_est = @@acline_Q_est.get(id)
+                        else
+                          s.@P_est = @@acline_P_est.get(-id),
+                          s.@Q_est = @@acline_Q_est.get(-id)
+                        end
+                 post-accum
+                        s.P = s.@P_est,
+                        s.Q = s.@Q_est;
+
+        X2 = select s from aclinedotSet:s -(aclinedot_aclinedot_reverse:e) - :t
+                accum
+                        int id = e.id,
+                        if s.id == e.I_mRID then
+                          s.@P_est = @@acline_P_est.get(id),
+                          s.@Q_est = @@acline_Q_est.get(id)
+                        else
+                          s.@P_est = @@acline_P_est.get(-id),
+                          s.@Q_est = @@acline_Q_est.get(-id)
+                        end
+                post-accum
+                         s.P = s.@P_est,
+                         s.Q = s.@Q_est;
+
+
+  Y = Select src from two_port:src
+      POST-ACCUM
+          src.P = @@acline_P_est.get(src.id),
+          src.Q = @@acline_Q_est.get(src.id);
+
+  Z = Select src from three_port:src
+      POST-ACCUM
+          src.P = @@acline_P_est.get(src.id),
+          src.Q = @@acline_Q_est.get(src.id);
+
+//finish setting aclines and transformers
+
+//get estimationed values for buses
+
+  Vm_bus = SELECT t
+            FROM T0: s-(topo_bus:e)->:t
+            ACCUM
+                t.@P_est = s.SE_Vm * t.volt, //@P_est for buses is Vm
+                t.@Q_est = s.SE_Va
+            POST-ACCUM
+                t.V = t.@P_est,
+                t.Ang = t.@Q_est;
+               
+//finish setting buses
+
+
+//get estimated values for CP generator and load
+   T_CP = SELECT s
+           FROM T_CP:s - (topo_compensatorP:e) - TopoND:t
+                 WHERE t.island == 1
+                 ACCUM
+                 s.@Q = t.SE_Vm * t.SE_Vm *s.Q_rate  // B_pu = (Q_rate/100)/(V_rate/V_rate)^2 = Q_rate/100, Q_est_real = SE_Vm^2*B_pu*100 = SE_Vm^2*Q_rate;
+                 POST-ACCUM
+                 s.Q = s.@Q;
+
+  T1 = SELECT s
+          from T0: s -(topo_connect:e)->TopoND:t
+          where s.island == 1 and t.island == 1
+          accum
+        double newG = 0,
+        double newB = 0,
+                double tap_ratio = abs(e.transformer_final_turns_ratio),
+                double tap_ratio_square = abs((e.transformer_final_turns_ratio)*(e.transformer_final_turns_ratio)),
+
+                case when e.transformer_final_turns_ratio == 0 then
+                        //compute contribution of each branch to the diagonal terms
+                    s.@sumG += e.G,
+            s.@sumB += -1*e.B + e.hB,
+                        s.@cal_P += s.SE_Vm*t.SE_Vm * (-1*e.G*cos(s.SE_Va-t.SE_Va) + e.B * sin((s.SE_Va-t.SE_Va))),
+                        s.@cal_Q += s.SE_Vm*t.SE_Vm * (-1*e.G*sin(s.SE_Va-t.SE_Va) - e.B * cos(s.SE_Va-t.SE_Va))
+                        //log(false, "e.B and e.G", s.exId, t.exId, e.G, e.B)
+
+                when e.transformer_final_turns_ratio > 0 then
+                        s.@sumG += e.G,
+            s.@sumB += -1*e.B + e.hB, // sqrt
+                        //double tap_ratio = e.transformer_final_turns_ratio/e.kcount,
+                        newG = e.G*abs(tap_ratio),
+                        newB = e.B*abs(tap_ratio),
+                        s.@cal_P += s.SE_Vm*t.SE_Vm * (-1*newG*cos(s.SE_Va-t.SE_Va) + newB * sin(s.SE_Va-t.SE_Va)),
+                        s.@cal_Q += s.SE_Vm*t.SE_Vm * (-1*newG*sin(s.SE_Va-t.SE_Va) - newB * cos(s.SE_Va-t.SE_Va))
+                else
+                        //compute contribution of each branch to the diagonal terms
+            s.@sumG += e.G*tap_ratio_square,
+            s.@sumB += -1*e.B*tap_ratio_square + e.hB,
+                        newG = e.G*abs(tap_ratio),
+                        newB = e.B*abs(tap_ratio),
+                        s.@cal_P += s.SE_Vm*t.SE_Vm * (-1*newG*cos(s.SE_Va-t.SE_Va) + newB * sin(s.SE_Va-t.SE_Va)),
+                        s.@cal_Q += s.SE_Vm*t.SE_Vm * (-1*newG*sin(s.SE_Va-t.SE_Va) - newB * cos(s.SE_Va-t.SE_Va))
+        end
+                post-accum
+                       s.@cal_P += s.SE_Vm*s.SE_Vm*s.@sumG,
+                       s.@cal_Q += (-1) * s.SE_Vm*s.SE_Vm*s.@sumB,
+                       s.cal_P = s.@cal_P,
+                       s.cal_Q = s.@cal_Q;
+
+                           //log(true, s.@cal_P, s.@cal_Q);
+
+// check if it is a substation use load
+      Topo_unit = SELECT s
+                        FROM T1:s - (topo_unit:e) - unit:t
+                        where t.off == 0
+                post-accum
+                       s.@gen_flag = 1;
+
+      Topo_load = SELECT s
+                        FROM Topo_unit:s - (topo_load:e) - l_oad:t
+                        where s.@gen_flag == 1 and t.off == 0
+                post-accum
+                        s.@subuseload_flag = 1;
+
+//print Topo_load[Topo_load.Sub, Topo_load.bus_name, Topo_load.@subuseload_flag];
+//print Topo_load.size();
+
+// calculate the measured total generation in each TopoND
+        // select the generators with measurements and eliminate those without measurements
+        T_load = SELECT t
+                        FROM T1:s - (topo_load:e) - l_oad:t
+                        WHERE s.island == 1 and t.off == 0
+                        accum
+                        if (t.Pimeas >= 0) then
+                            s.@T_load_P += t.Pimeas,
+                            s.@T_load_Q += t.Qimeas,
+                            s.@total_number_load += 1
+                        else 
+                            s.@T_load_P_neg += t.Pimeas,
+                            s.@T_load_Q_neg += t.Qimeas,
+                            s.@total_number_load_neg += 1
+                        end
+                        post-accum
+                            s.LdP = -s.@cal_P,
+                            s.LdQ = -s.@cal_Q;
+
+        // calculate each generator's power output
+        // put generator information into a vertex list and then print out
+
+        T_load_1 = SELECT s
+                    FROM T_load:s - (topo_load:e) - TopoND:t
+                        where t.island == 1 and s.off == 0 and t.@subuseload_flag == 0
+                    accum
+                        IF t.@total_number_load >= 1 and t.@total_number_load_neg >= 1 THEN
+                            IF s.Pimeas < 0 THEN
+                                s.@Pld = s.Pimeas
+                            ELSE
+                                IF abs(t.@T_load_P) <= 0.0001 THEN
+                                     s.@Pld = (-100*t.@cal_P - t.@T_load_P_neg)/t.@total_number_load
+                                ELSE
+                                     s.@Pld = (-100*t.@cal_P - t.@T_load_P_neg)*s.Pimeas/t.@T_load_P
+                                END
+                            END
+                        ELSE IF t.@total_number_load == 0 and t.@total_number_load_neg >= 1 THEN
+                                s.@Pld = -100*t.@cal_P*s.Pimeas/t.@T_load_P_neg
+                        ELSE IF t.@total_number_load >= 1 and t.@total_number_load_neg == 0 THEN
+                                IF abs(t.@T_load_P) <= 0.0001 THEN
+                                     s.@Pld = -100*t.@cal_P/t.@total_number_load
+                                ELSE
+                                     s.@Pld = -100*t.@cal_P*s.Pimeas/t.@T_load_P
+                                END
+                        END,
+                        IF t.@total_number_load >= 1 and t.@total_number_load_neg >= 1 THEN
+                            IF s.Qimeas < 0 THEN
+                                s.@Qld = s.Qimeas
+                            ELSE
+                                IF abs(t.@T_load_Q) <= 0.0001 THEN
+                                     s.@Qld = (-100*t.@cal_Q - t.@T_load_Q_neg)/t.@total_number_load
+                                ELSE
+                                     s.@Qld = (-100*t.@cal_Q - t.@T_load_Q_neg)*s.Qimeas/t.@T_load_Q
+                                END
+                            END
+                        ELSE IF t.@total_number_load == 0 and t.@total_number_load_neg >= 1 THEN
+                                IF abs(t.@T_load_Q_neg)< 0.0001 THEN
+                                     s.@Qld = -100*t.@cal_Q/t.@total_number_load_neg
+                                ELSE
+                                     s.@Qld = -100*t.@cal_Q*s.Qimeas/t.@T_load_Q_neg
+                                END
+                        ELSE IF t.@total_number_load >= 1 and t.@total_number_load_neg == 0 THEN
+                                IF abs(t.@T_load_Q) <= 0.0001 THEN
+                                     s.@Qld = -100*t.@cal_Q/t.@total_number_load
+                                ELSE
+                                     s.@Qld = -100*t.@cal_Q*s.Qimeas/t.@T_load_Q
+                                END
+                        END,
+                        if (t.bus_name == "万江站.10kVIII甲段") then
+                            log (true, "check_load_allocation", s.name, t.bus_name, s.@Pld, t.@total_number_load, t.@T_load_P, t.@cal_P)
+                        end
+                        post-accum
+                        if (s.Substation == "万江站") then
+                            log (true, "check_load_allocation_post", s.name, s.@Pld)
+                        end,
+                        IF (s.@Pld == 0 and s.@Qld == 0) THEN
+                                s.@factor = 1
+                        ELSE
+                                s.@factor = s.@Pld/(sqrt(s.@Pld*s.@Pld + s.@Qld*s.@Qld))
+                        END;
+
+
+       // calculate the measured total generation in each TopoND
+        // select the generators with measurements and eliminate those without measurements
+        T_unit = SELECT t
+                        FROM T1:s - (topo_unit:e) - unit:t
+                        where s.island == 1 and t.off == 0
+                        ACCUM
+                        if (t.Pimeas >= 0) then
+                            s.@total_number_gen += 1,
+                            s.@total_gen_P += t.Pimeas,
+                            s.@total_gen_Q += t.Qimeas
+                        else
+                            s.@total_gen_P_neg += t.Pimeas,
+                            s.@total_gen_Q_neg += t.Qimeas, 
+                            s.@total_number_gen_neg += 1
+                        end
+                        POST-ACCUM
+                        s.GenP = s.@cal_P,
+                        s.GenQ = s.@cal_Q;
+
+
+      // calculate each generator's power output
+        // put generator information into a vertex list and then print out
+        T_unit_1 = SELECT s
+                    FROM T_unit:s - (topo_unit:e) - TopoND:t
+                        where t.island == 1 and s.off == 0  and t.@subuseload_flag == 0 
+                    accum
+                    /*
+                        if abs(t.@total_gen_P) > 0.0001 then
+                                s.@Pg = s.Pimeas/(t.@total_gen_P) * t.@cal_P * 100
+                        else
+                                s.@Pg = t.@cal_P/(t.@total_number_gen) * 100
+                        end,
+                        if abs(t.@total_gen_Q) > 0.0001 then
+                                s.@Qg = s.Qimeas/(t.@total_gen_Q) * t.@cal_Q * 100
+                        else
+                                s.@Qg = t.@cal_Q/(t.@total_number_gen) * 100
+                        end,
+                     */
+                        IF t.@total_number_gen >= 1 and t.@total_number_gen_neg >= 1 THEN
+                            IF s.Pimeas > 0 THEN
+                                s.@Pg = s.Pimeas
+                            ELSE
+                                IF abs(t.@total_gen_P_neg) <= 0.0001 THEN
+                                     s.@Pg = (100*t.@cal_P - t.@total_gen_P)/t.@total_number_gen_neg
+                                ELSE
+                                     s.@Pg = (100*t.@cal_P - t.@total_gen_P)*s.Pimeas/t.@total_gen_P_neg
+                                END
+                            END
+                        ELSE IF t.@total_number_gen == 0 and t.@total_number_gen_neg >= 1 THEN
+                                s.@Pg = 100*t.@cal_P*s.Pimeas/t.@total_gen_P_neg
+                        ELSE IF t.@total_number_gen >= 1 and t.@total_number_gen_neg == 0 THEN
+                                IF abs(t.@total_gen_P) <= 0.0001 THEN
+                                     s.@Pg = 100*t.@cal_P/t.@total_number_gen
+                                ELSE
+                                     s.@Pg = 100*t.@cal_P*s.Pimeas/t.@total_gen_P
+                                END
+                        END,
+                        IF t.@total_number_gen >= 1 and t.@total_number_gen_neg >= 1 THEN
+                            IF s.Qimeas > 0 THEN
+                                s.@Qg = s.Qimeas
+                            ELSE
+                                IF abs(t.@total_gen_Q_neg) <= 0.0001 THEN
+                                     s.@Qg = (100*t.@cal_Q - t.@total_gen_Q)/t.@total_number_gen_neg
+                                ELSE
+                                     s.@Qg = (100*t.@cal_Q - t.@total_gen_Q)*s.Qimeas/t.@total_gen_Q_neg
+                                END
+                            END
+                        ELSE IF t.@total_number_gen == 0 and t.@total_number_gen_neg >= 1 THEN
+                                IF abs(t.@total_gen_Q_neg)< 0.0001 THEN
+                                     s.@Qg = 100*t.@cal_Q/t.@total_number_gen_neg
+                                ELSE
+                                     s.@Qg = 100*t.@cal_Q*s.Qimeas/t.@total_gen_Q_neg
+                                END
+                        ELSE IF t.@total_number_gen >= 1 and t.@total_number_gen_neg == 0 THEN
+                                IF abs(t.@total_gen_Q) <= 0.0001 THEN
+                                     s.@Qg = 100*t.@cal_Q/t.@total_number_gen
+                                ELSE
+                                     s.@Qg = 100*t.@cal_Q*s.Qimeas/t.@total_gen_Q
+                                END
+                        END,
+                        if (t.bus_name == "湛江.仕礼岭风电场.1母线") then
+                            log(true, "checkunit1", s.Substation, s.name, s.Pimeas, s.Qimeas, t.@total_gen_P, t.@total_number_gen, t.@cal_P, t.@cal_Q)
+                        end
+                        //s.@desired_volts = t.desired_volts,
+                        //s.@cal_Vm = t.SE_Vm*t.desired_volts,
+                        //s.@cal_Vm_pu = t.SE_Vm
+                        post-accum
+                        if (s.Gentype == "火电机组" or s.Gentype == "核电机组") then
+                              if (s.Pimeas > 0 and s.Pimeas > s.@Pg) then
+                                  if ((s.Pimeas - s.@Pg) > s.Pimeas*0.08) then
+                                         s.Genload = s.Pimeas*0.08
+                                  else
+                                         s.Genload = s.Pimeas -s.@Pg
+                                  end
+                              else 
+                                  s.Genload = 0
+                              end
+                        else if (s.Gentype == "水电机组" or s.Gentype == "光伏机组" or s.Gentype == "风电机组" or s.Gentype == "其他机组") then
+                              if (s.Pimeas > 0 and s.Pimeas > s.@Pg) then
+                                  if ((s.Pimeas - s.@Pg) > s.Pimeas*0.05) then
+                                         s.Genload = s.Pimeas*0.05
+                                  else
+                                         s.Genload = s.Pimeas -s.@Pg
+                                  end
+                              else
+                                  s.Genload = 0
+                              end
+                        else if (s.Gentype == "抽蓄机组") then
+                              if (s.Pimeas > 0 and s.Pimeas > s.@Pg) then
+                                  if ((s.Pimeas - s.@Pg) > s.Pimeas*0.05) then
+                                         s.Genload = s.Pimeas*0.05
+                                  else
+                                         s.Genload = s.Pimeas -s.@Pg
+                                  end
+                              else if (s.Pimeas < 0 and s.Pimeas > s.@Pg) then
+                                  if ((s.Pimeas - s.@Pg) > -s.Pimeas*0.05) then
+                                         s.Genload = -s.Pimeas*0.05
+                                  else
+                                         s.Genload = s.Pimeas -s.@Pg
+                                  end
+                              else
+                                  s.Genload = 0
+                              end
+                        else 
+                              s.Genload = 0
+                        end,
+                        if (s.Substation == "湛江.仕礼岭风电场") then
+                              log(true, "checkunit2", s.name, s.@Pg, s.@Qg)
+                        end,
+                        case when (s.@Pg == 0 and s.@Qg == 0) then
+                                s.@factor = 1
+                        else
+                                s.@factor = s.@Pg/(sqrt(s.@Pg*s.@Pg + s.@Qg*s.@Qg))
+                        end;
+
+
+//set substation use load
+//case when bus connected with both generator and load
+      UpdateT_unit = SELECT s
+                    FROM T_unit:s - (topo_unit:e) - TopoND:t
+                    where s.off == 0 and t.island == 1 and t.@subuseload_flag == 1
+                accum
+                        s.@Pg = s.Pimeas,
+                        s.@Qg = s.Qimeas,
+                        t.@Psubuseload = t.@total_gen_P - t.@cal_P*100,
+                        t.@Qsubuseload = t.@total_gen_Q - t.@cal_Q*100,
+                        if (t.Sub == "东莞.东实电厂") then
+                          log(true, "subload1", t.Sub, s.name, s.Pimeas, t.@total_gen_P, t.@cal_P)
+                        end
+                post-accum
+                        s.Genload = 0,
+                        if (s.name == "东莞.东实电厂.1发电机" or s.name == "东莞.东实电厂.2发电机") then
+                          log(true, "subload1post", s.name, s.Substation, s.Pimeas, s.@Pg)
+                        end;
+
+      UpdateT_load = SELECT t
+                    FROM T_load:s - (topo_load:e) - TopoND:t
+                    where s.off == 0 and t.island == 1 and t.@subuseload_flag == 1
+                accum
+                        IF t.@total_number_load >= 1 and t.@total_number_load_neg >= 1 THEN
+                            IF s.Pimeas < 0 THEN
+                                s.@Pld = s.Pimeas
+                            ELSE
+                                IF abs(t.@T_load_P)< 0.0001 THEN
+                                    s.@Pld = (t.@Psubuseload - t.@T_load_P_neg)/t.@total_number_load      
+                                ELSE
+                                    s.@Pld = (t.@Psubuseload - t.@T_load_P_neg)*s.Pimeas/t.@T_load_P
+                                END
+                            END
+                        ELSE IF t.@total_number_load == 0 and t.@total_number_load_neg >= 1 THEN
+                            s.@Pld = t.@Psubuseload*s.Pimeas/t.@T_load_P_neg
+                        ELSE IF t.@total_number_load >= 1 and t.@total_number_load_neg == 0 THEN
+                            IF abs(t.@T_load_P)< 0.0001 THEN
+                                s.@Pld = t.@Psubuseload/t.@total_number_load   
+                            ELSE
+                                s.@Pld = t.@Psubuseload*s.Pimeas/t.@T_load_P
+                            END
+                        END,
+                        IF t.@total_number_load >= 1 and t.@total_number_load_neg >= 1 THEN
+                            IF s.Qimeas < 0 THEN
+                                s.@Qld = s.Qimeas
+                            ELSE
+                                IF abs(t.@T_load_Q)< 0.0001 THEN
+                                    s.@Qld = (t.@Qsubuseload - t.@T_load_Q_neg)/t.@total_number_load
+                                ELSE
+                                    s.@Qld = (t.@Qsubuseload - t.@T_load_Q_neg)*s.Qimeas/t.@T_load_Q
+                                END
+                            END
+                        ELSE IF t.@total_number_load == 0 and t.@total_number_load_neg >= 1 THEN
+                                IF abs(t.@T_load_Q_neg)< 0.0001 THEN 
+                                    s.@Qld = t.@Qsubuseload/t.@total_number_load_neg  
+                                ELSE
+                                    s.@Qld = t.@Qsubuseload*s.Qimeas/t.@T_load_Q_neg
+                                END
+                        ELSE IF t.@total_number_load >= 1 and t.@total_number_load_neg == 0 THEN
+                            IF abs(t.@T_load_Q)< 0.0001 THEN
+                                s.@Qld = t.@Qsubuseload/t.@total_number_load
+                            ELSE
+                                s.@Qld = t.@Qsubuseload*s.Qimeas/t.@T_load_Q
+                            END
+                        END,
+                       if (t.Sub == "东莞.东实电厂") then
+                          log(true, "subload2", t.Sub, s.name, s.Pimeas, t.@T_load_P, t.@total_number_load, t.@Psubuseload)
+                       end
+                post-accum
+                       if (s.Substation == "东莞.东实电厂") then
+                          log(true, "subload2post", s.name, s.Substation, s.@Pld)
+                       end;
+
+
+         T_load = SELECT s
+                    FROM T_load:s
+                    post-accum
+                        s.P = s.@Pld,
+                        s.Q = s.@Qld,
+                        s.P_pf = s.@Pld,
+                        s.Q_pf = s.@Qld;
+
+        T_unit = SELECT s
+                    FROM T_unit:s
+                    post-accum
+                    s.P = s.@Pg,
+                    s.Q = s.@Qg,
+                    s.P_pf = s.@Pg,
+                    s.Q_pf = s.@Qg;
+/*
+//debug bus injected power allocation
+
+  Tunit = select s from T0:s-(topo_unit:e)-:t
+           where s.island == 1
+           accum
+              if (s.bus_name == "佛山.旧长海A电厂.1发电机") then
+                  log(true, "unit_allocation", s.cal_P*100, t.P_pf)
+              end,
+              s.@cal_P_allocation += t.P_pf,
+              s.@cal_Q_allocation += t.Q_pf
+           post-accum
+              if (s.bus_name == "佛山.旧长海A电厂.1发电机") then
+                  log(true, "unit_allocation_post", s.cal_P*100, s.@cal_P_allocation)
+              end;
+
+ Tload = select s from T0:s-(topo_load:e)-:t
+           where s.island == 1
+           accum
+              if (s.bus_name == "佛山.旧长海A电厂.1发电机") then
+                  log(true, "load_allocation", s.cal_P*100, t.P_pf)
+              end,
+              s.@cal_P_allocation +=  (-1)* t.P_pf,
+              s.@cal_Q_allocation +=  (-1)* t.Q_pf
+           post-accum
+              if (s.bus_name == "佛山.旧长海A电厂.1发电机") then
+                  log(true, "load_allocation_post", s.cal_P*100, s.@cal_P_allocation)
+              end;
+
+ Tunit_topo = select s from Tunit:s
+          where abs(s.@cal_P_allocation - s.cal_P*100) > 0.1 //or abs(s.@cal_P_allocation - s.cal_Q*100) > 0.01
+          post-accum
+              s.@cal_error_P = s.@cal_P_allocation - s.cal_P*100,
+              s.@cal_error_Q = s.@cal_Q_allocation - s.cal_Q*100;
+
+ Tload_topo = select s from Tload:s
+          where abs(s.@cal_P_allocation - s.cal_P*100) > 0.1 //or abs(s.@cal_P_allocation - s.cal_Q*100) > 0.01
+          post-accum
+              s.@cal_error_P = s.@cal_P_allocation - s.cal_P*100,
+              s.@cal_error_Q = s.@cal_Q_allocation - s.cal_Q*100;
+
+print Tunit_topo[Tunit_topo.exId, Tunit_topo.bus_name, Tunit_topo.@cal_P_allocation, Tunit_topo.cal_P*100, Tunit_topo.@cal_error_P, Tunit_topo.@cal_Q_allocation, Tunit_topo.cal_Q*100, Tunit_topo.@cal_error_Q];
+print Tload_topo[Tload_topo.exId, Tload_topo.bus_name, Tload_topo.@cal_P_allocation, Tload_topo.cal_P*100, Tload_topo.@cal_error_P, Tload_topo.@cal_Q_allocation, Tload_topo.cal_Q*100, Tload_topo.@cal_error_Q];
+print Tunit_topo.size(), Tload_topo.size();
+
+//dubug
+
+        T_load_check = select s from T_load:s-(connected_Load_Sub:e)->:t
+              where t.name == "韶关.马头站"
+              post-accum
+                  log(true, "check_load", s.name, s.volt, s.Pimeas, s.Qimeas, s.P, s.Q);
+*/
+//finish setting CP generator and load
+
+//============================set vertex status=======================
+       Vstatus = {status.*};
+       measSet = {meas.*};
+
+//==Meas_AClinedot | Meas_CP | Meas_Load | Meas_trans2 | Meas_trans3 | Meas_Unit==//
+
+        Tcomponents = select t from T0:s- ((topo_Tx_Two|topo_Tx_Three|topo_unit|topo_load|topo_aclinedot):e) -:t
+            where s.island == 1
+            post-accum
+                if (t.volt >= 500) then
+                  if (abs(t.Pimeas) > 0.01) then
+                    t.p_se_error = abs(t.P - t.Pimeas)/1082*100
+                  else
+                    t.p_se_error = 0
+                  end,
+                  if (abs(t.Qimeas) > 0.01) then
+                    t.q_se_error = abs(t.Q - t.Qimeas)/1082*100
+                  else
+                    t.q_se_error = 0
+                  end
+                else if (t.volt >= 330 and t.volt < 500) then
+                  if (abs(t.Pimeas) > 0.01) then
+                    t.p_se_error = abs(t.P - t.Pimeas)/686*100
+                  else
+                    t.p_pf_error = 0
+                  end,
+                  if (abs(t.Qimeas) > 0.01) then
+                    t.q_se_error = abs(t.Q - t.Qimeas)/686*100
+                  else
+                    t.q_se_error = 0
+                  end
+                else if (t.volt >= 220 and t.volt< 330) then
+                  if (abs(t.Pimeas) > 0.01) then
+                    t.p_se_error= abs(t.P - t.Pimeas)/305*100
+                  else
+                    t.p_se_error = 0
+                  end,
+                  if (abs(t.Qimeas) > 0.01) then
+                    t.q_se_error = abs(t.Q - t.Qimeas)/305*100
+                  else
+                    t.q_se_error = 0
+                  end
+                else if (t.volt >= 110 and t.volt< 220) then 
+                  if (abs(t.Pimeas) > 0.01) then
+                    t.p_se_error = abs(t.P - t.Pimeas)/141*100
+                  else
+                   t.p_se_error = 0
+                  end,
+                  if (abs(t.Qimeas) > 0.01) then
+                    t.q_se_error = abs(t.Q - t.Qimeas)/141*100
+                  else
+                    t.q_se_error = 0
+                  end
+                 else if (t.volt >= 66 and t.volt< 110) then 
+                  if (abs(t.Pimeas) > 0.01) then
+                    t.p_se_error = abs(t.P - t.Pimeas)/68.6*100
+                  else
+                   t.p_se_error = 0
+                  end,
+                  if (abs(t.Qimeas) > 0.01) then
+                    t.q_se_error = abs(t.Q - t.Qimeas)/68.6*100
+                  else
+                    t.q_se_error = 0
+                  end
+                 else 
+                    if (abs(t.Pimeas) > 0.01) then
+                    t.p_se_error = abs(t.P - t.Pimeas)/36.4*100
+                  else
+                   t.p_se_error = 0
+                  end,
+                  if (abs(t.Qimeas) > 0.01) then
+                    t.q_se_error = abs(t.Q - t.Qimeas)/36.4*100
+                  else
+                    t.q_se_error = 0
+                  end
+                end;                                                           
+
+
+       TAClinedot = SELECT s 
+                FROM aclinedotSet:s - (topo_aclinedot:e) -:t
+                where t.island == 1
+                POST-ACCUM                
+                IF (s.volt >= 500) THEN     
+                    IF (abs(s.Pimeas) > 0 and abs(s.P) > 0) THEN               
+                        s.@Perror = (s.P - s.Pimeas)/1082,    
+                        if (s.@Perror < 0.02) then
+                           @@se_meas_OKNum += 1
+                        end,               
+                        @@PaccuracySum += s.@Perror*s.@Perror,
+                        @@PNum += 1
+                    END,
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = (s.Q - s.Qimeas)/1082,
+                        if (s.@Qerror < 0.03) then
+                           @@se_meas_OKNum += 1
+                        end,
+                        @@QaccuracySum += s.@Qerror*s.@Qerror,
+                        @@QNum += 1
+                    END
+                ELSE IF (s.volt >= 330 and s.volt < 500) THEN
+                    IF (abs(s.Pimeas) > 0 and abs(s.P) > 0) THEN
+                        s.@Perror = (s.P - s.Pimeas)/686,
+                        if (s.@Perror < 0.02) then
+                           @@se_meas_OKNum += 1
+                        end,
+                        @@PaccuracySum += s.@Perror*s.@Perror,
+                        @@PNum += 1
+                    END,
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = (s.Q - s.Qimeas)/686,
+                        if (s.@Qerror < 0.03) then
+                           @@se_meas_OKNum += 1
+                        end,
+                        @@QaccuracySum += s.@Qerror*s.@Qerror,
+                        @@QNum += 1
+                    END
+                ELSE IF (s.volt >= 220 and s.volt < 330) THEN
+                    IF (abs(s.Pimeas) > 0 and abs(s.P) > 0) THEN
+                        s.@Perror = (s.P - s.Pimeas)/305,
+                        if (s.@Perror < 0.02) then
+                           @@se_meas_OKNum += 1
+                        end,
+                        @@PaccuracySum += s.@Perror*s.@Perror,
+                        @@PNum += 1
+                    END,
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = (s.Q - s.Qimeas)/305,
+                        if (s.@Qerror < 0.03) then
+                           @@se_meas_OKNum += 1
+                        end,
+                        @@QaccuracySum += s.@Qerror*s.@Qerror,
+                        @@QNum += 1
+                    END
+                ELSE
+                    IF (abs(s.Pimeas) > 0 and abs(s.P) > 0) THEN
+                        s.@Perror = (s.P - s.Pimeas)/114,
+                        if (s.@Perror < 0.02) then
+                           @@se_meas_OKNum += 1
+                        end,
+                        @@PaccuracySum += s.@Perror*s.@Perror,
+                        @@PNum += 1
+                    END,
+                    IF (abs(s.Qimeas) > 0 and abs(s.Q) > 0) THEN
+                        s.@Qerror = (s.Q - s.Qimeas)/114,
+                        if (s.@Qerror < 0.03) then
+                           @@se_meas_OKNum += 1
+                        end,
+                        @@QaccuracySum += s.@Qerror*s.@Qerror,
+                        @@QNum += 1
+                    END
+                END;
+
+
+      Tbus = SELECT s
+             FROM busSet:s - (topo_bus:e) -:t
+             where t.island == 1
+             POST-ACCUM
+                IF (s.volt >= 500) THEN
+                    IF (abs(s.Pimeas) > 100) THEN
+                        s.@Verror = (s.V - s.Pimeas)/600,
+                        if (s.@Verror < 0.02) then
+                           @@se_meas_OKNum += 1
+                        end,
+                        @@VaccuracySum += s.@Verror*s.@Verror,
+                        @@VNum += 1
+                    END
+                ELSE IF (s.volt >= 330 and s.volt < 500) THEN
+                    IF (abs(s.Pimeas) > 100) THEN
+                        s.@Verror = (s.V - s.Pimeas)/396,
+                        if (s.@Verror < 0.02) then
+                           @@se_meas_OKNum += 1
+                        end,
+                        @@VaccuracySum += s.@Verror*s.@Verror,
+                        @@VNum += 1
+                    END
+                ELSE IF (s.volt >= 220 and s.volt < 330) THEN
+                    IF (abs(s.Pimeas) > 100) THEN
+                        s.@Verror = (s.V - s.Pimeas)/264,
+                        if (s.@Verror < 0.02) then
+                           @@se_meas_OKNum += 1
+                        end,
+                        @@VaccuracySum += s.@Verror*s.@Verror,
+                        @@VNum += 1
+                    END
+                ELSE 
+                    IF (abs(s.Pimeas) > 100) THEN
+                        s.@Verror = (s.V - s.Pimeas)/132,
+                        if (s.@Verror < 0.02) then
+                           @@se_meas_OKNum += 1
+                        end,
+                        @@VaccuracySum += s.@Verror*s.@Verror,
+                        @@VNum += 1
+                    END
+                END;
+
+
+       @@Paccuracy = sqrt(@@PaccuracySum/@@PNum);
+       @@Qaccuracy = sqrt(@@QaccuracySum/@@QNum);
+       @@Vaccuracy = sqrt(@@VaccuracySum/@@VNum);
+       @@Totalaccuracy = sqrt((@@PaccuracySum + @@QaccuracySum + @@VaccuracySum)/(@@PNum + @@QNum + @@VNum));
+
+       Tsub_select = select s from Tsub:s - (topoid_subid:e) -:t
+              where s.subtype != "虚拟T接站" and s.subtype != "虚拟站" and t.island == 1;
+
+       Tsub_connect = select s from Tsub_select:s-(cn_subid:e)-:t
+              where s.outdegree("cn_subid") != 0;
+
+       Tsub_cover = select s from Tsub_connect:s-((connected_Sub_Aclinedot|connected_Sub_Bus|connected_Sub_Load|connected_Sub_Unit|connected_Sub_Trans_two|connected_Sub_Trans_three):e)->:t
+              where t.P != 0 or t.Q != 0;
+
+       @@Tsub_select_size = Tsub_select.size();
+       @@Tsub_cover_size = Tsub_cover.size();
+
+       Vstatus = select s from Vstatus:s                 
+                 POST-ACCUM
+                 @@se_converge_Num += s.se_converge_Num,
+                 @@se_noneconverge_Num += s.se_noneconverge_Num,
+                 IF (s.se_iteration > 20) THEN
+                    @@se_noneconverge_Num += 1
+                 ELSE
+                    @@se_converge_Num += 1
+                 END;
+
+       Vstatus = select s from Vstatus:s
+                 POST-ACCUM
+                 s.se_converge_Num = @@se_converge_Num,
+                 s.se_noneconverge_Num = @@se_noneconverge_Num,
+                 s.se_accuracy_value = @@Totalaccuracy*100,
+                 s.se_Vaccuracy_value = @@Vaccuracy*100,
+                 s.se_Paccuracy_value = @@Paccuracy*100,
+                 s.se_Qaccuracy_value = @@Qaccuracy*100,
+                 //s.se_meas_yield = @@se_meas_OKNum/(@@PNum + @@QNum + @@VNum)*100,
+                 s.se_meas_yield = @@se_meas_yield*100,
+                 s.se_cover_range = @@Tsub_cover_size/@@Tsub_select_size*100,
+                 s.se_available_month = @@se_converge_Num/(@@se_converge_Num + @@se_noneconverge_Num)*100;       
+
+//print TAClinedot[TAClinedot.name, TAClinedot.Pimeas, TAClinedot.P, TAClinedot.@Perror];
+//print Tunit[Tunit.name, Tunit.Pimeas, Tunit.P, Tunit.P_rate, Tunit.@Perror];
+//print Tbus[Tbus.name, Tbus.Pimeas, Tbus.volt,  Tbus.V,  Tbus.@Verror];
+print @@PNum, @@QNum, @@VNum, @@se_meas_OKNum;
+print @@Paccuracy, @@Qaccuracy, @@Vaccuracy, @@Totalaccuracy;
+print @@Tsub_select_size, Tsub_connect.size(), @@Tsub_cover_size, @@se_cover_range, @@se_converge_Num, @@se_noneconverge_Num;
+print Vstatus[Vstatus.se_cover_range, Vstatus.se_converge_Num, Vstatus.se_noneconverge_Num, Vstatus.se_available_month, Vstatus.se_meas_yield];
+//====================================================================
+
+//Print T_unit[T_unit.name, T_unit.P, T_unit.Q];
+//Print T_load[T_load.name, T_load.P, T_load.Q];
+}

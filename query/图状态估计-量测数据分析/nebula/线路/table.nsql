@@ -1,0 +1,31 @@
+"""
+use ems match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:connected_Sub_Aclinedot]->(F6:`ACline_dot`)<-[e:aclinedot_aclinedot_reverse]-(F7:`ACline_dot`) filter where startid.id = "113715890758877224" and s.subtype <> "虚拟站" and s.subtype <> "其他" and s.subtype <> "线端连接站" and F6.island=1 and F7.island=1
+let
+Ri_eP = {key:e.name,value:e.Ri_eP},
+Ri_eQ = {key:e.name,value:e.Ri_eQ}
+
+let
+p_rate = sqrt(3)*e.volt*e.Ih/1000,
+pimeas = case when F6.Pimeas is not NULL then F6.Pimeas else 0 end,
+qimeas = case when F6.Qimeas is not NULL then F6.Qimeas else 0 end,
+pimeas_t = case when F7.Pimeas is not NULL then F7.Pimeas else 0 end,
+qimeas_t = case when F7.Qimeas is not NULL then F7.Qimeas else 0 end
+let
+meas_overload = case when abs(p_rate) >= 0.5 then abs(pimeas/p_rate)*100 else 0 end,
+cal_overload = case when abs(p_rate) >= 0.5 then abs(s.P/p_rate)*100 else 0 end
+let
+overload_type = case when meas_overload >= 0.0 and meas_overload <= 20.0 then "轻载" when meas_overload > 20.0 and meas_overload <= 80.0 then "正常" when meas_overload > 80.0 and meas_overload <= 100.0 then "重载" when meas_overload > 100.0 then "过载" end,
+p_mark = case when pimeas <> 0.0 then "实测" else "无实测" end,
+p_mark_num = case when pimeas <> 0.0 then 1 else 0 end,
+q_mark = case when qimeas <> 0.0 then "实测" else "无实测" end,
+q_mark_num = case when qimeas <> 0.0 then 1 else 0 end,
+
+p_mark_reverse = case when pimeas <> 0.0 then "实测" else "无实测" end,
+p_mark_num_reverse = case when pimeas <> 0.0 then 1 else 0 end,
+q_mark_reverse = case when qimeas <> 0.0 then "实测" else "无实测" end,
+q_mark_num_reverse = case when qimeas <> 0.0 then 1 else 0 end,
+deviceType = "AC传输线"
+
+
+return e.name as lineName, deviceType,meas_overload, overload_type,F6.Subname, F6.Substation, F7.Subname, F7.Substation, F6.bus_name, F6.topoID, F7.bus_name, F7.topoID, F6.volt, P_mark, P_mark_num, pimeas, Q_mark, Q_mark_num, qimeas, e.Ri_eP, e.Ri_eQ, s.ACLine_CP, p_mark_reverse, pimeas_t, q_mark_reverse, qimeas_t, @@Ri_eP.get(e.name), @@Ri_eQ.get(e.name), F7.ACLine_CP, F6.meas_t_next,F6.meas_t_next
+"""

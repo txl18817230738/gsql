@@ -1,0 +1,243 @@
+CREATE QUERY CAScreen_res(string device_type="AC传输线",bool return_all=true) FOR GRAPH gsql_EMS syntax v2{ 
+  TYPEDEF TUPLE < string edge_name, int edge_volt, string tap_bus_name, string z_bus_name, double SI, string from_sub,  string from_subid,  string to_sub,  string to_subid> row;
+  //SumAccum<int> @@id = 0;
+  //ListAccum<int> @@edgeDecision;
+  SumAccum<string> @subid;
+  SumAccum<string> @bus_name;
+  SumAccum<double> @volt;
+  HeapAccum<row>(50, SI DESC,edge_name DESC, tap_bus_name DESC) @@result_part;
+  HeapAccum<row>(1000000, SI desc,edge_name DESC, tap_bus_name DESC) @@result;
+
+  SumAccum<INT> @@count_all;
+  SumAccum<INT> @@count_SI0;
+  SumAccum<INT> @@count_SI02;
+  SumAccum<INT> @@count_SI25;
+  SumAccum<INT> @@count_SI5;
+
+  SumAccum<INT> @@count_500;
+  SumAccum<INT> @@count_500_SI0;
+  SumAccum<INT> @@count_500_SI02;
+  SumAccum<INT> @@count_500_SI25;
+  SumAccum<INT> @@count_500_SI5;
+
+  SumAccum<INT> @@count_220;
+  SumAccum<INT> @@count_220_SI0;
+  SumAccum<INT> @@count_220_SI02;
+  SumAccum<INT> @@count_220_SI25;
+  SumAccum<INT> @@count_220_SI5;
+
+  SumAccum<INT> @@count_110;
+  SumAccum<INT> @@count_110_SI0;
+  SumAccum<INT> @@count_110_SI02;
+  SumAccum<INT> @@count_110_SI25;
+  SumAccum<INT> @@count_110_SI5;
+
+  SumAccum<INT> @@count_35;
+  SumAccum<INT> @@count_35_SI0;
+  SumAccum<INT> @@count_35_SI02;
+  SumAccum<INT> @@count_35_SI25;
+  SumAccum<INT> @@count_35_SI5;
+
+  SumAccum<INT> @@count_10;
+  SumAccum<INT> @@count_10_SI0;
+  SumAccum<INT> @@count_10_SI02;
+  SumAccum<INT> @@count_10_SI25;
+  SumAccum<INT> @@count_10_SI5;
+
+  SumAccum<INT> @@count_other;
+  SumAccum<INT> @@count_other_SI0;
+  SumAccum<INT> @@count_other_SI02;
+  SumAccum<INT> @@count_other_SI25;
+  SumAccum<INT> @@count_other_SI5;
+	
+  
+  string group_device ="线路N-1故障组";
+  
+   if (device_type=="AC传输线") then
+        group_device = "线路N-1故障组";
+   end;
+  if (device_type=="双绕组变压器") then 
+        group_device ="两卷变N-1故障组";
+   end;
+  if (device_type=="三绕组变压器") then 
+        group_device ="三卷变N-1故障组";
+   end;
+  
+  sub = {Substation.*};
+  Tfault = {Fault.*};
+
+  sub = select s from sub:s-((connected_Sub_Aclinedot>|connected_Sub_Trans_two>|connected_Sub_Trans_three>|connected_Sub_Unit>):e)-:t
+        accum
+          t.@subid = s.strid;
+  
+  deviceSet = select t1 from Tfault:s -((fault_aclinedot_select|fault_twoport_select|fault_threeport_select|fault_unit_select):e1)-:t1-((topo_aclinedot|topo_unit|topo_Tx_Two|topo_Tx_Three):e)-:t where s.groupname==group_device
+                ACCUM 
+                  t1.@bus_name = t.bus_name;
+  
+   if (device_type=="AC传输线") then
+       faultSet_acline = select s from Tfault:s -(fault_aclinedot_select:e1)-:t1-(aclinedot_aclinedot>:e)-:t where s.groupname==group_device
+        ACCUM
+            //s.@volt
+            @@result+= row(e.name, e.volt, t1.@bus_name, t.@bus_name, s.SI, t1.Subname, t1.@subid, t.Subname, t.@subid),
+            @@result_part+= row(e.name, e.volt, t1.@bus_name, t.@bus_name, s.SI, t1.Subname, t1.@subid, t.Subname, t.@subid),
+            @@count_all += 1,
+            double line_volt = t1.volt,
+            if line_volt >= 500 then
+                  @@count_500 += 1,
+                  if s.SI == 0 then
+                     @@count_500_SI0 += 1,
+                      @@count_SI0 += 1
+                  else if s.SI > 0 and s.SI <=2 then
+                     @@count_500_SI02 += 1,
+                     @@count_SI02 += 1
+                  else if s.SI > 2 and s.SI <= 5 then
+                     @@count_500_SI25 += 1,
+                     @@count_SI25 += 1
+                  else if s.SI > 5 then
+                     @@count_500_SI5 += 1,
+                     @@count_SI5 += 1
+                  end
+                else if line_volt >= 220 then
+                  @@count_220 += 1,
+                  if s.SI == 0 then
+                     @@count_220_SI0 += 1,
+                     @@count_SI0 += 1
+                  else if s.SI > 0 and s.SI <=2 then
+                     @@count_220_SI02 += 1,
+                     @@count_SI02 += 1
+                  else if s.SI > 2 and s.SI <= 5 then
+                     @@count_220_SI25 += 1,
+                     @@count_SI25 += 1
+                  else if s.SI > 5 then
+                     @@count_220_SI5 += 1,
+                     @@count_SI5 += 1
+                  end
+                end;
+   end;
+  if (device_type=="双绕组变压器") then 
+       faultSet_trans2 = select s from Tfault:s -(fault_twoport_select:e)-:t where s.groupname ==group_device
+                ACCUM
+                  @@result+= row(t.name, t.volt, t.@bus_name, t.@bus_name, s.SI, t.Substation, t.@subid, t.Substation, t.@subid),
+            @@result_part+= row(t.name, t.volt, t.@bus_name, t.@bus_name, s.SI, t.Substation, t.@subid, t.Substation, t.@subid),
+            @@count_all += 1,
+            double line_volt = t.volt,
+            if line_volt >= 500 then
+                  @@count_500 += 1,
+                  if s.SI == 0 then
+                     @@count_500_SI0 += 1,
+                      @@count_SI0 += 1
+                  else if s.SI > 0 and s.SI <=2 then
+                     @@count_500_SI02 += 1,
+                     @@count_SI02 += 1
+                  else if s.SI > 2 and s.SI <= 5 then
+                     @@count_500_SI25 += 1,
+                     @@count_SI25 += 1
+                  else if s.SI > 5 then
+                     @@count_500_SI5 += 1,
+                     @@count_SI5 += 1
+                  end
+                else if line_volt >= 220 then
+                  @@count_220 += 1,
+                  if s.SI == 0 then
+                     @@count_220_SI0 += 1,
+                     @@count_SI0 += 1
+                  else if s.SI > 0 and s.SI <=2 then
+                     @@count_220_SI02 += 1,
+                     @@count_SI02 += 1
+                  else if s.SI > 2 and s.SI <= 5 then
+                     @@count_220_SI25 += 1,
+                     @@count_SI25 += 1
+                  else if s.SI > 5 then
+                     @@count_220_SI5 += 1,
+                     @@count_SI5 += 1
+                  end
+                end;
+   end;
+  if (device_type=="三绕组变压器") then 
+        faultSet_trans3 = select s from Tfault:s -(fault_threeport_select:e)-:t where s.groupname ==group_device 
+                ACCUM
+                  @@result+= row(t.name, t.volt, t.@bus_name, t.@bus_name, s.SI, t.Substation, t.@subid, t.Substation, t.@subid),
+            @@result_part+= row(t.name, t.volt, t.@bus_name, t.@bus_name, s.SI, t.Substation, t.@subid, t.Substation, t.@subid),
+            @@count_all += 1,
+            double line_volt = t.volt,
+            if line_volt >= 500 then
+                  @@count_500 += 1,
+                  if s.SI == 0 then
+                     @@count_500_SI0 += 1,
+                      @@count_SI0 += 1
+                  else if s.SI > 0 and s.SI <=2 then
+                     @@count_500_SI02 += 1,
+                     @@count_SI02 += 1
+                  else if s.SI > 2 and s.SI <= 5 then
+                     @@count_500_SI25 += 1,
+                     @@count_SI25 += 1
+                  else if s.SI > 5 then
+                     @@count_500_SI5 += 1,
+                     @@count_SI5 += 1
+                  end
+                else if line_volt >= 220 then
+                  @@count_220 += 1,
+                  if s.SI == 0 then
+                     @@count_220_SI0 += 1,
+                     @@count_SI0 += 1
+                  else if s.SI > 0 and s.SI <=2 then
+                     @@count_220_SI02 += 1,
+                     @@count_SI02 += 1
+                  else if s.SI > 2 and s.SI <= 5 then
+                     @@count_220_SI25 += 1,
+                     @@count_SI25 += 1
+                  else if s.SI > 5 then
+                     @@count_220_SI5 += 1,
+                     @@count_SI5 += 1
+                  end
+                end;
+       end;
+  
+  if return_all then
+    print @@result;
+  else
+    print @@result_part;
+  end;
+//  print @@result.size();
+  print @@count_all;
+  print @@count_SI0;
+  print @@count_SI02;
+  print @@count_SI25;
+  print @@count_SI5;
+
+  print @@count_500;
+  print @@count_500_SI0;
+  print @@count_500_SI02;
+  print @@count_500_SI25;
+  print @@count_500_SI5;
+
+  print @@count_220;
+  print @@count_220_SI0;
+  print @@count_220_SI02;
+  print @@count_220_SI25;
+  print @@count_220_SI5;
+
+  print @@count_110;
+  print @@count_110_SI0;
+  print @@count_110_SI02;
+  print @@count_110_SI25;
+  print @@count_110_SI5;
+
+  print @@count_35;
+  print @@count_35_SI0;
+  print @@count_35_SI02;
+  print @@count_35_SI25;
+  print @@count_35_SI5;
+
+  print @@count_10;
+  print @@count_10_SI0;
+  print @@count_10_SI02;
+  print @@count_10_SI25;
+  print @@count_10_SI5;
+
+  print @@count_other;
+  print @@count_other_SI0;
+  print @@count_other_SI02;
+  print @@count_other_SI25;
+  print @@count_other_SI5;	
+}

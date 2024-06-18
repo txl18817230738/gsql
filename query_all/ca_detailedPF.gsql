@@ -1,0 +1,143 @@
+create query ca_detailedPF () //int max_line_number
+for graph gsql_EMS {
+	
+   TYPEDEF TUPLE < int s_exId, int t_exId, int sci_order, int edgeID, string _edge_name, int eSize> SIheap;
+   //ListAccum<ca_pf_detail> @@Powerflow;
+   
+// ---------------------------------------------------------------------------------
+// 				Define variables and arrays
+// ---------------------------------------------------------------------------------
+   //SumAccum<double> @@deltaP_vt;
+   MaxAccum<double> @@PI = 3.1415926535898;
+  
+   
+   int CAcounter = 0;    //used to record the number of detailed CA cases from front-end
+   
+   VERTEX slackVertex;
+   
+   int TotalDecision = 0;
+   int TotalDecisionAnalysis = 0;
+   SumAccum<int> @@Decision_count = 0;
+   SumAccum<int> @@Analysis_Decision_count = 0;
+   SumAccum<int> @@ca_DPF_case = 0;
+   //ListAccum<int> @@CSeverityListAccum;
+
+   SumAccum<int> @DPF_SI;
+   MapAccum<string, double> @@DPF_SI_Map;
+  //log(true, "CA full processing start");
+  T0= {TopoND.*};   //start from all grid vertices in the graph
+  T_paras = {parameters.*}; //need to get the number of detailed CA cases from front-end
+  T_status = {status.*};
+  Tfault = {Fault.*};
+  //log(true, "============ CA-power_flow start here =================");
+
+  //delete fualt to overlimit device edges to prepare to update the connection
+  DELETE e from Tfault:s - ((fault_aclinedot_overlimit|fault_twoport_overlimit|fault_threeport_overlimit|fault_bus_overlimit):e)-:t;
+
+  // Manually find the exId of slack bus  [YL, 04.2019] 
+  SlackBus = select v
+			from  T0:v
+			where (v.busType == 3) and (v.island==1)
+			Post-accum
+				slackVertex = v;
+
+  paras =  SELECT s FROM T_paras:s
+            POST-ACCUM
+                CAcounter = s.ca_NumOfDetail,
+                if (s.ca_NumOfDetail < 0) then
+                    CAcounter = 50
+                end;
+	
+  // Combine the DPF logic of 3-windtrans and convenitonal edge  [YL, 04.2019] 		
+  T1 = select v
+     from  T0:v-(topo_connect:e)->TopoND:t
+      where (e.reverse == 1) and (v.island == 1 and t.island == 1)  and (e.CA_bridge >= 0)
+     accum
+        foreach i in range[0, e.X.size()-1] do // i is the internal idx of ith line in the paralines
+            if (e.Analysis_decision.get(i) == 1 and e.SI_order.get(i) > CAcounter) then
+                 @@Analysis_Decision_count += 1
+            end,
+            if (e.Decision.get(i) == 1) then
+            	 @@Decision_count += 1
+            end
+       end;
+
+//log(true, TotalDecisionAnalysis, TotalDecision, @@Decision_count);
+   paras =  SELECT s FROM T_paras:s
+            POST-ACCUM
+                CAcounter = s.ca_NumOfDetail - @@Analysis_Decision_count,
+                if (s.ca_NumOfDetail < @@Analysis_Decision_count) then
+                    CAcounter = 0
+                end;
+
+  T1_status = SELECT s FROM T_status:s
+        POST-ACCUM
+            s.ca_DPF_case = CAcounter + @@Analysis_Decision_count,
+            @@ca_DPF_case += CAcounter + @@Analysis_Decision_count;
+
+//===========calculate unit fault first==============================================
+ unitSet = select t from Tfault:s-(fault_unit_select:e)-:t
+        where s.detailedanalysis_flag == 1;
+
+ Topo_unit = select t from unitSet:s-(topo_unit:e)-:t;
+
+ Topo_unit = select v
+        from  Topo_unit:v-(topo_connect:e)->TopoND:t
+        where v.island == 1 and t.island == 1
+        accum
+            v.@DPF_SI = fdpf_contingency_v2_paral_test_ZYL_Parline_3(v.exId, t.exId, 0, e.key_list.get(0), e.device_type, e.edge_name.get(0), 1);
+
+ unitSet = select t from Topo_unit:s-(topo_unit:e)-:t
+        accum
+        t.@DPF_SI = s.@DPF_SI
+        post-accum
+        t.OverLimit_count = t.@DPF_SI;
+
+ faultSet = select s from Tfault:s-(fault_unit_select:e)-:t
+        accum
+          s.@DPF_SI = t.@DPF_SI
+        post-accum
+          s.linevio = s.@DPF_SI;
+
+//================================================================================
+
+  T1 = select v
+	from  T0:v-(topo_connect:e)->TopoND:t
+	where (e.reverse == 1) and (v.island == 1 and t.island == 1)  and (e.CA_bridge >= 0)
+	accum
+	int DPF_SI = 0,
+		foreach i in range[0, e.X.size()-1] do // i is the internal idx of ith line in the paralines
+			if (e.Analysis_decision.get(i) == 1) then
+					DPF_SI = fdpf_contingency_v2_paral_test_ZYL_Parline_3(v.exId, t.exId, i, e.key_list.get(i), e.device_type, e.edge_name.get(i), e.X.size()),
+					@@DPF_SI_Map += (e.edge_name.get(i) -> DPF_SI)
+			else if (e.Analysis_decision.get(i) == 0 and e.Decision.get(i) == 1) and ((@@Decision_count <= CAcounter) or 
+			  (@@Decision_count > CAcounter and e.SI_order.get(i) >= 1 and  e.SI_order.get(i) <= CAcounter)) then
+					DPF_SI = fdpf_contingency_v2_paral_test_ZYL_Parline_3(v.exId, t.exId, i, e.key_list.get(i), e.device_type, e.edge_name.get(i), e.X.size()),
+					@@DPF_SI_Map += (e.edge_name.get(i) -> DPF_SI)
+			end
+		end;
+  
+  // Below is for writing back CSeverity result
+
+   //Write Detailed Power Flow SI value back to edge peorperty "e.CSeverity"
+   T1 = select v
+		from  T0:v-(topo_connect:e)->TopoND:t
+		where (v.island ==1 and t.island == 1) and (e.reverse == 1)  and (e.CA_bridge >= 0)
+		accum
+		   int Edge_TotalDecision = 0,
+		   int Edge_TotalAnalysisDecision = 0,
+           foreach i in range[0, e.X.size()-1] do // i is the internal idx of ith line in the paralines
+              Edge_TotalDecision  = Edge_TotalDecision | e.Decision.get(i),
+              Edge_TotalAnalysisDecision  = Edge_TotalAnalysisDecision | e.Analysis_decision.get(i)
+           end,
+		   if (Edge_TotalAnalysisDecision == 1) then
+				e.CSeverity = GetMapValuesFromListString(@@DPF_SI_Map, e.edge_name)
+		   else if (Edge_TotalAnalysisDecision == 0 and Edge_TotalDecision == 1) then
+				e.CSeverity = GetMapValuesFromListString(@@DPF_SI_Map, e.edge_name)
+		   end;
+
+  print @@DPF_SI_Map;
+  print @@DPF_SI_Map.size();
+  print @@ca_DPF_case;
+  print @@Analysis_Decision_count;
+}

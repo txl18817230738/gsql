@@ -1,0 +1,174 @@
+create query se_all_info_voltageVio(string companyID="113715890758877224", bool return_all=true) for graph gsql_EMS {
+	
+    TYPEDEF TUPLE <int exId, string bus_name, string sub_name, string sub_id, double volt, double Vmax,  double Vmin,  double cal_Vm, double difference, double per_rating, string vio_type> voltage_vio;
+
+
+	SumAccum<int> @@id;
+	SumAccum<string> @vio_type;
+	SumAccum<double> @difference;
+	SumAccum<double> @per_rating;
+	SumAccum<double> @Vmin=0.9;
+	SumAccum<double> @Vmax=1.1;
+        SumAccum<string> @subid;
+	HeapAccum<voltage_vio>(10000000, volt DESC, vio_type DESC, bus_name ASC) @@voltageVio_all;
+        HeapAccum<voltage_vio>(50,  volt DESC, vio_type DESC, bus_name ASC) @@voltageVio_part;
+  SetAccum<string> @@Comp_ID;		
+  SumAccum<INT> @@count_vio_high;
+  SumAccum<INT> @@count_vio_low;
+
+  SumAccum<INT> @@count_500;
+  SumAccum<INT> @@count_500_vio_high;
+  SumAccum<INT> @@count_500_vio_low;
+
+  SumAccum<INT> @@count_220;
+  SumAccum<INT> @@count_220_vio_high;
+  SumAccum<INT> @@count_220_vio_low;
+
+  SumAccum<INT> @@count_110;
+  SumAccum<INT> @@count_110_vio_high;
+  SumAccum<INT> @@count_110_vio_low;
+
+  SumAccum<INT> @@count_35;
+  SumAccum<INT> @@count_35_vio_high;
+  SumAccum<INT> @@count_35_vio_low;
+
+  SumAccum<INT> @@count_10;
+  SumAccum<INT> @@count_10_vio_high;
+  SumAccum<INT> @@count_10_vio_low;
+
+  SumAccum<INT> @@count_other;
+  SumAccum<INT> @@count_other_vio_high;
+  SumAccum<INT> @@count_other_vio_low;
+
+  SumAccum<INT> @@count_all;
+
+	T0 = {TopoND.*};
+  sub = {Substation.*};
+  comp = {gridcom.*};
+
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID;
+
+  Tsub_topo = SELECT t FROM sub:s - (topoid_subid:e) -:t
+                accum
+                t.@subid = s.strid;
+
+    T1 = SELECT s
+	      FROM Tsub_topo:s
+		  where s.island == 1 //(s.busType==0 OR s.busType==1) and 
+		  POST-ACCUM 
+		  double volt = s.base_kV,
+	   case when (s.PF_Vm >= s.up_V) then
+			 s.@vio_type="高电压越限",
+			 s.@difference=s.PF_Vm-s.@Vmax,
+			 s.@per_rating=s.@difference/s.@Vmax*100
+		when (s.PF_Vm <= s.lo_V) then
+			 s.@vio_type="低电压越限",
+			 s.@difference=s.@Vmin-s.PF_Vm,
+			 s.@per_rating=s.@difference/s.@Vmin*100
+		else 
+			s.@vio_type="正常"
+		end,
+	    case when (s.@vio_type != "正常")  then
+		    @@voltageVio_all+= voltage_vio(s.exId, s.bus_name, s.Sub, s.@subid, s.base_kV, s.@Vmax, s.@Vmin, s.PF_Vm, s.@difference, s.@per_rating, s.@vio_type),
+                    @@voltageVio_part+= voltage_vio(s.exId, s.bus_name, s.Sub, s.@subid, s.base_kV, s.@Vmax, s.@Vmin, s.PF_Vm, s.@difference, s.@per_rating, s.@vio_type),
+                    @@count_all += 1,
+                    if volt >= 500 then
+                           @@count_500 += 1,
+                            if s.@vio_type == "高电压越限" then
+                                @@count_500_vio_high +=1,
+                                @@count_vio_high +=1
+                            else if s.@vio_type == "低电压越限" then
+                                @@count_500_vio_low +=1,
+                                @@count_vio_low +=1
+                            end
+                       else if volt >= 220 then
+                           @@count_220 += 1,
+                            if s.@vio_type == "高电压越限" then
+                                @@count_220_vio_high +=1,
+                                @@count_vio_high +=1
+                            else if s.@vio_type == "低电压越限" then
+                                @@count_220_vio_low +=1,
+                                @@count_vio_low +=1
+                            end
+                       else if volt >= 110 then
+                           @@count_110 += 1,
+                            if s.@vio_type == "高电压越限" then
+                                @@count_110_vio_high +=1,
+                                @@count_vio_high +=1
+                            else if s.@vio_type == "低电压越限" then
+                                @@count_110_vio_low +=1,
+                                @@count_vio_low +=1
+                            end
+                       else if volt >= 34.5 then
+                           @@count_35 += 1,
+                            if s.@vio_type == "高电压越限" then
+                                @@count_35_vio_high +=1,
+                                @@count_vio_high +=1
+                            else if s.@vio_type == "低电压越限" then
+                                @@count_35_vio_low +=1,
+                                @@count_vio_low +=1
+                            end
+                       else if volt >= 10 then
+                           @@count_10 += 1,
+                            if s.@vio_type == "高电压越限" then
+                                @@count_10_vio_high +=1,
+                                @@count_vio_high +=1
+                            else if s.@vio_type == "低电压越限" then
+                                @@count_10_vio_low +=1,
+                                @@count_vio_low +=1
+                            end
+                       else
+                           @@count_other += 1,
+                            if s.@vio_type == "高电压越限" then
+                                @@count_other_vio_high +=1,
+                                @@count_vio_high +=1
+                            else if s.@vio_type == "低电压越限" then
+                                @@count_other_vio_low +=1,
+                                @@count_vio_low +=1
+                            end
+                       end
+                 end;
+
+  if return_all then
+    print @@voltageVio_all;
+  else
+    print @@voltageVio_part;
+  end;
+		 
+ 		
+  print @@count_vio_high;
+  print @@count_vio_low;
+
+  print @@count_500;
+  print @@count_500_vio_high;
+  print @@count_500_vio_low;
+
+  print @@count_220;
+  print @@count_220_vio_high;
+  print @@count_220_vio_low;
+
+  print @@count_110;
+  print @@count_110_vio_high;
+  print @@count_110_vio_low;
+
+  print @@count_35;
+  print @@count_35_vio_high;
+  print @@count_35_vio_low;
+
+  print @@count_10;
+  print @@count_10_vio_high;
+  print @@count_10_vio_low;
+
+  print @@count_other;
+  print @@count_other_vio_high;
+  print @@count_other_vio_low;
+
+  print @@count_all;  
+		 
+}

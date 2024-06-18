@@ -1,0 +1,534 @@
+create query CIME_initial() for graph gsql_EMS {
+	SumAccum<int> @off = 0;
+	SumAccum<double> @Rstar = 0;
+	SumAccum<double> @Xstar = 0;
+        SumAccum<double> @ratedMVA = 0;
+        SumAccum<double> @Qrate = 0;
+        SumAccum<double> @Zk = 0;
+        SumAccum<double> @cs_ZK = 0;
+        SumAccum<int> @subid;
+        SumAccum<string> @SubstationID;
+        SumAccum<string> @name;
+        SumAccum<string> @subname;
+        SumAccum<double> @volt;
+        SumAccum<double> @basevalue;
+        SumAccum<double> @tap_meas;
+        SumAccum<double> @tap_ratio;
+        SumAccum<double> @Trans_voltlevel;
+        SumAccum<string> @unit_type;
+	SumAccum<int> @aclinedotID;
+
+//get p.u base
+//S = 100, V = 525, Zbase = (V*V)/S = 2756.25
+
+
+        aclinedot = {ACline_dot.*};
+        loadset = {l_oad.*};
+        unitset = {unit.*};
+        busset = {BUS.*};
+        CPset = {C_P.*};
+        CSset = {C_S.*};
+        basevoltage = {BaseVoltage.*};     
+        T2port = {two_port_transformer.*};
+        T3port = {three_port_transformer.*};
+        two_tap = {two_tap_changer.*};
+        three_tap = {three_tap_changer.*};
+        breaker = {Breaker.*};
+        disconnector = {Disconnector.*};
+        measset = {meas.*};
+        discreteset = {discrete.*};
+
+	
+
+
+
+
+
+//====================initiate acline-sub====================================================//
+        Device = select t from basevoltage:s - ((basevoltage_bus|basevoltage_acline|basevoltage_load|basevoltage_cp|basevoltage_cs|basevoltage_twoxformer|basevoltage_threexformer|basevoltage_unit|basevoltage_breaker|basevoltage_dis):e) -:t
+               accum
+                   t.@volt = s.nomkV
+               post-accum
+                   t.volt = t.@volt,
+                   t.base_value = t.@volt;
+
+        cnSet = select t from aclinedot:s -(aclinedot_cn:e) -:t;
+        T0 = select s from cnSet:s -(cn_subid:e) -:t
+                accum
+                        s.@subid = t.id;
+        T1 = select s from T0:s - (aclinedot_cn:e) -:t
+                accum
+                        t.@subid = s.@subid;
+                    
+        T2 = select s from aclinedot:s - (aclinedot_aclinedot:e) -:t
+                accum
+                    e.volt = s.@volt,
+                    log(true, "voltcheck",s.id, s.name, s.@volt, s.volt),
+
+                     IF (s.@volt > 0) THEN
+                        IF (e.X/(s.@volt*s.@volt/100)>0.001) THEN
+                            e.line_R = abs(e.R)/(s.@volt*s.@volt/100),
+                            e.line_X = e.X/(s.@volt*s.@volt/100)
+                        ELSE
+                            e.line_R = 0.0001,
+                            e.line_X = 0.001
+                        END,
+                        IF (e.B*(s.@volt*s.@volt/100)/1000000/2>0.001) THEN
+                            e.line_B = e.B*(s.@volt*s.@volt/100)/1000000/2
+                        ELSE
+                            e.line_B = 0.001
+                        END
+                     ELSE
+                        e.line_R = 0,
+                        e.line_X = 0,
+                        e.line_B = 0
+                     END;
+
+
+       T2_1 = select s from aclinedot:s - (aclinedot_aclinedot:e) -:t
+                 accum
+                   if (e.line_R > 0.5 * e.line_X) then
+                       e.line_R = e.line_X/10
+                   end,
+                   if e.line_B > 10 then
+                       e.line_B = e.line_B/10,
+                       e.B = e.B/10
+                   end;
+
+/*
+        Device = select t from basevoltage:s - ((basevoltage_bus|basevoltage_acline|basevoltage_load|basevoltage_cp|basevoltage_cs|basevoltage_twoxformer|basevoltage_threexformer|basevoltage_unit|basevoltage_breaker|basevoltage_dis):e) -:t
+               accum
+                 if (s.nomkV == 500) then
+                   t.@volt = 525
+                 else if (s.nomkV == 220) then
+                   t.@volt = 230
+                 else if (s.nomkV == 110) then
+                   t.@volt = 115
+                 else
+                   t.@volt = s.nomkV
+                 end
+               post-accum
+                   t.volt = t.@volt,
+                   t.base_value = t.@volt;
+*/
+
+        T3 = select s from aclinedot:s
+                accum
+                        insert into connected_Aclinedot_Sub values(s.id, s.@subid, s.id),
+                        insert into connected_Sub_Aclinedot values(s.@subid, s.id, s.id),
+                        insert into Meas_sub values(s.id, s.@subid);
+
+        Taclinesub = select s from aclinedot:s - (connected_Aclinedot_Sub:e) -Substation:t
+                accum
+                    s.@subname = t.name,
+                    s.@SubstationID = convertToString(t.id)
+                post-accum
+                    s.Subname = s.@subname,
+                    s.name = get_busname(s.name, s.@subname);
+
+        Tacline = select s from aclinedot:s - (aclinedot_aclinedot:e)- ACline_dot:t
+                accum
+                    e.I_node = s.name,
+                    e.J_node = t.name;
+
+//print Tsub[Tsub.name, Tsub.Substation, Tsub.@subname];
+
+
+//====================set s.S if it does not have value==========================================//
+       T4 = SELECT s FROM T2port:s
+                 POST-ACCUM
+                 IF (s.S < 0.1) THEN
+                    s.S = 0.1
+                 END;
+
+       T6 = SELECT s FROM T3port:s
+                 POST-ACCUM
+                 IF (s.S < 0.1) THEN
+                    s.S = 0.1
+                 END;
+
+//====================set two port transformers==================================================//	
+//S = 100, V = 525, Zbase = (V*V)/S = 2756.25 
+
+        T4 = SELECT s FROM T2port:s -(txI_txJ_transformerline:e) ->:t
+                ACCUM
+                 IF (s.id == 7318349429080067) THEN
+                     log(true, "two_port_check",s.id, s.Rstar, s.Xstar, t.id, t.Rstar, t.Xstar)
+                 END,
+                  IF (s.X > 0.01 and s.volt > 0) THEN
+                     IF (abs(s.R)/(s.volt*s.volt/100) > 0.0001) THEN
+                         s.@Rstar = abs(s.R)/(s.volt*s.volt/100)
+                     ELSE
+                         s.@Rstar = 0.0001
+                     END,
+                     IF (s.X/(s.volt*s.volt/100) >0.001) THEN
+                         s.@Xstar = s.X/(s.volt*s.volt/100)
+                     ELSE
+                         s.@Xstar = 0.001
+                     END
+                  ELSE IF (s.X < 0.01 + 0.00001 and t.volt > 0) THEN
+                     IF (abs(t.R)/(t.volt*t.volt/100) > 0.0001) THEN
+                         s.@Rstar = abs(t.R)/(t.volt*t.volt/100)
+                     ELSE
+                         s.@Rstar = 0.0001
+                     END,
+                     IF (t.X/(t.volt*t.volt/100) >0.001) THEN
+                         s.@Xstar = t.X/(t.volt*t.volt/100)
+                     ELSE
+                         s.@Xstar = 0.001
+                     END
+                  END
+                 POST-ACCUM
+                 s.t = 1,
+                 if (s.@Xstar > 0.5) then
+                    s.Xstar = 0.5
+                 else 
+                    s.Xstar = s.@Xstar
+                 end,
+                 if (s.@Rstar > 0.1) then
+                    s.Rstar = 0.1
+                 else
+                    s.Rstar = s.@Rstar
+                 end;
+
+
+        T5 = SELECT s FROM T2port:s -(txJ_txI_transformerline:e) ->:t
+                 ACCUM
+                  IF (s.X > 0.01 and s.volt > 0) THEN
+                     IF (abs(s.R)/(s.volt*s.volt/100) > 0.0001) THEN
+                         s.@Rstar = abs(s.R)/(s.volt*s.volt/100)
+                     ELSE
+                         s.@Rstar = 0.0001
+                     END,
+                     IF (s.X/(s.volt*s.volt/100) >0.001) THEN
+                         s.@Xstar = s.X/(s.volt*s.volt/100)
+                     ELSE
+                         s.@Xstar = 0.001
+                     END
+                  ELSE IF (s.X < 0.01 + 0.00001 and t.volt > 0) THEN
+                     IF (abs(t.R)/(t.volt*t.volt/100) > 0.0001) THEN
+                         s.@Rstar = abs(t.R)/(t.volt*t.volt/100)
+                     ELSE
+                         s.@Rstar = 0.0001
+                     END,
+                     IF (t.X/(t.volt*t.volt/100) >0.001) THEN
+                         s.@Xstar = t.X/(t.volt*t.volt/100)
+                     ELSE
+                         s.@Xstar = 0.001
+                     END
+                  END
+                 POST-ACCUM
+                 s.t = 1,
+                  if (s.@Xstar > 0.5) then
+                    s.Xstar = 0.5
+                 else
+                    s.Xstar = s.@Xstar
+                 end,
+                 if (s.@Rstar > 0.1) then
+                    s.Rstar = 0.1
+                 else
+                    s.Rstar = s.@Rstar
+                 end;
+
+
+        T45 = SELECT s FROM T2port:s -((txI_txJ_transformerline|txJ_txI_transformerline):e) ->:t
+                 ACCUM
+                 IF (s.volt >= t.volt) THEN
+                       t.@Rstar = s.@Rstar,
+                       t.@Xstar = s.@Xstar
+                 ELSE
+                       s.@Rstar = t.@Rstar,
+                       s.@Xstar = t.@Xstar
+                 END
+                 POST-ACCUM
+                 s.t = 1,
+                 if (s.@Xstar > 0.5) then
+                    s.Xstar = 0.5
+                 else
+                    s.Xstar = s.@Xstar
+                 end,
+                 if (s.@Rstar > 0.1) then
+                    s.Rstar = 0.1
+                 else
+                    s.Rstar = s.@Rstar
+                 end;
+
+
+        T2portsub = select s from T2port:s - (connected_Trans_two_Sub:e) -Substation:t
+                 accum 
+                 s.@subname = t.name,
+                 s.@SubstationID = convertToString(t.id)
+                 post-accum
+                 s.Substation = s.@subname,
+                 s.name = get_busname(s.name, s.@subname);
+// edited by hong.fan, 03132023, get tap meas from transformer's meas point instead of tap changer's meas point
+       tap2 = SELECT t
+            FROM measset:s - (meas_tap_two:e) -> :t
+            ACCUM
+            t.@tap_meas = s.tap
+            POST-ACCUM
+            t.tap_meas = t.@tap_meas;
+
+       //tap2 = SELECT t
+       //     FROM measset:s - (Meas_trans2:e) -> :t
+       //     ACCUM
+       //     t.@tap_meas = s.tap;
+        T2tap = select t from two_tap:s - (two_tap_winding:e) -two_port_transformer:t
+                 accum
+                 IF (s.tap_meas >= s.lowStep and s.tap_meas <= s.highStep and t.volt > 0) THEN
+                     t.@tap_ratio = (t.volt - (s.neutralStep - s.tap_meas)*s.stepVoltageIncrement)/t.volt
+                 ELSE
+                     t.@tap_ratio = 1
+                 END
+                 post-accum
+                     t.t = t.@tap_ratio;
+
+
+
+      T4_1 = select s from T2port:s
+                 where s.@Xstar > 0.1
+                 post-accum
+                       s.Xstar = s.@Xstar/10,
+                       s.Rstar = s.@Rstar/10;
+
+      T4_2 = select s from T2port:s
+                 post-accum
+                     if (s.Rstar > 0.8*s.Xstar) then
+                       s.Rstar = s.Xstar/10
+                     end;
+
+//======================set three port transformers=============================================//
+
+        T3portsub = select s from T3port:s - (connected_Trans_three_Sub:e) -Substation:t
+                 accum
+                 s.@subname = t.name,
+                 IF (t.volt == 500 or t.volt == 525) THEN
+                     s.@Trans_voltlevel = 525
+                 ELSE IF (t.volt == 220 or t.volt == 230) THEN
+                     s.@Trans_voltlevel = 230
+                 ELSE IF (t.volt == 110 or t.volt == 115) THEN
+                     s.@Trans_voltlevel = 115
+                 ELSE
+                     s.@Trans_voltlevel = t.volt
+                 END,
+                 s.@SubstationID = convertToString(t.id)
+                 post-accum
+                 s.Substation = s.@subname,
+                 s.name = get_busname(s.name, s.@subname);
+
+
+       T6 = SELECT s FROM T3port:s
+                 POST-ACCUM
+                 s.t = 1,
+                 IF (s.volt > 0) THEN
+                   IF (abs(s.R/(s.volt*s.volt/100)) >= 0.0001) THEN
+                       s.Rstar = abs(s.R/(s.volt*s.volt/100))
+                   ELSE
+                       s.Rstar = 0.0001
+                   END,
+                   IF (abs(s.X/(s.volt*s.volt/100)) >= 0.001) THEN
+                       s.Xstar = s.X/(s.volt*s.volt/100)
+                   ELSE IF abs(s.X/(s.volt*s.volt/100)) < 0.001 THEN
+                       s.Xstar = 0.001
+                   END
+                 END,
+                 IF (s.@Trans_voltlevel < 500 and s.@Trans_voltlevel > 0) THEN
+                     IF (abs(s.R/(525*525/100)) > 0.0001) THEN
+                         s.Rstar = abs(s.R/(525*525/100))
+                     ELSE
+                         s.Rstar = 0.0001
+                     END,
+                     IF (abs(s.X/(525*525/100)) >= 0.001) THEN
+                         s.Xstar = s.X/(525*525/100)
+                     ELSE IF abs(s.X/(525*525/100)) < 0.001 THEN
+                         s.Xstar = 0.001
+                     END
+                   END;
+
+
+
+       T6_1 = SELECT s FROM T3port:s
+                 POST-ACCUM
+                 IF (s.name == "基地站.1主变-高") THEN
+                     s.Xstar = 0.01579
+                 END,
+                 IF (s.Rstar > 0.8*s.Xstar) THEN
+                     s.Rstar = s.Xstar/10
+                 END;
+
+
+
+// edited by hong.fan, 03132023, get tap meas from transformer's meas point instead of tap changer's meas point
+       tap3 = SELECT t
+            FROM measset:s - (meas_tap_three:e) -> :t
+            ACCUM
+            t.@tap_meas = s.tap
+            POST-ACCUM
+            t.tap_meas = t.@tap_meas;
+       //tap3 = SELECT t
+       //     FROM measset:s - (Meas_trans3:e) -> :t
+       //     ACCUM
+       //     t.@tap_meas = s.tap;
+
+        T3tap = select t from three_tap:s - (three_tap_winding:e) -three_port_transformer:t
+                 accum
+                 IF (s.tap_meas >= s.lowStep and s.tap_meas <= s.highStep and t.volt > 0) THEN
+                     t.@tap_ratio = (t.volt - (s.neutralStep - s.tap_meas)*s.stepVoltageIncrement)/t.volt
+                 ELSE
+                     t.@tap_ratio = 1
+                 END
+                 post-accum
+                     t.t = t.@tap_ratio;
+
+//====================set load===================================================================//
+          Tloadsub = select s from loadset:s - (connected_Load_Sub:e) -Substation:t
+               accum
+               s.@subname = t.name,
+               s.@SubstationID = convertToString(t.id)
+               post-accum
+               s.Substation = s.@subname,
+               s.name = get_busname(s.name, s.@subname);
+
+//====================set unit===================================================================//
+        Tunitsub = select s from unitset:s - (connected_Unit_Sub:e) -Substation:t
+               where s.id < 200000000000000000
+                 accum
+                 if (t.subtype == "换流站" and lastN_Name(s.name,3) != "SVG" and lastN_Name(s.name,3) != "COM") then
+                     s.@unit_type = "交换机组"
+                 else if (t.subtype == "风电场") then
+                     s.@unit_type = "风电机组"
+                 else if (t.subtype == "火电厂") then
+                     s.@unit_type = "火电机组"
+                 else if (t.subtype == "水电厂" or t.subtype == "小水电") then
+                     s.@unit_type = "水电机组"
+                 else if (t.subtype == "核电厂") then
+                     s.@unit_type = "核电机组"
+                 else if (t.subtype == "光伏站" or t.subtype == "储能站") then
+                     s.@unit_type = "光伏机组"
+                 else if (t.subtype == "抽蓄厂") then
+                     s.@unit_type = "抽蓄机组"
+                 else
+                     s.@unit_type = "其他机组"
+                 end,
+                 s.@subname = t.name,
+                 s.@SubstationID = convertToString(t.id)
+                 post-accum
+                 s.Gentype = s.@unit_type,
+                 s.Substation = s.@subname,
+                 s.name = get_busname(s.name, s.@subname);
+//======================vitural and switch unit=================================================//
+        Tunitsub = select s from unitset:s - (connected_Unit_Sub:e) -Substation:t
+               where s.id > 200000000000000000
+                 accum
+                 s.@subname = t.name
+                 post-accum
+                 s.Substation = s.@subname;
+
+
+//====================set bus===================================================================//
+        Tbussub = select s from busset:s - (connected_Bus_Sub:e) -Substation:t
+                 accum
+                 s.@subname = t.name,
+                 s.@SubstationID = convertToString(t.id)
+                 post-accum
+                 s.Substation = s.@subname,
+                 s.name = get_busname(s.name, s.@subname);
+
+//====================set CP===================================================================//
+        Tcpsub = select s from CPset:s - (connected_Compensator_P_Sub:e) -Substation:t
+                 accum
+                 s.@subname = t.name,
+                 s.@SubstationID = convertToString(t.id)
+                 post-accum
+                 s.Substation = s.@subname,
+                 s.name = get_busname(s.name, s.@subname);
+
+//====================set CS===================================================================//
+        Tcs = select s from CSset:s
+                 post-accum
+                 IF (abs(s.Q_rate) < 0.001) THEN
+                     s.@Qrate = 1
+                 ELSE
+                     s.@Qrate = s.Q_rate
+                 END,
+                 IF (abs(s.Zk) < 0.001) THEN
+                    IF s.volt >= 500 THEN
+                       s.@Zk = 20,
+                       s.Zk = 20
+                    ELSE 
+                       s.@Zk = 0.2,
+                       s.Zk = 0.2
+                    END
+                 ELSE
+                     s.@Zk = s.Zk
+                 END,
+                 s.@cs_ZK = abs(s.@Zk/(s.volt*s.volt/s.@Qrate)),
+                 IF s.@cs_ZK > 0.01 THEN
+                    s.cs_ZK = 0.01
+                 ELSE
+                    s.cs_ZK = s.@cs_ZK
+                 END;
+
+        Tcssub = select s from CSset:s - (connected_Compensator_S_Sub:e) -Substation:t
+                 accum
+                 s.@subname = t.name,
+                 s.@SubstationID = convertToString(t.id)
+                 post-accum
+                 s.Substation = s.@subname,
+                 s.name = get_busname(s.name, s.@subname);
+
+//=======================set breaker=============================================================//
+          Tbreaker = select s from breaker:s
+              post-accum
+                  s.point = 1;
+
+        Tbreakersub = select s from breaker:s - (connected_Breaker_Sub:e) -Substation:t
+                 accum
+                 s.@subname = t.name,
+                 s.@SubstationID = convertToString(t.id)
+                 post-accum
+                 s.Substation = s.@subname,
+                 s.name = get_busname(s.name, s.@subname);
+//=======================set disconnector========================================================//
+          Tdisconnector = select s from disconnector:s
+              post-accum
+                  s.point =1;
+
+        Tdisconnectorsub = select s from disconnector:s - (connected_Disconnector_Sub:e) -Substation:t
+                 accum
+                 s.@subname = t.name,
+                 s.@SubstationID = convertToString(t.id)
+                 post-accum
+                 s.Substation = s.@subname,
+                 s.name = get_busname(s.name, s.@subname);
+
+//=======================set measurement======================================================//
+        Tmeas = select s from measset:s - ((Meas_Bus|Meas_AClinedot|Meas_Load|Meas_Unit|Meas_trans2|Meas_trans3|Meas_CP|Meas_CS):e) -:t
+                 accum
+                 s.@name = t.name
+                 post-accum
+                 s.devName = s.@name; 
+
+//=======================set discrete======================================================//
+        Tdiscrete = select s from discreteset:s - ((discrete_breaker|discrete_dis):e) -:t
+                 accum
+                 s.@name = t.name
+                 post-accum
+                 s.devName = s.@name;
+//=============================================================================================
+//====================initiate acline-stvl====================================================//
+	aclinedotCN = select t from aclinedot:s - (aclinedot_cn:e) -:t
+		accum
+			t.@aclinedotID += s.id;
+	print aclinedotCN.size();
+	aclinedotCN = select s from aclinedotCN:s - (stvl_cn:e) -:t
+		accum
+			insert into stvl_acline values(t.ST_VL, s.@aclinedotID);
+	print aclinedotCN.size();
+//print measset[measset.devName, measset.tap];
+//print two_tap[two_tap.name, two_tap.tap_meas];
+//print Tacline;
+//print T2[T2.id, T2.name, T2.volt];
+//print T1[T1.name, T1.Rstar, T1.Xstar,T1.@Rstar, T1.@Xstar];
+
+}

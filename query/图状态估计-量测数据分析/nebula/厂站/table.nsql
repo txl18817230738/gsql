@@ -1,0 +1,5 @@
+"""
+use ems match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation) filter where startid.id = "113715890758877224"
+return s.name as name, startid.name as area, s.total_coverage, s.acline_dot_count, s.acline_dot_meas_count, s.trans2_count, s.trans2_meas_count, s.trans3_count,
+s.trans3_meas_count, s.unit_count, s.unit_meas_count, s.load_count, s.load_meas_count, s.bus_count, s.bus_meas_count
+"""

@@ -1,0 +1,93 @@
+CREATE QUERY PredictNextMeas() FOR GRAPH gsql_EMS { 
+  
+  sub = {Substation.*};
+  T_paras = {status.*};
+  SumAccum<double> @nextValue;
+  SumAccum<double> @nextAng;
+  
+  int curIter;
+  
+  equips(ANY) = SELECT t FROM sub:s - ((connected_Sub_Load|connected_Sub_Aclinedot|connected_Sub_Unit):e) ->:t;
+  busSet = select t from sub:s -(connected_Sub_Bus:e) ->:t;
+  
+  T0 = select s from T_paras:s 
+          ACCUM
+            curIter = s.curIter % 96;//与96取模运算
+  
+  T1 = select s from equips:s-((Unit_meas_history|Load_meas_history|AClinedot_meas_history):e) -:t 
+          ACCUM
+              double beta_1 = 0,
+              double beta_0 = 0,
+              double numerator = 0,
+              double denominator = 0,
+              double y_t = s.Pimeas,
+              if(curIter==1 or curIter ==2 or curIter==3) then 
+                  s.@nextValue = y_t 
+              else 
+                  double y_t_1 = t.today.get(t.today.size()-1).p,
+                  double y_t_2 = t.today.get(t.today.size()-2).p,
+                  int x_mean = curIter -1, //(curIter + curIter-1 + curIter-2)/3,
+                  double y_mean = (y_t + y_t_1 + y_t_2) / 3,
+                  double deta_t_n = (curIter - x_mean) * (y_t - y_mean),
+                  double deta_t_1_n = (curIter-1 - x_mean) * (y_t_1 - y_mean),
+                  double deta_t_2_n = (curIter-2 - x_mean) * (y_t_2 - y_mean),
+                  numerator = deta_t_n + deta_t_1_n + deta_t_2_n,
+                  denominator =2.0,// loop of (x[i] - xMean) * (x[i] - xMean)
+                  beta_1 = numerator / denominator,
+                  beta_0 = y_mean - beta_1 * x_mean,
+                  s.@nextValue = beta_1*(curIter + 1) + beta_0
+              end
+              POST-ACCUM
+                  s.meas_t_next = s.@nextValue;
+               
+   T2 = select s from busSet:s -(Bus_meas_history:e)-:t 
+            ACCUM
+              //幅值
+              double beta_1_v = 0,
+              double beta_0_v = 0,
+              double denominator = 0,
+              double numerator_v = 0,
+              //double denominator_v = 0,
+              //相角
+              double beta_1_ang = 0,
+              double beta_0_ang = 0,
+              double numerator_ang = 0,
+              //double denominator_ang = 0,
+              double y_t_v = s.V,//取状态估计值的幅值
+              double y_t_ang = s.Ang,//取状态估计值的相角
+              if(curIter==1 or curIter ==2 or curIter==3) then 
+                  s.@nextValue = y_t_v,
+                  s.@nextAng = y_t_ang
+              else 
+                  double y_t_1_v = t.today.get(t.today.size()-1).est_p,
+                  double y_t_2_v = t.today.get(t.today.size()-2).est_p,
+                  double y_t_1_ang = t.today.get(t.today.size()-1).est_q,
+                  double y_t_2_ang = t.today.get(t.today.size()-2).est_q,
+                  int x_mean = curIter -1, //(curIter + curIter-1 + curIter-2)/3,
+                  double y_mean_v = (y_t_v + y_t_1_v + y_t_2_v) / 3,
+                  double y_mean_ang = (y_t_ang + y_t_1_ang + y_t_2_ang) / 3,
+                  double deta_t_n_v = (curIter - x_mean) * (y_t_v - y_mean_v),
+                  double deta_t_1_n_v = (curIter-1 - x_mean) * (y_t_1_v - y_mean_v),
+                  double deta_t_2_n_v = (curIter-2 - x_mean) * (y_t_2_v - y_mean_v),
+                  numerator_v = deta_t_n_v + deta_t_1_n_v + deta_t_2_n_v,
+                  
+                  double deta_t_n_ang = (curIter - x_mean) * (y_t_ang - y_mean_ang),
+                  double deta_t_1_n_ang = (curIter-1 - x_mean) * (y_t_1_ang - y_mean_ang),
+                  double deta_t_2_n_ang = (curIter-2 - x_mean) * (y_t_2_ang - y_mean_ang),
+                  numerator_ang = deta_t_n_ang + deta_t_1_n_ang + deta_t_2_n_ang,
+  
+                  denominator =2.0,// loop of (x[i] - xMean) * (x[i] - xMean)
+                  beta_1_v = numerator_v / denominator,
+                  beta_0_v = y_mean_v - beta_1_v * x_mean,
+                  s.@nextValue = beta_1_v*(curIter + 1) + beta_0_v,
+                  beta_1_ang = numerator_ang / denominator,
+                  beta_0_ang = y_mean_ang - beta_1_ang * x_mean,
+                  s.@nextAng = beta_1_ang*(curIter + 1) + beta_0_ang
+              end
+              POST-ACCUM
+                  s.V_t_next = s.@nextValue,
+                  s.Ang_t_next = s.@nextAng;
+  
+  print "next meas calculate end";
+  
+}

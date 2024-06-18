@@ -1,0 +1,590 @@
+CREATE QUERY meas_maintenance_unit(string companyID="113715890758877224", bool return_all=true) FOR GRAPH gsql_EMS { 
+  
+	TYPEDEF TUPLE<string unit_name, string sub_name, string sub_id, string unit_type, string bus_name, double volt, double desired_volts, string volt_mark, double volt_meas_real, string P_mark, double P_meas_real, double meas_overload, string Q_mark, double Q_meas_real, string loadlevel, double next_meas>  unit_list;
+	
+	SumAccum<INT> @@count_all;
+  //SumAccum<int> @island;
+	SumAccum<string> @sub_name;
+	SumAccum<string> @bus_name;
+  SumAccum<string> @sub_id;
+	HeapAccum<unit_list>(10000000, volt DESC, unit_name DESC, sub_name DESC) @@result;
+  HeapAccum<unit_list>(50, volt DESC, unit_name DESC, sub_name DESC) @@result_part;
+	//ListAccum<unit_list> @@unit_list;
+	SetAccum<string> @@Comp_ID;
+  
+  SumAccum<INT> @@count_20;
+  SumAccum<INT> @@count_20_80;
+  SumAccum<INT> @@count_80_100;
+  SumAccum<INT> @@count_100;
+  SumAccum<INT> @@count_neg;
+  SumAccum<INT> @@count_pos;
+  
+  
+  SumAccum<INT> @@count_fire;
+  SumAccum<double> @@count_fire_neg;
+  SumAccum<double> @@count_fire_pos;
+  SumAccum<INT> @@count_fire_20;
+  SumAccum<INT> @@count_fire_20_80;
+  SumAccum<INT> @@count_fire_80_100;
+  SumAccum<INT> @@count_fire_100;
+  SumAccum<INT> @@fire_neg;
+  SumAccum<INT> @@fire_pos;
+  SumAccum<double> @@count_fire_totalcap;
+  SumAccum<double> @@count_fire_generatecap;
+  
+  SumAccum<INT> @@count_water;
+  SumAccum<double> @@count_water_neg;
+  SumAccum<double> @@count_water_pos;
+  SumAccum<INT> @@count_water_20;
+  SumAccum<INT> @@count_water_20_80;
+  SumAccum<INT> @@count_water_80_100;
+  SumAccum<INT> @@count_water_100;
+  SumAccum<INT> @@water_neg;
+  SumAccum<INT> @@water_pos;
+  SumAccum<double> @@count_water_totalcap;
+  SumAccum<double> @@count_water_generatecap;
+  
+  
+  SumAccum<INT> @@count_wind;
+  SumAccum<double> @@count_wind_neg;
+  SumAccum<double> @@count_wind_pos;
+  SumAccum<INT> @@count_wind_20;
+  SumAccum<INT> @@count_wind_20_80;
+  SumAccum<INT> @@count_wind_80_100;
+  SumAccum<INT> @@count_wind_100;
+  SumAccum<INT> @@wind_neg;
+  SumAccum<INT> @@wind_pos;
+  SumAccum<double> @@count_wind_totalcap;
+  SumAccum<double> @@count_wind_generatecap;
+  
+  
+  SumAccum<INT> @@count_light;
+  SumAccum<double> @@count_light_neg;
+  SumAccum<double> @@count_light_pos;
+  SumAccum<INT> @@count_light_20;
+  SumAccum<INT> @@count_light_20_80;
+  SumAccum<INT> @@count_light_80_100;
+  SumAccum<INT> @@count_light_100;
+  SumAccum<INT> @@light_neg;
+  SumAccum<INT> @@light_pos;
+  SumAccum<double> @@count_light_totalcap;
+  SumAccum<double> @@count_light_generatecap;
+  
+  SumAccum<INT> @@count_virtual;
+  SumAccum<double> @@count_virtual_neg;
+  SumAccum<double> @@count_virtual_pos;
+  SumAccum<INT> @@count_virtual_20;
+  SumAccum<INT> @@count_virtual_20_80;
+  SumAccum<INT> @@count_virtual_80_100;
+  SumAccum<INT> @@count_virtual_100;
+  SumAccum<INT> @@virtual_neg;
+  SumAccum<INT> @@virtual_pos;
+  SumAccum<double> @@count_virtual_totalcap;
+  SumAccum<double> @@count_virtual_generatecap;
+  
+  SumAccum<INT> @@count_switch;
+  SumAccum<double> @@count_switch_neg;
+  SumAccum<double> @@count_switch_pos;
+  SumAccum<INT> @@count_switch_20;
+  SumAccum<INT> @@count_switch_20_80;
+  SumAccum<INT> @@count_switch_80_100;
+  SumAccum<INT> @@count_switch_100;
+  SumAccum<INT> @@switch_neg;
+  SumAccum<INT> @@switch_pos;
+  SumAccum<double> @@count_switch_totalcap;
+  SumAccum<double> @@count_switch_generatecap;
+  
+  SumAccum<INT> @@count_nuclear;
+  SumAccum<double> @@count_nuclear_neg;
+  SumAccum<double> @@count_nuclear_pos;
+  SumAccum<INT> @@count_nuclear_20;
+  SumAccum<INT> @@count_nuclear_20_80;
+  SumAccum<INT> @@count_nuclear_80_100;
+  SumAccum<INT> @@count_nuclear_100;
+  SumAccum<INT> @@nuclear_neg;
+  SumAccum<INT> @@nuclear_pos;
+  SumAccum<double> @@count_nuclear_totalcap;
+  SumAccum<double> @@count_nuclear_generatecap;
+  
+  SumAccum<INT> @@count_pumping;
+  SumAccum<double> @@count_pumping_neg;
+  SumAccum<double> @@count_pumping_pos;
+  SumAccum<INT> @@count_pumping_20;
+  SumAccum<INT> @@count_pumping_20_80;
+  SumAccum<INT> @@count_pumping_80_100;
+  SumAccum<INT> @@count_pumping_100;
+  SumAccum<INT> @@pumping_neg;
+  SumAccum<INT> @@pumping_pos;
+  SumAccum<double> @@count_pumping_totalcap;
+  SumAccum<double> @@count_pumping_generatecap;
+
+  SumAccum<INT> @@count_other;
+  SumAccum<double> @@count_other_neg;
+  SumAccum<double> @@count_other_pos;
+  SumAccum<INT> @@count_other_20;
+  SumAccum<INT> @@count_other_20_80;  
+  SumAccum<INT> @@count_other_80_100; 
+  SumAccum<INT> @@count_other_100;
+  SumAccum<INT> @@other_neg;
+  SumAccum<INT> @@other_pos;
+  SumAccum<double> @@count_other_totalcap;
+  SumAccum<double> @@count_other_generatecap;
+
+  SumAccum<double> @@count_all_neg;
+  SumAccum<double> @@count_all_pos;
+  SumAccum<double> @@count_all_totalcap;
+  SumAccum<double> @@count_all_generatecap;
+
+	T0 = {TopoND.*};
+  sub = {Substation.*};
+  comp = {gridcom.*};
+	//T_unit = {unit.*};
+
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID; 
+	
+  unitSet = SELECT t FROM sub:s - (connected_Sub_Unit:e) ->:t where t.off ==0
+                accum
+                t.@sub_name = s.name,
+                t.@sub_id = s.strid;
+	
+	// unit
+			
+	T_unit = SELECT s FROM unitSet:s - (topo_unit:e) - TopoND:t
+			WHERE t.island == 1 and s.Gentype != "虚拟机组" and s.Gentype != "交换机组"
+                        ACCUM
+                        s.@bus_name = t.bus_name;
+			
+         T_unit = SELECT s FROM T_unit:s	
+		              ACCUM
+		                    string P_mark = "",
+                        string Q_mark = "",
+                        int P_mark_num = 0,
+                        int Q_mark_num = 0,
+                        
+                        double p_rate = s.P_rate,
+                        if(s.P_rate <= 0) THEN
+                            p_rate = 300
+                        END,
+                        double meas_overload = 0,
+                        //double cal_overload = 0,
+                        string overload_type = "-",
+                        if abs(p_rate) > 0 then
+                        meas_overload = abs(s.Pimeas/p_rate)*100
+                        //cal_overload = abs(s.P/p_rate)
+                        end,
+                        if meas_overload >= 0 and meas_overload<=20 then
+                            overload_type = "轻载"
+                        else if meas_overload > 20 and meas_overload<=80 then
+                            overload_type = "正常"
+                        else if meas_overload > 80 and meas_overload<=100 then
+                            overload_type = "重载"    
+                        else if meas_overload > 100 then
+                            overload_type = "过载"
+                        end,
+                        IF s.Gentype != "虚拟机组" and s.Gentype != "交换机组" THEN 
+                          IF s.Ue_meas != 0 THEN
+                            IF s.Pimeas != 0 and s.Qimeas != 0 THEN
+                              @@result += unit_list(s.name, s.@sub_name, s.@sub_id, s.Gentype, s.@bus_name, s.volt, s.base_value, "实测", s.Ue_meas, "实测", s.Pimeas, meas_overload, "实测", s.Qimeas, overload_type, s.meas_t_next),
+                              @@result_part += unit_list(s.name, s.@sub_name, s.@sub_id, s.Gentype, s.@bus_name, s.volt, s.base_value, "实测", s.Ue_meas, "实测", s.Pimeas, meas_overload, "实测", s.Qimeas, overload_type,s.meas_t_next)
+                            ELSE IF s.Pimeas == 0 and s.Qimeas != 0 THEN
+                              @@result += unit_list(s.name, s.@sub_name, s.@sub_id, s.Gentype, s.@bus_name, s.volt, s.base_value, "实测", s.Ue_meas, "无实测", 0, meas_overload, "实测", s.Qimeas, overload_type,s.meas_t_next),
+                              @@result_part += unit_list(s.name, s.@sub_name, s.@sub_id, s.Gentype, s.@bus_name, s.volt, s.base_value, "实测", s.Ue_meas, "无实测", 0, meas_overload, "实测", s.Qimeas, overload_type,s.meas_t_next)
+                            ELSE IF s.Pimeas != 0 and s.Qimeas == 0 THEN
+                              @@result += unit_list(s.name, s.@sub_name, s.@sub_id, s.Gentype, s.@bus_name, s.volt, s.base_value, "实测", s.Ue_meas, "实测", s.Pimeas, meas_overload, "无实测", 0, overload_type,s.meas_t_next),
+                              @@result_part += unit_list(s.name, s.@sub_name, s.@sub_id, s.Gentype, s.@bus_name, s.volt, s.base_value, "实测", s.Ue_meas, "实测", s.Pimeas, meas_overload, "无实测", 0, overload_type,s.meas_t_next)
+                            ELSE
+                              @@result += unit_list(s.name, s.@sub_name, s.@sub_id, s.Gentype, s.@bus_name, s.volt, s.base_value, "实测", s.Ue_meas, "无实测", 0, meas_overload, "无实测", 0, overload_type,s.meas_t_next),
+                              @@result_part += unit_list(s.name, s.@sub_name, s.@sub_id, s.Gentype, s.@bus_name, s.volt, s.base_value, "实测", s.Ue_meas, "无实测", 0, meas_overload, "无实测", 0, overload_type,s.meas_t_next)
+                            END
+			                    ELSE
+	                          IF s.Pimeas != 0 and s.Qimeas != 0 THEN
+		                           @@result += unit_list(s.name, s.@sub_name, s.@sub_id, s.Gentype, s.@bus_name, s.volt, s.base_value, "无实测", 0, "实测", s.Pimeas, meas_overload, "实测", s.Qimeas, overload_type,s.meas_t_next),
+                               @@result_part += unit_list(s.name, s.@sub_name, s.@sub_id, s.Gentype, s.@bus_name, s.volt, s.base_value, "实测", s.Ue_meas, "实测", s.Pimeas, meas_overload, "实测", s.Qimeas, overload_type,s.meas_t_next)
+			                      ELSE IF s.Pimeas == 0 and s.Qimeas != 0 THEN
+		                           @@result += unit_list(s.name, s.@sub_name, s.@sub_id, s.Gentype, s.@bus_name, s.volt, s.base_value, "无实测", 0, "无实测", 0, meas_overload, "实测", s.Qimeas, overload_type,s.meas_t_next),
+                               @@result_part += unit_list(s.name, s.@sub_name, s.@sub_id, s.Gentype, s.@bus_name, s.volt, s.base_value, "无实测", 0, "无实测", 0, meas_overload, "实测", s.Qimeas, overload_type,s.meas_t_next)
+	                          ELSE IF s.Pimeas != 0 and s.Qimeas == 0 THEN
+		                           @@result += unit_list(s.name, s.@sub_name, s.@sub_id, s.Gentype, s.@bus_name, s.volt, s.base_value, "无实测", s.Ue_meas, "实测", s.Pimeas, meas_overload, "无实测", 0, overload_type,s.meas_t_next),
+                               @@result_part += unit_list(s.name, s.@sub_name, s.@sub_id, s.Gentype, s.@bus_name, s.volt, s.base_value, "无实测", s.Ue_meas, "实测", s.Pimeas, meas_overload, "无实测", 0, overload_type,s.meas_t_next)
+		                        ELSE
+		                           @@result += unit_list(s.name, s.@sub_name, s.@sub_id, s.Gentype, s.@bus_name, s.volt, s.base_value, "无实测", 0, "无实测", 0, meas_overload, "无实测", 0, overload_type,s.meas_t_next),
+                               @@result_part += unit_list(s.name, s.@sub_name, s.@sub_id, s.Gentype, s.@bus_name, s.volt, s.base_value, "无实测", 0, "无实测", 0, meas_overload, "无实测", 0, overload_type,s.meas_t_next)
+	                          END
+                          END,
+                          @@count_all += 1,
+                          if s.Pimeas <0 then 
+                            @@count_neg += 1
+                          else
+                            @@count_pos += 1
+                          end
+                        END,
+                        if (s.Gentype == "火电机组") then
+                              @@count_fire += 1,
+                              @@count_fire_totalcap += p_rate,
+                              if s.Pimeas <0 then 
+                                    @@count_fire_neg += abs(s.Pimeas),
+                                    @@fire_neg += 1
+                              else
+                                    @@count_fire_pos += s.Pimeas,
+                                    @@fire_pos += 1
+                              end, 
+                              @@count_fire_generatecap +=s.Pimeas,
+                              if meas_overload >= 0 and meas_overload<=20 then
+                                @@count_fire_20+=1,
+                                @@count_20+=1
+                              else if meas_overload > 20 and meas_overload<=80 then
+                                @@count_fire_20_80+=1,
+                                @@count_20_80+=1
+                              else if meas_overload > 80 and meas_overload<=100 then
+                                @@count_fire_80_100+=1,
+                                @@count_80_100+=1            
+                              else if meas_overload > 100 then
+                                @@count_fire_100+=1,
+                                @@count_100+=1
+                              end            
+                      
+                        else if (s.Gentype == "水电机组") then
+                              @@count_water+=1,
+                              @@count_water_totalcap += p_rate,
+                              if s.Pimeas <0 then 
+                                    @@count_water_neg += abs(s.Pimeas),
+                                    @@water_neg += 1
+                              else  
+                                    @@count_water_pos += s.Pimeas,
+                                    @@water_pos += 1
+                              end, 
+                              @@count_water_generatecap +=s.Pimeas,
+                              if meas_overload >= 0 and meas_overload<=20 then
+                                @@count_water_20+=1,
+                                @@count_20+=1
+                              else if meas_overload > 20 and meas_overload<=80 then
+                                @@count_water_20_80+=1,
+                                @@count_20_80+=1
+                              else if meas_overload > 80 and meas_overload<=100 then
+                                @@count_water_80_100+=1,
+                                @@count_80_100+=1            
+                              else if meas_overload > 100 then
+                                @@count_water_100+=1,
+                                @@count_100+=1
+                              end
+                        
+                        else if (s.Gentype == "风电机组") then
+                              @@count_wind+=1,
+                              @@count_wind_totalcap += p_rate,
+                              if s.Pimeas <0 then 
+                                    @@count_wind_neg += abs(s.Pimeas),
+                                    @@wind_neg += 1
+                              else
+                                    @@count_wind_pos += s.Pimeas,
+                                    @@wind_pos += 1
+                              end, 
+                              @@count_wind_generatecap +=s.Pimeas,
+                              if meas_overload >= 0 and meas_overload<=20 then
+                                @@count_wind_20+=1,
+                                @@count_20+=1
+                              else if meas_overload > 20 and meas_overload<=80 then
+                                @@count_wind_20_80+=1,
+                                @@count_20_80+=1
+                              else if meas_overload > 80 and meas_overload<=100 then
+                                @@count_wind_80_100+=1,
+                                @@count_80_100+=1        
+                              else if meas_overload > 100 then
+                                @@count_wind_100+=1,
+                                @@count_100+=1
+                              end
+                        
+                      else if (s.Gentype == "光伏机组") then
+                              @@count_light+=1,
+                              @@count_light_totalcap += p_rate,
+                              if s.Pimeas <0 then 
+                                    @@count_light_neg += abs(s.Pimeas),
+                                    @@light_neg += 1
+                              else 
+                                    @@count_light_pos += s.Pimeas,
+                                    @@light_pos += 1
+                              end, 
+                              @@count_light_generatecap +=s.Pimeas,
+                              if meas_overload >= 0 and meas_overload<=20 then
+                                @@count_light_20+=1,
+                                @@count_20+=1
+                              else if meas_overload > 20 and meas_overload<=80 then
+                                @@count_light_20_80+=1,
+                                @@count_20_80+=1
+                              else if meas_overload > 80 and meas_overload<=100 then
+                                @@count_light_80_100+=1,
+                                @@count_80_100+=1            
+                              else if meas_overload > 100 then
+                                @@count_light_100+=1,
+                                @@count_100+=1
+                              end
+        
+                      else if (s.Gentype == "虚拟机组") then
+                              @@count_virtual+=1,
+                              @@count_virtual_totalcap += p_rate,
+                              if s.Pimeas <0 then 
+                                    @@count_virtual_neg += abs(s.Pimeas),
+                                    @@virtual_neg += 1
+                              else
+                                    @@count_virtual_pos += s.Pimeas,
+                                    @@virtual_pos += 1
+                              end, 
+                              @@count_virtual_generatecap +=s.Pimeas,
+                              if meas_overload >= 0 and meas_overload<=20 then
+                                @@count_virtual_20+=1
+                                //@@count_20+=1
+                              else if meas_overload > 20 and meas_overload<=80 then
+                                @@count_virtual_20_80+=1
+                                //@@count_20_80+=1
+                              else if meas_overload > 80 and meas_overload<=100 then
+                                @@count_virtual_80_100+=1
+                                //@@count_80_100+=1            
+                              else if meas_overload > 100 then
+                                @@count_virtual_100+=1
+                                //@@count_100+=1
+                              end
+              
+                      else if (s.Gentype == "交换机组") then
+                              @@count_switch+=1,
+                              @@count_switch_totalcap += p_rate,
+                              if s.Pimeas <0 then 
+                                    @@count_switch_neg += abs(s.Pimeas),
+                                    @@switch_neg += 1
+                              else
+                                    @@count_switch_pos += s.Pimeas,
+                                    @@switch_pos += 1
+                              end, 
+                              @@count_switch_generatecap +=s.Pimeas,
+                              if meas_overload >= 0 and meas_overload<=20 then
+                                @@count_switch_20+=1
+                                //@@count_20+=1
+                              else if meas_overload > 20 and meas_overload<=80 then
+                                @@count_switch_20_80+=1
+                                //@@count_20_80+=1
+                              else if meas_overload > 80 and meas_overload<=100 then
+                                @@count_switch_80_100+=1
+                                //@@count_80_100+=1            
+                              else if meas_overload > 100 then
+                                @@count_switch_100+=1
+                                //@@count_100+=1
+                              end
+                
+                      else if (s.Gentype == "核电机组") then
+                              @@count_nuclear+=1,
+                              @@count_nuclear_totalcap += p_rate,
+                              if s.Pimeas <0 then 
+                                    @@count_nuclear_neg += abs(s.Pimeas),
+                                    @@nuclear_neg += 1
+                              else
+                                    @@count_nuclear_pos += s.Pimeas,
+                                    @@nuclear_pos += 1
+                              end, 
+                              @@count_nuclear_generatecap +=s.Pimeas,
+                              if meas_overload >= 0 and meas_overload<=20 then
+                                @@count_nuclear_20+=1,
+                                @@count_20+=1
+                              else if meas_overload > 20 and meas_overload<=80 then
+                                @@count_nuclear_20_80+=1,
+                                @@count_20_80+=1
+                              else if meas_overload > 80 and meas_overload<=100 then
+                                @@count_nuclear_80_100+=1,
+                                @@count_80_100+=1            
+                              else if meas_overload > 100 then
+                                @@count_nuclear_100+=1,
+                                @@count_100+=1
+                              end
+
+                      else if (s.Gentype == "抽蓄机组") then
+                              @@count_pumping+=1,
+                              @@count_pumping_totalcap += p_rate,
+                              if s.Pimeas <0 then 
+                                    @@count_pumping_neg += abs(s.Pimeas),
+                                    @@pumping_neg += 1
+                              else
+                                    @@count_pumping_pos += s.Pimeas,
+                                    @@pumping_pos += 1
+                              end, 
+                              @@count_pumping_generatecap +=s.Pimeas,
+                              if meas_overload >= 0 and meas_overload<=20 then
+                                @@count_pumping_20+=1,
+                                @@count_20+=1
+                              else if meas_overload > 20 and meas_overload<=80 then
+                                @@count_pumping_20_80+=1,
+                                @@count_20_80+=1
+                              else if meas_overload > 80 and meas_overload<=100 then
+                                @@count_pumping_80_100+=1,
+                                @@count_80_100+=1            
+                              else if meas_overload > 100 then
+                                @@count_pumping_100+=1,
+                                @@count_100+=1
+                              end
+                      else if (s.Gentype == "其他机组") then
+                              @@count_other+=1,
+                              @@count_other_totalcap += p_rate,
+                              if s.Pimeas <0 then
+                                @@count_other_neg += abs(s.Pimeas),
+                                @@other_neg += 1
+                              else
+                                @@count_other_pos += s.Pimeas,
+                                @@other_pos += 1
+                              end,
+                              @@count_other_generatecap +=s.Pimeas,
+                              if meas_overload >= 0 and meas_overload<=20 then
+                                @@count_other_20+=1,
+                                @@count_20+=1
+                              else if meas_overload > 20 and meas_overload<=80 then
+                                @@count_other_20_80+=1,
+                                @@count_20_80+=1
+                              else if meas_overload > 80 and meas_overload<=100 then
+                                @@count_other_80_100+=1,
+                                @@count_80_100+=1
+                              else if meas_overload > 100 then
+                                @@count_other_100+=1,
+                                @@count_100+=1
+                              end
+                      end;
+	
+  @@count_all_neg = @@count_fire_neg + @@count_nuclear_neg + @@count_water_neg + @@count_light_neg + @@count_wind_neg + @@count_pumping_neg + @@count_other_neg;  
+  @@count_all_pos = @@count_fire_pos + @@count_nuclear_pos + @@count_water_pos + @@count_light_pos + @@count_wind_pos + @@count_pumping_pos + @@count_other_pos; 
+  @@count_all_totalcap = @@count_fire_totalcap + @@count_nuclear_totalcap + @@count_water_totalcap + @@count_light_totalcap + @@count_wind_totalcap + @@count_pumping_totalcap + @@count_other_totalcap;
+  @@count_all_generatecap = @@count_fire_generatecap + @@count_nuclear_generatecap + @@count_water_generatecap + @@count_light_generatecap + @@count_wind_generatecap + @@count_pumping_generatecap + @@count_other_generatecap;
+						
+		
+	if return_all then
+    print @@result;
+  else
+    print @@result_part;
+  end;
+  
+  
+  print @@count_20; //轻载(小于20%)总个数(供柱状图用)
+  print @@count_20_80;//正常(20%-80%)总个数(供柱状图用)
+  print @@count_80_100;//重载(80%-100%)总个数(供柱状图用)
+  print @@count_100;//过载(大于100%)总个数(供柱状图用)
+  
+  
+  print @@count_fire; //发电类型:火电的总个数
+  print @@count_fire_neg;//发电类型:火电的负发电总量
+  print @@count_fire_20;//发电类型:火电的轻载个数
+  print @@count_fire_20_80;//发电类型:火电的正常个数
+  print @@count_fire_80_100;//发电类型:火电的重载个数
+  print @@count_fire_100;//发电类型:火电的过载个数
+  print @@count_fire_totalcap;//发电类型:火电的总容量
+  print @@count_fire_generatecap;//发电类型:火电的量测发电量
+  
+  print @@count_water;//发电类型:水电的总个数
+  print @@count_water_neg;//发电类型:水电的负发电总量
+  print @@count_water_20;//发电类型:水电的轻载个数
+  print @@count_water_20_80;//发电类型:水电的正常个数
+  print @@count_water_80_100;//发电类型:水电的重载个数
+  print @@count_water_100;//发电类型:水电的过载个数
+  print @@count_water_totalcap;//发电类型:水电的总容量
+  print @@count_water_generatecap;//发电类型:水电的量测发电量
+  
+  
+  print @@count_wind;//风电
+  print @@count_wind_neg;
+  print @@count_wind_20;
+  print @@count_wind_20_80;
+  print @@count_wind_80_100;
+  print @@count_wind_100;
+  print @@count_wind_totalcap;
+  print @@count_wind_generatecap;
+  
+  
+  print @@count_light;//光伏
+  print @@count_light_neg;
+  print @@count_light_20;
+  print @@count_light_20_80;
+  print @@count_light_80_100;
+  print @@count_light_100;
+  print @@count_light_totalcap;
+  print @@count_light_generatecap;
+  
+  print @@count_virtual;//虚拟
+  print @@count_virtual_neg;
+  print @@count_virtual_20;
+  print @@count_virtual_20_80;
+  print @@count_virtual_80_100;
+  print @@count_virtual_100;
+  print @@count_virtual_totalcap;
+  print @@count_virtual_generatecap;
+  
+  print @@count_switch;//交换
+  print @@count_switch_neg;
+  print @@count_switch_20;
+  print @@count_switch_20_80;
+  print @@count_switch_80_100;
+  print @@count_switch_100;
+  print @@count_switch_totalcap;
+  print @@count_switch_generatecap;
+  
+  print @@count_nuclear;//核电
+  print @@count_nuclear_neg;
+  print @@count_nuclear_20;
+  print @@count_nuclear_20_80;
+  print @@count_nuclear_80_100;
+  print @@count_nuclear_100;
+  print @@count_nuclear_totalcap;
+  print @@count_nuclear_generatecap;
+  
+  print @@count_pumping;//抽蓄
+  print @@count_pumping_neg;
+  print @@count_pumping_20;
+  print @@count_pumping_20_80;
+  print @@count_pumping_80_100;
+  print @@count_pumping_100;
+  print @@count_pumping_totalcap;
+  print @@count_pumping_generatecap;
+ 
+  print @@count_other;//抽蓄
+  print @@count_other_neg;
+  print @@count_other_20;
+  print @@count_other_20_80;
+  print @@count_other_80_100;
+  print @@count_other_100;
+  print @@count_other_totalcap;
+  print @@count_other_generatecap;
+ 
+  print @@count_all;//总数
+  print @@count_all_neg;
+  print @@count_all_totalcap;
+  print @@count_all_generatecap;  
+
+  print @@count_fire_pos;
+  print @@count_water_pos;
+  print @@count_wind_pos;
+  print @@count_light_pos;
+  print @@count_virtual_pos;
+  print @@count_switch_pos;
+  print @@count_nuclear_pos;
+  print @@count_pumping_pos;
+  print @@count_other_pos;
+  print @@count_all_pos;
+
+  print @@count_neg;
+  print @@count_pos;
+  print @@fire_neg;
+  print @@fire_pos;
+  print @@water_neg;
+  print @@water_pos;
+  print @@wind_neg;
+  print @@wind_pos;
+  print @@light_neg;
+  print @@light_pos;
+  print @@virtual_neg;
+  print @@virtual_pos;
+  print @@switch_neg;
+  print @@switch_pos;
+  print @@nuclear_neg;
+  print @@nuclear_pos;
+  print @@pumping_neg;
+  print @@pumping_pos;
+  print @@other_neg;
+  print @@other_pos;
+}

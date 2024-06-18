@@ -1,0 +1,9 @@
+"""
+use ems match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:connected_Sub_Load]->(t:`l_oad`) filter where startid.id = "113715890758877224" and t.island = 1
+let
+p_mark = case when t.Pimeas <> 0.0  then "实测" else "无实测" end,
+p_mark_num = case when t.Pimeas <> 0.0 then 1 else 0 end,
+q_mark = case when t.Qimeas <> 0.0 then "实测" else "无实测" end,
+q_mark_num = case when t.Qimeas <> 0.0 then 1 else 0 end
+return t.name as name, s.name as subName, t.busName as busName, t.volt, p_mark, t.meas_t_next, t.Pimeas, q_mark, t.Qimeas
+"""

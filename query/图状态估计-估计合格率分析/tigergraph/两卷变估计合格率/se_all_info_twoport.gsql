@@ -1,0 +1,370 @@
+CREATE QUERY se_all_info_twoport(string companyID="113715890758877224", bool return_all=true) FOR GRAPH gsql_EMS { 
+  TYPEDEF TUPLE <string trans2_name, double volt, string sub_name, string sub_id, string from_bus, string to_bus, 
+	// from_side (positive direction) 
+	string P_mark, int P_mark_num, double M_P_TLPF, double P_TLPF, double P_residual, double P_residual_abs, double P_residual_pct, string Q_mark, int Q_mark_num, double M_Q_TLPF, double Q_TLPF, double Q_residual, double Q_residual_abs, double Q_residual_pct,
+	// to_side (reverse direction)
+	string P_mark_reverse, double M_P_TLPF_reverse, double P_TLPF_reverse, double P_residual_reverse, double P_residual_rabs, double P_residual_pct_reverse, string Q_mark_reverse, double M_Q_TLPF_reverse, double Q_TLPF_reverse, double Q_residual_reverse, double Q_residual_rabs, double Q_residual_pct_reverse,
+	string device_type> line;
+    SumAccum<INT> @@count_all;
+    SumAccum<int> @island;
+    SumAccum<string> @bus_name;
+    SumAccum<string> @device_type;
+    SumAccum<double> @P_error;
+    SumAccum<double> @Q_error;
+    SumAccum<double> @P_error_abs;
+    SumAccum<double> @Q_error_abs;
+    SumAccum<double> @P_error_pct;
+    SumAccum<double> @Q_error_pct;	
+  HeapAccum<line>(10000000, P_mark_num DESC, Q_mark_num DESC, trans2_name DESC) @@result;
+  HeapAccum<line>(50, P_mark_num DESC, Q_mark_num DESC, trans2_name DESC) @@result_part;
+
+  SumAccum<string> @acline_name;
+  SumAccum<string> @sub_name;
+  SumAccum<string> @sub_id;
+  SumAccum<string> @oppsite_sub_name;
+  MapAccum<string, string> @@substation_Map; 
+  SetAccum<string> @@Comp_ID;
+  SumAccum<INT> @@count_from_abovelimit;
+  SumAccum<INT> @@count_from_belowlimit;
+  SumAccum<INT> @@count_to_abovelimit;
+  SumAccum<INT> @@count_to_belowlimit;
+  
+  SumAccum<INT> @@count_500;
+  SumAccum<INT> @@count_500_from_abovelimit;
+  SumAccum<INT> @@count_500_from_belowlimit;
+  SumAccum<INT> @@count_500_to_abovelimit;
+  SumAccum<INT> @@count_500_to_belowlimit;
+  
+  SumAccum<INT> @@count_220;
+  SumAccum<INT> @@count_220_from_abovelimit;
+  SumAccum<INT> @@count_220_from_belowlimit;
+  SumAccum<INT> @@count_220_to_abovelimit;
+  SumAccum<INT> @@count_220_to_belowlimit;
+
+  SumAccum<INT> @@count_110;
+  SumAccum<INT> @@count_110_from_abovelimit;
+  SumAccum<INT> @@count_110_from_belowlimit;
+  SumAccum<INT> @@count_110_to_abovelimit;
+  SumAccum<INT> @@count_110_to_belowlimit;
+
+  SumAccum<INT> @@count_35;
+  SumAccum<INT> @@count_35_from_abovelimit;
+  SumAccum<INT> @@count_35_from_belowlimit;
+  SumAccum<INT> @@count_35_to_abovelimit;
+  SumAccum<INT> @@count_35_to_belowlimit;
+
+  SumAccum<INT> @@count_10;
+  SumAccum<INT> @@count_10_from_abovelimit;
+  SumAccum<INT> @@count_10_from_belowlimit;
+  SumAccum<INT> @@count_10_to_abovelimit;
+  SumAccum<INT> @@count_10_to_belowlimit;
+
+  SumAccum<INT> @@count_other;
+  SumAccum<INT> @@count_other_from_abovelimit;
+  SumAccum<INT> @@count_other_from_belowlimit;
+  SumAccum<INT> @@count_other_to_abovelimit;
+  SumAccum<INT> @@count_other_to_belowlimit; 
+  
+  SumAccum<double> @@error_limit_P;
+  SumAccum<double> @@error_limit_Q;
+  SumAccum<double> @@error_p_baddata;
+  SumAccum<double> @@error_q_baddata;
+  
+  SumAccum<int> @p_meas_flag;
+  SumAccum<int> @q_meas_flag;
+
+  sub = {Substation.*};
+  comp = {gridcom.*};
+  Tparameter = {parameters.*};
+  
+  //parameter setting
+  Tparameter = select s from Tparameter:s
+     post-accum
+     @@error_limit_P += s.error_limit_P,
+     @@error_limit_Q += s.error_limit_Q,
+     @@error_p_baddata += s.backup1,
+     @@error_q_baddata += s.backup2;
+
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID; 
+        
+  twoportSet = SELECT t FROM sub:s - (connected_Sub_Trans_two:e) ->:t
+                accum
+                t.@sub_name = s.name,
+                t.@sub_id = s.strid;
+  
+
+ Ttwoport = select t from twoportSet:t- (topo_Tx_Two:e) -:s where s.island ==1
+            accum
+                t.@island = s.island,
+                t.@bus_name = s.bus_name,
+                t.@device_type = "twoport_transformer",
+                 if (abs(t.Pimeas) > 0) then
+                    t.@P_error = t.P - t.Pimeas,
+                    t.@P_error_abs = abs(t.P - t.Pimeas)             
+                  else
+                    t.@P_error = 0,
+                    t.@P_error_abs = 0
+                  end,
+                  if (abs(t.Qimeas) > 0) then
+                    t.@Q_error = t.Q - t.Qimeas,
+                    t.@Q_error_abs = abs(t.Q - t.Qimeas)
+                    //t.@Q_error_pct = abs(t.Q - t.Qimeas)/1082*100
+                  else
+                    t.@Q_error = 0,
+                    t.@Q_error_abs = 0
+                    //t.@Q_error_pct = 0
+                  end,  
+                if (t.S > 0.1) then
+                  t.@P_error_pct = abs(t.P - t.Pimeas)/t.S*100 //这里没有乘以100%
+                else
+                  t.@P_error_pct = 0 //这里没有乘以100%
+                end,
+                if (t.S > 0.1 and abs(t.Qimeas) > 0.0001) then
+                  t.@Q_error_pct = abs(t.Q - t.Qimeas)/t.S*100 //这里没有乘以100%
+                else
+                  t.@Q_error_pct = 0 //这里没有乘以100%
+                end;
+  
+        twoportSet = select s from Ttwoport:s -(Meas_trans2:e)-:t 
+                ACCUM
+                  s.@p_meas_flag = t.P_PseudoFlag,
+                  s.@q_meas_flag = t.Q_PseudoFlag; 
+
+        Ttwoport = select s from twoportSet:s -(txI_txJ_transformerline:e) - :t
+	  where s.@island == 1 and t.@island == 1 and s.off==0 and t.off==0 and s.@P_error_pct <@@error_p_baddata and t.@P_error_pct <@@error_p_baddata and abs(s.Pimeas) >0.0001 and abs(t.Pimeas)>0.0001
+	  accum 
+                        string P_mark = "",
+                        string Q_mark = "",
+                        int P_mark_num = 0,
+                        int Q_mark_num = 0,
+                        string P_mark_reverse = "",
+                        string Q_mark_reverse = "",
+                        double P_res = 0,
+                        string P_res_pct = "",
+                        double Q_res = 0,
+                        string Q_res_pct = "",
+                        IF(s.Pimeas != 0) THEN
+                                P_mark = "实测",
+                                P_mark_num = 1
+                        ELSE
+                                P_mark = "无实测",
+                                P_mark_num = 0,
+                                P_res = 0,
+                                P_res_pct = "——"
+                        END,
+                        IF(s.Qimeas != 0) THEN
+                                Q_mark = "实测",
+                                Q_mark_num = 1
+                        ELSE
+                                Q_mark = "无实测",
+                                Q_mark_num = 0,
+                                Q_res = 0,
+                                Q_res_pct = "——"
+                        END,
+                        IF(t.Pimeas != 0) THEN
+                                P_mark_reverse = "实测"
+                        ELSE
+                                P_mark_reverse = "无实测"
+                        END,
+                        IF(t.Qimeas != 0) THEN
+                                Q_mark_reverse = "实测"
+                        ELSE
+                                Q_mark_reverse = "无实测"
+                        END,
+                        @@result += line(s.name, s.volt, s.@sub_name, s.@sub_id, s.@bus_name, t.@bus_name,
+                        // from_side (positive direction)
+                        P_mark, P_mark_num, s.Pimeas, s.P, s.@P_error, s.@P_error_abs, s.@P_error_pct, 
+                        Q_mark, Q_mark_num, s.Qimeas, s.Q, s.@Q_error, s.@Q_error_abs, s.@Q_error_pct,
+                        // to_side (reverse direction)
+                        P_mark_reverse, t.Pimeas, t.P, t.@P_error, t.@P_error_abs, t.@P_error_pct,
+                        Q_mark_reverse, t.Qimeas, t.Q, t.@Q_error, t.@Q_error_abs, t.@Q_error_pct,
+                        s.@device_type),
+                        @@result_part += line(s.name, s.volt, s.@sub_name, s.@sub_id, s.@bus_name, t.@bus_name,
+                        // from_side (positive direction)
+                        P_mark, P_mark_num, s.Pimeas, s.P, s.@P_error, s.@P_error_abs, s.@P_error_pct,
+                        Q_mark, Q_mark_num, s.Qimeas, s.Q, s.@Q_error, s.@Q_error_abs, s.@Q_error_pct,
+                        // to_side (reverse direction)
+                        P_mark_reverse, t.Pimeas, t.P, t.@P_error, t.@P_error_abs, t.@P_error_pct,
+                        Q_mark_reverse, t.Qimeas, t.Q, t.@Q_error, t.@Q_error_abs, t.@Q_error_pct,
+                        s.@device_type),
+                        @@count_all += 1,
+                        if s.volt >= 500 or t.volt >= 500 then
+                            @@count_500 += 1,
+                            IF (s.@p_meas_flag == 0) THEN
+                            if s.@P_error_pct <= @@error_limit_P then
+                                @@count_500_from_belowlimit +=1,
+                                @@count_from_belowlimit +=1
+                            else //if s.@P_error_pct > 2 then
+                                @@count_500_from_abovelimit +=1,
+                                @@count_from_abovelimit +=1
+                            end
+                            end,
+                            IF (t.@p_meas_flag == 0) THEN
+                            if t.@P_error_pct <= @@error_limit_P then
+                                @@count_500_to_belowlimit +=1,
+                                @@count_to_belowlimit +=1
+                            else //if t.@P_error_pct > 2 then
+                                @@count_500_to_abovelimit +=1,
+                                @@count_to_abovelimit +=1
+                            end
+                            end
+                        else if (s.volt >= 220 and s.volt < 500) or (t.volt >= 220 and t.volt < 500) then
+                            @@count_220 += 1,
+                            IF (s.@p_meas_flag == 0) THEN
+                            if s.@P_error_pct <= @@error_limit_P then
+                                @@count_220_from_belowlimit +=1,
+                                @@count_from_belowlimit +=1
+                            else //if s.@P_error_pct > 2 then
+                                @@count_220_from_abovelimit +=1,
+                                @@count_from_abovelimit +=1
+                            end
+                            end,
+                            IF (t.@p_meas_flag == 0) THEN
+                            if t.@P_error_pct <= @@error_limit_P then
+                                @@count_220_to_belowlimit +=1,
+                                @@count_to_belowlimit +=1
+                            else //if t.@P_error_pct > 2 then
+                                @@count_220_to_abovelimit +=1,
+                                @@count_to_abovelimit +=1
+                            end
+                            end
+                         else if (s.volt >= 110 and s.volt < 220) or (t.volt >= 110 and t.volt < 220) then
+                            @@count_110 += 1,
+                            IF (s.@p_meas_flag == 0) THEN
+                            if s.@P_error_pct <= @@error_limit_P then
+                                @@count_110_from_belowlimit +=1,
+                                @@count_from_belowlimit +=1
+                            else //if s.@P_error_pct > 2 then
+                                @@count_110_from_abovelimit +=1,
+                                @@count_from_abovelimit +=1
+                            end
+                            end,
+                            IF (t.@p_meas_flag == 0) THEN
+                            if t.@P_error_pct <= @@error_limit_P then
+                                @@count_110_to_belowlimit +=1,
+                                @@count_to_belowlimit +=1
+                            else //if t.@P_error_pct > 2 then
+                                @@count_110_to_abovelimit +=1,
+                                @@count_to_abovelimit +=1
+                            end
+                            end
+                         else if (s.volt >= 34.5 and s.volt < 110) or (t.volt >= 34.5 and t.volt < 110) then
+                            @@count_35 += 1,
+                            IF (s.@p_meas_flag == 0) THEN
+                            if s.@P_error_pct <= @@error_limit_P then
+                                @@count_35_from_belowlimit +=1,
+                                @@count_from_belowlimit +=1
+                            else //if s.@P_error_pct > 2 then
+                                @@count_35_from_abovelimit +=1,
+                                @@count_from_abovelimit +=1
+                            end
+                            end,
+                            IF (t.@p_meas_flag == 0) THEN
+                            if t.@P_error_pct <= @@error_limit_P then
+                                @@count_35_to_belowlimit +=1,
+                                @@count_to_belowlimit +=1
+                            else //if t.@P_error_pct > 2 then
+                                @@count_35_to_abovelimit +=1,
+                                @@count_to_abovelimit +=1
+                            end
+                            end
+                          else if (s.volt >= 10 and s.volt < 34.5) or (t.volt >= 10 and t.volt < 34.5) then
+                            @@count_10 += 1,
+                            IF (s.@p_meas_flag == 0) THEN
+                            if s.@P_error_pct <= @@error_limit_P then
+                                @@count_10_from_belowlimit +=1,
+                                @@count_from_belowlimit +=1
+                            else //if s.@P_error_pct > 2 then
+                                @@count_10_from_abovelimit +=1,
+                                @@count_from_abovelimit +=1
+                            end
+                            end,
+                            IF (t.@p_meas_flag == 0) THEN
+                            if t.@P_error_pct <= @@error_limit_P then
+                                @@count_10_to_belowlimit +=1,
+                                @@count_to_belowlimit +=1
+                            else //if t.@P_error_pct > 2 then
+                                @@count_10_to_abovelimit +=1,
+                                @@count_to_abovelimit +=1
+                            end
+                            end
+                          else 
+                            @@count_other += 1,
+                            IF (s.@p_meas_flag == 0) THEN
+                            if s.@P_error_pct <= @@error_limit_P then
+                                @@count_other_from_belowlimit +=1,
+                                @@count_from_belowlimit +=1
+                            else //if s.@P_error_pct > 2 then
+                                @@count_other_from_abovelimit +=1,
+                                @@count_from_abovelimit +=1
+                            end
+                            end,
+                            IF (t.@p_meas_flag == 0) THEN
+                            if t.@P_error_pct <= @@error_limit_P then
+                                @@count_other_to_belowlimit +=1,
+                                @@count_to_belowlimit +=1
+                            else //if t.@P_error_pct > 2 then
+                                @@count_other_to_abovelimit +=1,
+                                @@count_to_abovelimit +=1
+                            end
+                            end
+                         end;
+ 
+    
+                
+       
+  if return_all then
+    print @@result;
+  else
+    print @@result_part;
+  end;
+ 
+  print @@count_from_abovelimit;
+  print @@count_from_belowlimit;
+  print @@count_to_abovelimit;
+  print @@count_to_belowlimit;
+
+  print @@count_500;
+  print @@count_500_from_abovelimit;
+  print @@count_500_from_belowlimit;
+  print @@count_500_to_abovelimit;
+  print @@count_500_to_belowlimit;
+
+  print @@count_220;
+  print @@count_220_from_abovelimit;
+  print @@count_220_from_belowlimit;
+  print @@count_220_to_abovelimit;
+  print @@count_220_to_belowlimit;
+
+  print @@count_110;
+  print @@count_110_from_abovelimit;
+  print @@count_110_from_belowlimit;
+  print @@count_110_to_abovelimit;
+  print @@count_110_to_belowlimit;
+
+  print @@count_35;
+  print @@count_35_from_abovelimit;
+  print @@count_35_from_belowlimit; 
+  print @@count_35_to_abovelimit;
+  print @@count_35_to_belowlimit;
+
+  print @@count_10; 
+  print @@count_10_from_abovelimit;
+  print @@count_10_from_belowlimit;
+  print @@count_10_to_abovelimit;
+  print @@count_10_to_belowlimit;
+
+  print @@count_other;  
+  print @@count_other_from_abovelimit; 
+  print @@count_other_from_belowlimit;
+  print @@count_other_to_abovelimit;
+  print @@count_other_to_belowlimit;
+
+  print @@count_all; 
+}

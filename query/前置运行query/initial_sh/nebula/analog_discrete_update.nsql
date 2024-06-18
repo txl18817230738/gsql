@@ -1,0 +1,41 @@
+'''
+use ems_v1 match (s:meas)-[e:(Meas_AClinedot|Meas_CP|Meas_Bus|Meas_Load|Meas_trans2|Meas_trans3|Meas_Unit)]->(t)
+LET
+pmeas = case when s.P_ManualFlag = 1 then s.PManual else s.P*s.meas_A + s.meas_B end,
+qmeas = case when s.Q_ManualFlag = 1 then s.QManual else s.Q end
+LET
+p_meas=case when t.name = "韶关.湾头水电厂.1主变高端绕组" then 3.0 when t.name = "韶关.湾头水电厂.1主变高端绕组" then -3.0 when t.name = "韶关.湾头水电厂.2主变低端绕组" then 10.7 when t.name = "东莞.锦厦站.1主变110" then 34.7 when t.name = "东莞.锦厦站.2主变110" then 25.1 when t.name = "东莞.锦厦站.3主变110" then 5.4 when t.name = "惠州.大州站.10kV大桥线F27" then pmeas/1000 when t.name = "花地站.花地站-220kV.牛花甲线9143_T2" then -214.9 when t.name = "牛角站.牛角站-220kV.牛花甲线9143_T1" then 215.7 when t.name = "佛山.石塘站.110kV石塘站.110kV电压等级.110kV后石线149线路_T2" then 24.75 when t.name = "佛山.石塘站.110kV石塘站.110kV电压等级.110kV高石线130线路_T2" then 25.0 when t.name = "佛山.石塘站.2主变低端绕组" then -25.0 when t.name = "上寨站.上寨站-500kV.嘉上甲线_T1" then 579.3 when t.name = "嘉应站.嘉应站-500kV.嘉上甲线_T2" then -578.2 when t.name = "佛山.石塘站.110kV石塘站.110kV电压等级.110kV高石线130线路_T2" then 25.0 when t.id = 115404740971463029 or t.id = 115404740971463028 then 6.0 when t.id = 115404740619141426 then 35.0 when t.id = 115404740770136223 then 110.0 when t.id = 115404740971463306 then 110.0 else pmeas end,
+q_meas=case when t.name = "韶关.湾头水电厂.1主变高端绕组" then -2.4 when t.name = "韶关.湾头水电厂.1主变高端绕组" then 2.4 when t.name = "韶关.湾头水电厂.2主变低端绕组" then 3.1 when t.name = "东莞.锦厦站.1主变110" then 7.4 when t.name = "东莞.锦厦站.2主变110" then 6.3 when t.name = "东莞.锦厦站.3主变110" then 5.4 when t.name = "惠州.大州站.10kV大桥线F27" then qmeas/1000 when t.name = "花地站.花地站-220kV.牛花甲线9143_T2" then -8.7 when t.name = "牛角站.牛角站-220kV.牛花甲线9143_T1" then 10.2 when t.name = "佛山.石塘站.110kV石塘站.110kV电压等级.110kV后石线149线路_T2" then -3.15 when t.name = "佛山.石塘站.110kV石塘站.110kV电压等级.110kV高石线130线路_T2" then 4.8 when t.name = "佛山.石塘站.2主变低端绕组"  then 4.6 when t.name = "裕元站.F29" then 2.3 else qmeas end
+SET
+t.Pimeas=p_meas,
+t.Qimeas=q_meas
+'''
+
+//Line 106-111
+'''
+use ems_v1 match (s:meas)-[e:Meas_Bus]->(t)
+LET
+pmeas = case when s.P_ManualFlag = 1 then s.PManual else s.P*s.meas_A + s.meas_B end
+let
+p_meas = case when abs(pmeas) < 0.001 then t.base_value end
+set
+t.Pimeas = p_meas
+'''
+
+//Line 182-196
+'''
+use ems_v1 match (s:discrete)-[:discrete_breaker]-(t:Breaker)
+LET
+breaker_point = case when s.flagM = 1 then s.statusM when s.flagM <> 1 and s.flag=1 then s.status end
+SET
+t.point = breaker_point
+'''
+
+//Line 206-223
+'''
+use ems_v1 match (s:discrete)-[e:discrete_dis]-(t:Disconnector)
+LET
+dis_point = case when s.flagM = 1 then s.statusM when s.flagM = 0 and t.connecting_type <> "load_Switching" and s.flag=1 then s.status when s.flagM = 0 and t.connecting_type = "load_Switching" then 1 end
+SET
+t.point = dis_point
+'''

@@ -1,0 +1,103 @@
+CREATE QUERY area_p_balence_est_series(string timestamp, string companyID) FOR GRAPH gsql_EMS { 
+  ListAccum<carbon_hist_info> @@total_unit_est_list;
+  ListAccum<carbon_hist_info> @@total_input_p_list;
+  ListAccum<carbon_hist_info> @@total_load_est_list;
+  ListAccum<carbon_hist_info> @@total_output_p_list;
+  
+  double total_unit;
+  double total_input;
+  double total_load;
+  double total_output;
+  
+  int input_size;
+  int unit_size;
+  int output_size;
+  int load_size;
+
+
+	comp = {gridcom.*};
+  
+  area = select s from comp:s where s.id == companyID;
+  
+  //area_comp = select t from start_comp:s -(gridcom_gridcom:e)->:t where t.id !=s.parent_id ACCUM @@Comp_ID +=t.id;
+ 
+ //发电估计的时序曲线数值
+  comp_gen_est_set = select s from area:s -(comp_history_total_gen:e)-:t
+            accum
+              FOREACH x IN t.today DO 
+                IF isOneDay(timestamp, x.t) THEN 
+                    @@total_unit_est_list +=x 
+                END
+              END;
+  //输入功率的时序曲线数值
+  comp_input_p_set = select s from area:s -(comp_history_input_p:e)-:t
+            accum
+              FOREACH x IN t.today DO 
+                IF isOneDay(timestamp, x.t) THEN 
+                    @@total_input_p_list +=x 
+                END
+              END;
+          
+  //负荷估计的时序曲线数值
+  comp_load_est_set = select s from area:s -(comp_history_total_load:e)-:t
+            accum
+              FOREACH x IN t.today DO 
+                IF isOneDay(timestamp, x.t) THEN 
+                    @@total_load_est_list +=x 
+                END
+              END;
+  //输出功率的时序曲线数值
+  comp_output_p_set = select s from area:s -(comp_history_output_p:e)-:t
+            accum
+              FOREACH x IN t.today DO 
+                IF isOneDay(timestamp, x.t) THEN 
+                    @@total_output_p_list +=x 
+                END
+              END;
+  
+  /**
+  input_size = @@total_input_p_list.size();
+  if(input_size >0) then 
+      total_input = @@total_input_p_list.get(input_size-1).v; 
+  else 
+      total_input =0;
+  end;
+  
+  unit_size= @@total_unit_est_list.size();
+  if(unit_size >0) then 
+      total_unit = @@total_unit_est_list.get(unit_size-1).v; 
+  else 
+      total_unit =0;
+  end;
+  
+  output_size= @@total_output_p_list.size();
+  if(output_size >0) then 
+      total_output = @@total_output_p_list.get(output_size-1).v; 
+  else 
+      total_output =0;
+  end;
+  
+  load_size= @@total_load_est_list.size();
+  if(load_size >0) then 
+      total_load = @@total_load_est_list.get(load_size-1).v; 
+  else 
+      total_load =0;
+  end;
+  
+   print total_input;
+  print total_unit;
+  print total_output;
+  print total_load;
+  
+  **/
+  
+  print @@total_unit_est_list;
+  print @@total_input_p_list;
+  print @@total_load_est_list;
+  print @@total_output_p_list;
+  
+ 
+  
+  print area[area.name,area.input_p,area.output_p,area.total_gen,area.total_load] where area.id == companyID;
+  
+  }

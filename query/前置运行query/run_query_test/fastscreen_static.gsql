@@ -1,0 +1,412 @@
+create query fastscreen_static( bool island )
+
+for graph gsql_EMS {
+	
+	TYPEDEF TUPLE < int s_exId, int t_exId, double violation_perc, int edgeID, string _edge_name, int eSize, string device_type, string volt , string from_bus_name, string to_bus_name, int CA_bridge> pfheap;
+	TYPEDEF TUPLE <int s_exId, int t_exId, int sci_order, int edgeID, string _edge_name, int eSize> SIheap;
+
+//Jin
+
+	double fastscreen_SI = 0.0; //island_side
+	SumAccum<int> @outdegree = 0; //calculate outdegree, because the current outdegree obtained from TigerGraph is not correct
+
+	SumAccum<int> @@Total_edge=0;
+	// SumAccum<int> @@connected_count=0;
+	MaxAccum<double> @@PI = 3.1415926535898;
+	
+	SumAccum<int> @@subquery_count=0;
+	SumAccum<int> @@IDisland=0;
+	SumAccum<int> @@IDload=0;
+	SumAccum<int> @@IDgen=0;
+	ListAccum<edge> @@edgeList;
+	
+	// debud endpoint
+	SumAccum<int> @@endpoint=0;
+	SumAccum<int> @@endGen=0;
+	SumAccum<int> @@endLoad=0;
+	
+	
+	// e.volt count
+	SumAccum<int> @@ACline500=0;
+	SumAccum<int> @@ACline220=0;
+	SumAccum<int> @@Trans500_220=0;
+	SumAccum<int> @@CAset=0;
+	
+	//debug
+	SumAccum<int> @@line_num = 0;
+	SumAccum<int> @@twoTrans_num = 0;
+	SumAccum<int> @@threeTrans_num = 0;
+	SetAccum<int> @@ThreeTransLarge220;	
+	
+	SumAccum<int> @@fs_counter=0;
+	SumAccum<int> @detailedanalysis_flag;
+	
+	HeapAccum<SIheap>(10000000, sci_order ASC) @@SI_order_heap;
+        HeapAccum<pfheap>(10000000, violation_perc DESC) @@ca_uniq_result_heap;
+      
+        MapAccum<string, int> @@SI_Order_Map;       
+        MapAccum<string, double> @@SI_Map_Accum;
+ 
+	ListAccum<int> @@bklist; //USELESS
+	SumAccum<float> @node_SI;
+    SumAccum<int> @selected = 0;
+		
+	//int CA_uniqueheap_size = 0;
+
+    SumAccum<int> @@ThreeTransLarge220_num = 0;	
+    SumAccum<int> @@ca_screening_case_num = 0;
+    int TotalDecision = 0;
+    @@bklist = [1,2];
+
+	T00 = {TopoND.*}; //add by Yongli for 3-winding transformer
+	T0  = {TopoND.*}; 
+	T_status = {status.*};
+        Tacline = {ACline_dot.*};
+        Ttwoport = {two_port_transformer.*};
+        Tthreeport = {three_port_transformer.*};
+
+
+
+	if(island == true) then 
+	    ClearBklist();
+
+	    // change the default e.Decision to false ( this will be updated in the network_topology_processing_insert_withCP.gsql [ check with Ziyan]
+
+
+end;
+
+
+    _T = SELECT t 
+	     FROM T0:v-(topo_connect:e)->TopoND:t
+        where (v.island == 1 and t.island == 1) and (e.reverse == 1) and (e.CA_bridge >= 0)
+	 accum
+	    if (FindSubstring(e.edge_name.get(0),"高压端") == 1 or FindSubstring(e.edge_name.get(0),"-高") == 1) and (e.Decision.get(0)==1) then
+		        t.@selected = 1
+            end,
+	    foreach i in range[0, e.X.size()-1] do // i is the internal idx of ith line in the paralines
+            if (e.Decision.get(i) == 1) and ((FindSubstring(e.edge_name.get(i),"低压端") != 1 and FindSubstring(e.edge_name.get(i),"中压端") != 1) or (FindSubstring(e.edge_name.get(i),"-低") != 1 and FindSubstring(e.edge_name.get(i),"-中") != 1)) then
+		        @@ca_screening_case_num += 1
+		    end
+	    end;
+	
+	_T = select v 
+	     from T0:v-(topo_connect:e)->TopoND:t
+		 where (v.island == 1 and t.island == 1)and (t.@selected == 1) and (e.reverse == 1) and (e.Decision.get(0)!=1) // 只管(正向的)中压和低压边
+		 ACCUM
+			 e.Decision = [1];  //@@li; // edgewriteHelper();
+		
+        
+//For front-end display
+    T1_status = SELECT s FROM T_status:s
+        POST-ACCUM
+             s.ca_method = "直流潮流叠加法",
+             s.ca_screening_case = @@ca_screening_case_num;
+		 
+//    log(true, "======================= islands_detect start! ======================");
+
+	T1 = SELECT v
+	 FROM  T0:v-(topo_connect:e)->TopoND:t   
+	 WHERE (v.island == 1 and t.island == 1 and e.reverse == 1 and e.CA_bridge >= 0) // and e.Decision == true) // [YT] test for parallel trans_line & optimization
+	 ACCUM
+	    double FastScreen_SI = 0.0,
+	 // ================================ with parallel trans_line, call superposition directly
+	    double e_G = 0,
+		double e_B = 0,
+		double e_BIJ = 0,
+		double deltaP_vt = 0,
+		double tap_ratio = abs(e.transformer_final_turns_ratio/e.X.size()),
+		double tap_ratio_square = (e.transformer_final_turns_ratio/e.X.size())*(e.transformer_final_turns_ratio/e.X.size()),
+		double delta_eB = 0,
+		double deltaPhi = (v.PF_Va - t.PF_Va)*@@PI/180,
+		int mainland_side = 0,
+		
+	    foreach i in range[0, e.X.size()-1] do // i is the internal idx of ith line in the paralines
+	        if (e.Decision.get(i) == 1) then 
+			e_G = e.R.get(i)/(e.R.get(i)*e.R.get(i) + e.X.get(i)*e.X.get(i)),
+			e_B = e.X.get(i)/(e.R.get(i)*e.R.get(i) + e.X.get(i)*e.X.get(i)),
+			e_BIJ = 1/e.X.get(i), // can also use : e.BIJ_list(i)
+		
+			// Transmission line active power flow
+			case when (e.transformer_final_turns_ratio == 0) then
+				   delta_eB = e_BIJ,
+				   deltaP_vt = v.PF_Vm * v.PF_Vm * e_G - v.PF_Vm * t.PF_Vm * (e_G*cos(v.PF_Va - t.PF_Va) + (-e_B)*sin(v.PF_Va - t.PF_Va))
+				 when (e.transformer_final_turns_ratio > 0) then
+				   delta_eB = e_BIJ*tap_ratio,
+				   deltaP_vt = v.PF_Vm * v.PF_Vm * e_G - v.PF_Vm * t.PF_Vm * ((e_G*tap_ratio)*cos(v.PF_Va - t.PF_Va) + (-e_B*tap_ratio)*sin(v.PF_Va - t.PF_Va))
+			else 
+				  delta_eB = e_BIJ*tap_ratio,
+				  deltaP_vt = v.PF_Vm * v.PF_Vm * e_G * tap_ratio_square- v.PF_Vm * t.PF_Vm * ((e_G*tap_ratio)*cos(v.PF_Va - t.PF_Va) + (-e_B*tap_ratio)*sin(v.PF_Va - t.PF_Va))
+
+			end,
+
+			if (e.X.size() > 1) then
+				if (deltaP_vt != 0 and e.CA_bridge == 0 ) then
+
+					fdpf_ca_superposition_solve7 (v.exId, t.exId, deltaPhi, delta_eB, i, e.edge_name.get(i), e.device_type, e.volt, v.bus_name, t.bus_name, e.CA_bridge, FastScreen_SI)
+				end,
+				
+					@@ca_uniq_result_heap += pfheap(v.exId, t.exId, FastScreen_SI, i, e.edge_name.get(i), e.X.size(), e.device_type, e.volt, v.bus_name, t.bus_name, e.CA_bridge),
+					e.SI =  FastScreen_SI,
+				
+				@@fs_counter += 1			
+			else //i.e.  e.X.size()==1 , 单边
+			// =============================== without parallel trans_line, call ID + DC power flow
+				
+			    if ( v.outdegree > 1 and t.outdegree > 1 ) then
+					
+			        if (island == true) then
+						mainland_side = IDfastscreen_static(v, t, e.transformer_final_turns_ratio, e.R.get(0),e.X.get(0),e.edge_name.get(0), e.device_type, e.volt, e.CA_bridge),
+						e.mainland_side = mainland_side,
+				 
+					
+					//else, e.mainisland_side keeps its last stored value(s)
+					case when (mainland_side >= 1000000 and mainland_side < 2000000) then
+						@@IDgen +=1,	
+						e.CA_bridge = 1,      	 // 1 -- generator shedding ;
+						
+						if (e.device_type != "三绕组变压器") then
+							e.SI =  FastScreen_SI,						
+							@@ca_uniq_result_heap += pfheap(v.exId, t.exId, FastScreen_SI, 0, e.edge_name.get(0), e.X.size(), e.device_type, e.volt, v.bus_name, t.bus_name, e.CA_bridge)
+						else
+							t.@node_SI += FastScreen_SI	
+						end,
+						
+						@@fs_counter += 1,		   
+						log(false, "generator shedding", v.exId,t.exId,e.CA_bridge, FastScreen_SI)	
+			
+					when (mainland_side >= 2000000 and mainland_side < 3000000) then
+						@@IDload +=1,
+						e.CA_bridge = 2,      	 // 2 -- load shedding;  
+						
+						if (e.device_type != "三绕组变压器") then
+							e.SI = FastScreen_SI,
+							@@ca_uniq_result_heap += pfheap(v.exId, t.exId, FastScreen_SI, 0, e.edge_name.get(0), e.X.size(), e.device_type, e.volt, v.bus_name, t.bus_name, e.CA_bridge)
+						else
+							t.@node_SI += FastScreen_SI	
+						end,
+						
+						@@fs_counter += 1,	
+						log(false, "load shedding", v.exId,t.exId,e.CA_bridge, FastScreen_SI)	
+						
+					when (mainland_side >= 3000000 and mainland_side < 4000000) then
+						@@IDisland +=1,  
+						e.CA_bridge = 3,  // 3 -- island detected;  
+						
+						if (e.device_type != "三绕组变压器") then
+							e.SI =  FastScreen_SI,
+							@@ca_uniq_result_heap += pfheap(v.exId, t.exId, FastScreen_SI, 0, e.edge_name.get(0), e.X.size(), e.device_type, e.volt, v.bus_name, t.bus_name, e.CA_bridge)
+						else
+							t.@node_SI += FastScreen_SI	
+						end,
+						
+						@@fs_counter += 1,	
+						log(false, "island detected", v.exId,t.exId, e.CA_bridge, FastScreen_SI, e.device_type, e.volt, v.base_kV, t.base_kV)
+						
+					when (mainland_side >= 4000000) then
+						e.CA_bridge = 0,  // No island detected; connected == "true"
+						
+						if (e.device_type != "三绕组变压器") then
+							e.SI = FastScreen_SI,
+							@@ca_uniq_result_heap += pfheap(v.exId, t.exId, FastScreen_SI, 0, e.edge_name.get(0), e.X.size(), e.device_type, e.volt, v.bus_name, t.bus_name, e.CA_bridge)
+						else
+							t.@node_SI += FastScreen_SI	
+						end,
+						
+						@@fs_counter += 1	
+					end 
+			    else // island == false
+				    case when (e.mainland_side >= 1000000 and e.mainland_side < 2000000) then
+						@@IDgen +=1,	
+						e.CA_bridge = 1,      	 // 1 -- generator shedding ;
+						
+						if (e.device_type != "三绕组变压器") then
+						        e.SI =  FastScreen_SI,						
+							@@ca_uniq_result_heap += pfheap(v.exId, t.exId, FastScreen_SI, 0, e.edge_name.get(0), e.X.size(), e.device_type, e.volt, v.bus_name, t.bus_name, e.CA_bridge)
+						else
+							t.@node_SI += FastScreen_SI	
+						end,
+						
+						@@fs_counter += 1,		   
+						log(false, "generator shedding", v.exId,t.exId,e.CA_bridge, FastScreen_SI)	
+			
+					when (e.mainland_side >= 2000000 and e.mainland_side < 3000000) then
+						@@IDload +=1,
+						e.CA_bridge = 2,      	 // 2 -- load shedding;  
+						
+						if (e.device_type != "三绕组变压器") then
+							e.SI = FastScreen_SI,
+							@@ca_uniq_result_heap += pfheap(v.exId, t.exId, FastScreen_SI, 0, e.edge_name.get(0), e.X.size(), e.device_type, e.volt, v.bus_name, t.bus_name, e.CA_bridge)
+						else
+							t.@node_SI += FastScreen_SI	
+						end,
+						
+						@@fs_counter += 1,	
+						log(false, "load shedding", v.exId,t.exId,e.CA_bridge, FastScreen_SI)	
+						
+					when (e.mainland_side >= 3000000 and e.mainland_side < 4000000) then
+						@@IDisland +=1,  
+						e.CA_bridge = 3,  // 3 -- island detected;  
+						
+						if (e.device_type != "三绕组变压器") then
+							e.SI =  FastScreen_SI,
+							@@ca_uniq_result_heap += pfheap(v.exId, t.exId, FastScreen_SI, 0, e.edge_name.get(0), e.X.size(), e.device_type, e.volt, v.bus_name, t.bus_name, e.CA_bridge)
+						else
+							t.@node_SI += FastScreen_SI	
+						end,
+						
+						@@fs_counter += 1,	
+						log(false, "island detected", v.exId,t.exId, e.CA_bridge, FastScreen_SI, e.device_type, e.volt, v.base_kV, t.base_kV)
+						
+					when (e.mainland_side >= 4000000) then
+						e.CA_bridge = 0,  // No island detected; connected == "true"
+						
+						if (e.device_type != "三绕组变压器") then
+							e.SI = FastScreen_SI,
+							@@ca_uniq_result_heap += pfheap(v.exId, t.exId, FastScreen_SI, 0, e.edge_name.get(0), e.X.size(), e.device_type, e.volt, v.bus_name, t.bus_name, e.CA_bridge)
+						else
+							t.@node_SI += FastScreen_SI	
+						end,
+						
+						@@fs_counter += 1	
+					end 
+				
+			       end
+			else   // end point  
+					// ===================== for endpoint, call DC power flow
+					@@endpoint += 1,
+					@@fs_counter += 1,
+
+					case when (v.outdegree == 1) then
+					 // ============================================ v is endpoint 
+					 
+						case when (v.GenP - v.LdP > 0) then   // 1 -- generator shedding ;
+							e.CA_bridge = 1,
+							@@endGen +=1
+						else                                // 2 -- load shedding;
+							e.CA_bridge = 2,
+							@@endLoad +=1
+						end,
+													
+						
+						if (e.device_type != "三绕组变压器") then
+							e.SI = FastScreen_SI,
+							@@ca_uniq_result_heap += pfheap(v.exId, t.exId, FastScreen_SI, 0, e.edge_name.get(0), e.X.size(), e.device_type, e.volt, v.bus_name, t.bus_name, e.CA_bridge)
+						else
+							t.@node_SI += FastScreen_SI	
+						end
+					
+					else 
+					 // ======================================= t is endpoint 
+					 // from DC power flow // i = 0
+						
+						case when (t.GenP - t.LdP > 0) then   // 1 -- shedding the generator;
+							e.CA_bridge = 1,
+							@@endGen +=1
+						else 				      // 2 -- load shedding;
+							e.CA_bridge = 2,
+							@@endLoad +=1
+						end,
+						
+						
+						if (e.device_type != "三绕组变压器") then
+							e.SI = FastScreen_SI,
+							@@ca_uniq_result_heap += pfheap(v.exId, t.exId, FastScreen_SI, 0, e.edge_name.get(0), e.X.size(), e.device_type, e.volt, v.bus_name, t.bus_name, e.CA_bridge)
+						else
+							t.@node_SI += FastScreen_SI	
+						end
+					end
+                		//log(false, "Endpoint", v.exId,t.exId,e.CA_bridge)		
+				end
+			end
+		end
+	end
+			
+	POST-ACCUM
+		if (t.bus_name != "") and (t.base_kV == 1 ) then //暗含保证 (e.reverse==1), 因为所有的三角变的正向边都是从末端点指向中性点 
+		// ( e.volt == "500" or e.volt == "220" ) 用这句会报错： 因为e不能在 POST-ACCUM里面 使用 ；
+        //	所以以上判断语句语句改为用始端点（即非中性点）的电压等级 and  ( v.volt == 500 or v.volt == 220 )  
+		// Note: ( e.volt == "500" or e.volt == "220" ) 等价于 "e.Decison != -1" (前面外循环进入前已判断过了) ==》 所以此处可以不再判断电压等级！
+			t.nodeSI = t.@node_SI
+		end
+	; // end-of-Accum
+//    log(true, "======================= islands_detect end! ======================");	     
+	
+	
+	/*******************************************************************************************/
+	// 以下为排序和往边上写结果
+	
+	// Add by Yongli 03.2019 for 三角变压器
+	// 写回三绕组变的高压边上
+	T = SELECT v FROM T00:v-(topo_connect:e)->TopoND:t
+		WHERE (e.Decision.get(0)==1) and (e.CA_bridge >= 0) and (e.device_type == "三绕组变压器") and (FindSubstring(e.edge_name.get(0),"高压端") == 1 or FindSubstring(e.edge_name.get(0),"-高") == 1) and (t.bus_name != "") and (t.base_kV == 1 ) and (v.island == 1 and t.island == 1)  //暗含保证 (e.reverse==1), // 三角变都是单边，直接用下标“0” 	
+		// 04.01.2019: for peed-up, we may try use set T0
+		ACCUM
+			e.SI = t.nodeSI,							
+			@@ca_uniq_result_heap += pfheap(v.exId, t.exId, t.nodeSI, 0, e.edge_name.get(0), e.X.size(), e.device_type, e.volt, v.bus_name, t.bus_name, e.CA_bridge) 
+		;
+
+	// si_order_heap 是 用于排序 快速扫描严重性指标 的中间数据结构（heap）
+    PowerflowPrep1 (@@ca_uniq_result_heap, @@SI_order_heap); //generate si_order_heap
+
+	// 写SI回普通边以及三绕组变的高压边上  // e.SI	 
+    T = select v
+         from  T00:v-(topo_connect:e)->TopoND:t
+		 where (v.island == 1 and t.island == 1) and (e.reverse == 1) and (e.CA_bridge >= 0)
+		 accum
+			foreach i in range[0, e.X.size()-1] do // i is the internal idx of ith line in the paralines
+				if (e.Decision.get(i) == 1) and (e.device_type != "三绕组变压器" or (e.edge_name.get(i) != "" and FindSubstring(e.edge_name.get(0),"高压端") == 1 or FindSubstring(e.edge_name.get(0),"-高") == 1)) then
+					//要么是普通边， 要么是是三角变并且是其高压端 我才管才处理 [YL， 03.28.2019]
+					@@SI_Order_Map += (e.edge_name.get(i) -> (1+PowerflowPrep2(v.exId, t.exId, i, @@SI_order_heap)))
+				end
+			end; 
+//	log(true, @@ca_uniq_result_heap, @@SI_order_heap.size());
+	 
+	 // 写SI_order回普通边以及三绕组变的高压边上  // e.SI_order
+
+          T = select v
+          from  T00:v-(topo_connect:e)->TopoND:t
+                  where (v.island == 1 and t.island == 1) and (e.reverse == 1)
+                  //from  T0:v-(topo_connect:e)->TopoND:t //04.01.2019: for peed-up, we use set T0
+                  accum
+                        int Edge_TotalDecision = 0,
+                        foreach i in range[0, e.X.size()-1] do // i is the internal idx of ith line in the paralines
+                            Edge_TotalDecision  = Edge_TotalDecision | e.Decision.get(i),
+                            log(true, "decision",e.edge_name, e.Decision.get(i), e.SI)
+                        end,
+                        if (Edge_TotalDecision == 1) then
+                           //e.SI =  GetMapValuesFromListString(@@SI_Map_Accum, e.edge_name),
+                           e.SI_order = GetMapValuesFromListString(@@SI_Order_Map, e.edge_name)
+                end;
+
+
+//print @@SI_Map_Accum;
+//print @@SI_Map_Accum TO_CSV "/home/tigergraph/ems-query/query_gsql_EMS/output/SI_Map.csv";
+//print @@SI_Order_Map TO_CSV "/home/tigergraph/ems-query/query_gsql_EMS/output/SI_Order.csv";
+
+//log(true, "============== island_FS Fninished=================="); 
+	 
+  // Finish Write
+ 
+/*
+ T = select v
+     from  T0:v-(topo_connect:e)->TopoND:t
+        where (v.island == 1 and t.island == 1) and (e.reverse == 1)
+     accum
+		foreach i in range[0, e.X.size()-1] do
+			if (substring(e.edge_name.get(i)) != "中压端" and substring(e.edge_name.get(i)) != "低压端" ) and (FindSubstring(e.edge_name.get(i),"-低") != 1 and FindSubstring(e.edge_name.get(i),"-中") != 1)) and (e.Decision.get(i) == 1 and e.SI_order.get(i)>=1 and e.SI_order.get(i)<= 50) then
+//	if (substring(e.edge_name.get(i)) != "中压端" and substring(e.edge_name.get(i)) != "低压端" ) and (FindSubstring(e.edge_name.get(i),"-低") != 1 and FindSubstring(e.edge_name.get(i),"-中") != 1) and (e.Decision.get(i) == 1 ) then 
+			   log(true, i, v.bus_name, t.bus_name, e.edge_name.get(i), e.SI_order.get(i), e.SI.get(i), e.CA_bridge)
+			end
+		end
+         ;
+*/
+    print island;
+    if(island == true) then	
+       print @@fs_counter, @@line_num, @@twoTrans_num, @@threeTrans_num, @@ca_screening_case_num;
+    else if(island == false) then
+      print @@ca_screening_case_num;
+    end;
+
+    @@ca_uniq_result_heap.clear();
+    @@SI_order_heap.clear();
+}

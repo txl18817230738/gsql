@@ -1,0 +1,114 @@
+CREATE QUERY guangdong_grid_switch_p_analysis(bool return_all=true) FOR GRAPH gsql_EMS syntax v2 { 
+ TYPEDEF TUPLE<string sub_name, string sub_id, double current, double beforeone, double beforetwo, double beforethree, double beforefour, double beforefive, double beforesix> info;
+   //SumAccum<INT> @@count_all;
+	
+	//SumAccum<string> @sub_id;
+	HeapAccum<info>(10000000, sub_name DESC) @@result_all;
+	HeapAccum<info>(50, sub_name DESC) @@result_part;
+	SetAccum<string> @@Comp_ID;
+  
+  //SumAccum<string> @area_name;
+  //SumAccum<string> @sub_name;
+  //SumAccum<string> @sub_id;
+  SumAccum<double> @current;
+  SumAccum<double> @beforeone;
+  SumAccum<double> @beforetwo;
+  SumAccum<double> @beforethree;
+  SumAccum<double> @beforefour;
+  SumAccum<double> @beforefive;
+  SumAccum<double> @beforesix;
+  
+  T0 = {TopoND.*};
+	sub = {Substation.*};
+	comp = {gridcom.*};
+
+
+  start_comp = select s from comp:s where s.id == "113715890758877224" accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub_set = select t from comp:s-(connected_grid_sub:e)-:t where s.id in @@Comp_ID and t.subtype=="换流站";
+  
+
+  sub_result = select s from sub_set:s -(sub_history_total_gen:e)-:t where t.today.size()>0
+        ACCUM 
+           int currentindex = t.today.size(),
+                if(currentindex < 1) THEN
+                    s.@current = 0,
+                    s.@beforeone =0,
+                    s.@beforetwo =0,
+                    s.@beforethree =0,
+                    s.@beforefour =0,
+                    s.@beforefive =0,
+                    s.@beforesix =0
+                else if(currentindex <2) THEN
+                    s.@beforeone =0,
+                    s.@beforetwo =0,
+                    s.@beforethree =0,
+                    s.@beforefour =0,
+                    s.@beforefive =0,
+                    s.@beforesix =0,
+                    s.@current = t.today.get(currentindex-1).v
+                else if(currentindex <3) THEN
+                    s.@beforetwo =0,
+                    s.@beforethree =0,
+                    s.@beforefour =0,
+                    s.@beforefive =0,
+                    s.@beforesix =0,
+                    s.@current = t.today.get(currentindex-1).v,
+                    s.@beforeone = t.today.get(currentindex -2).v
+                else if(currentindex <4) THEN
+                    s.@beforethree =0,
+                    s.@beforefour =0,
+                    s.@beforefive =0,
+                    s.@beforesix =0,
+                    s.@current = t.today.get(currentindex -1).v,
+                    s.@beforeone = t.today.get(currentindex -2).v,
+                    s.@beforetwo = t.today.get(currentindex -3).v
+                else if(currentindex <5) THEN 
+                    s.@beforefour =0,
+                    s.@beforefive =0,
+                    s.@beforesix =0,                    
+                    s.@current = t.today.get(currentindex -1).v,
+                    s.@beforeone = t.today.get(currentindex -2).v,
+                    s.@beforetwo = t.today.get(currentindex -3).v,
+                    s.@beforethree = t.today.get(currentindex -4).v
+                else if(currentindex <6) THEN 
+                    s.@beforefive =0,
+                    s.@beforesix =0,                    
+                    s.@current = t.today.get(currentindex -1).v,
+                    s.@beforeone = t.today.get(currentindex -2).v,
+                    s.@beforetwo = t.today.get(currentindex -3).v,
+                    s.@beforethree = t.today.get(currentindex -4).v,
+                    s.@beforefour = t.today.get(currentindex -5).v
+                else if(currentindex <7) THEN
+                    s.@beforesix =0,                    
+                    s.@current = t.today.get(currentindex -1).v,
+                    s.@beforeone = t.today.get(currentindex -2).v,
+                    s.@beforetwo = t.today.get(currentindex -3).v,
+                    s.@beforethree = t.today.get(currentindex -4).v,
+                    s.@beforefour = t.today.get(currentindex -5).v,
+                    s.@beforefive = t.today.get(currentindex -6).v
+                else 
+                    s.@current = t.today.get(currentindex -1).v,
+                    s.@beforeone = t.today.get(currentindex -2).v,
+                    s.@beforetwo = t.today.get(currentindex -3).v,
+                    s.@beforethree = t.today.get(currentindex -4).v,
+                    s.@beforefour = t.today.get(currentindex -5).v,
+                    s.@beforefive = t.today.get(currentindex -6).v,
+                    s.@beforesix = t.today.get(currentindex -7).v
+                end;
+  
+  Result_set = select s from sub_result:s 
+              ACCUM 
+                @@result_all += info(s.name,s.strid,s.@current,s.@beforeone,s.@beforetwo,s.@beforethree,s.@beforefour,s.@beforefive,s.@beforesix),
+                @@result_part += info(s.name,s.strid,s.@current,s.@beforeone,s.@beforetwo,s.@beforethree,s.@beforefour,s.@beforefive,s.@beforesix);
+  if return_all then
+    print @@result_all;
+  else
+    print @@result_part;
+  end; 
+  
+}

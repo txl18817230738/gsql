@@ -1,0 +1,12 @@
+se_all_info_bus_predict
+'''
+use ems_v1 match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:connected_Sub_Bus]->(t:`BUS`)<-[topo_bus]-(td:TopoND) filter where startid.id = "113715890758877224" and td.island = 1
+let
+subid = s.strid,
+island = td.island
+Pimeas = case when t.Pimeas is not NULL then t.Pimeas else 0.0 end,
+V = case when t.V is not NULL then t.V else 0.0 end
+let
+volt_residual_pct = case when abs(Pimeas) > 0.0001 and volt > 500 then 100*abs(Pimeas-V)/600 when abs(Pimeas) > 0.0001 and volt >= 330 and volt < 500 then 100*abs(Pimeas-V)/396 when abs(Pimeas) > 0.0001 and volt >= 220 and volt < 330 then 100*abs(Pimeas-V)/264 when abs(Pimeas) > 0.0001 then 100*abs(Pimeas-V)/132 else 0.0 end
+return t.name, t.Substation, sub_id, t.volt, t.Pimeas, t.V, abs(t.Pimeas-t.V), volt_residual_pct, t.V_t_next, t.Ang, t.Ang_t_next, t.strid
+'''

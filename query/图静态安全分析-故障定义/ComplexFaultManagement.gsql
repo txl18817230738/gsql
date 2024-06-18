@@ -1,0 +1,32 @@
+CREATE QUERY ComplexFaultManagement(int faultid) FOR GRAPH gsql_EMS{
+ typedef tuple<string faultid, string faultname, string faulttype, string groupname, int decesion_flag, int fastscreen_flag, int detailedanalysis_flag> complexfault;
+ typedef tuple<string faultdevname, string faultdevtype, string faultSub, string groupname> fault_detail;
+
+ HeapAccum<complexfault>(1000000, faultid asc) @@fault_result;
+ HeapAccum<fault_detail>(10000000, faultdevname asc) @@fault_detail;
+
+  Tfault = {Fault.*};
+  Tfaultgroup = {FaultGroup.*};
+  Tunit = {unit.*};
+  Tacline = {ACline_dot.*};
+  Ttwoport = {two_port_transformer.*};
+  Tthreeport = {three_port_transformer.*};
+  Tbus = {BUS.*};
+  Tsub = {Substation.*};
+  
+
+  complexfaultSet = select s from Tfault:s
+            where s.faulttype == "复杂故障"
+        accum
+            @@fault_result += complexfault(convertToString(s.id), s.name, s.faulttype, s.groupname, s.decesion_flag, s.fastscreen_flag, s.detailedanalysis_flag);
+
+  detailedfaultSet = select s from complexfaultSet:s
+            where s.id == faultid
+        accum
+            FOREACH i in range [0, s.faultdevname.size() - 1] DO
+                @@fault_detail += fault_detail(s.faultdevname.get(i), s.faultdevtype.get(i),  s.faultdevSub.get(i),  s.groupname)
+            END;
+
+  print @@fault_result;
+  print @@fault_detail;
+}

@@ -1,0 +1,41 @@
+CREATE QUERY company_dashboard_sub(string companyID="1407374883553283") FOR GRAPH gsql_EMS { 	
+	SumAccum<INT> @@count500;
+	SumAccum<INT> @@count220;
+	SumAccum<INT> @@count110;
+	SumAccum<INT> @@count35;
+	SumAccum<INT> @@count10;
+
+	SetAccum<double> @@vol;
+	SetAccum<string> @@Comp_ID;
+
+@@vol = (500,525,220,230,110,115,35,34.5,10,10.5);
+//@@vol = (281474977366018,281474977431554,281474977497090,281474977562626,281474978021378);
+    sub = {Substation.*};
+    comp = {gridcom.*};
+	start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+	
+	WHILE(start_comp.size()>0) DO
+	  start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+	END;
+	
+	sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID 
+	      accum 
+	        if t.volt == 500 or t.volt == 525 then
+	            @@count500 += 1
+            else if t.volt == 220 or t.volt == 230 then
+	            @@count220 += 1
+	        else if t.volt == 110 or t.volt == 115 then
+	            @@count110 += 1
+	        else if t.volt == 35 or t.volt == 34.5 then
+	            @@count35 += 1
+	        else if t.volt == 10 or t.volt == 10.5 then
+	            @@count10 += 1
+          end;
+	
+	print @@count500;
+	print @@count220;
+	print @@count110;
+	print @@count35;
+	print @@count10;
+	
+}

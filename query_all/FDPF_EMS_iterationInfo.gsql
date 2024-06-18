@@ -1,0 +1,398 @@
+create query FDPF_EMS_iterationInfo (int factorize)
+for graph gsql_EMS {
+  
+// ------------------------------------------------------------------------------------------------
+// 				Define variables and arrays
+// ------------------------------------------------------------------------------------------------
+
+ // define the tuples for the HeapAccums and SetAccums
+ // sort_id_vertex:     for the vertex HeapAccum (key based on exId) 
+ //                     - contains information on the nodes and also for the pointer arrays 
+ typedef tuple<int key, string name, string Sub, double DiaeG, double DiaeB, int Bp_p, int Bpp_p, int ep, double Vm, double Va, double Pn, double Qn, int bustype> sort_id_vertex;
+typedef tuple<int key, double max_dP, int max_dP_ID, double max_dQ, int max_dQ_ID> sort_iteration; 
+ // sort_id_matrix_all: for the matrix_all HeapAccum (key based on exId) 
+ //                     - contains Ybus matrix G & B, B' matrix and B" matrix B values 
+ //                       and index array (both edge and node info)
+ typedef tuple<int key, double eG, double eB, int ei, double Bp_x, double Bpp_x, double line_Q1> sort_id_matrix_all;
+
+ // sort_id_vertex_Ybus:for the vertex_Ybus HeapAccum (key based on exId) 
+ //                     - an trim down version of sort_id_matrix_all that contains only Ybus 
+ //                       information on the nodes and also for the pointer arrays 
+ typedef tuple<int key, double Vm, double Va, double Pn, double Qn, int bustype> sort_id_vertex_VmVaPQ;
+  
+ // sort_id_matrix_Ybus:for the matrix_Ybus HeapAccum (key based on exId) 
+ //                     - an trim down version of sort_id_matrix_all that contains only Ybus matrix G & B, 
+ //                       and index array (both edge and node info)
+ //typedef tuple<int key, double eG, double eB, int ei> sort_id_matrix_Ybus; 
+ 
+ // sort_rpi_cpi_matrix:for the L'U' and L"U" matrix HeapAccums (key based on rpi and cpi)
+ //                     - contains factorized LU values of B' and B" (both edge and node) 
+ typedef tuple<int key, int cpi, double value> sort_rpi_cpi_matrix;
+ 
+ // sort_rpi_vertex:    for the L'U' and L"U" matrix vertex HeapAccums (key based on rpi) 
+ //                     - contains pointers, permutation and scaling info  
+ typedef tuple<int key, int Lp, int Up, int rp, int cpi, double row_scaling, double col_scaling, int exId> sort_rpi_vertex;
+
+ // run_option to indicate whether LU factorization or rebuild HeapAccums is needed.
+ // if 0 - do LU factorization
+ // if 1 - rebuild HeapAccum
+ // if 2 - solve power flow only (LU factorization was performed and HeapAccums already built) 
+ SumAccum<int> @@run_option;
+ 
+ // ************************************************************************************
+ // Definition of variables that are needed regardless of "factorize" option  
+ // ************************************************************************************
+ // define PI value
+ MaxAccum<double> @@PI = 3.1415926535898;
+ 
+ // [Testing for Visualization, Chen Yuan]
+ ListAccum<edge> @@edgeList;   // Added by Chen Yuan
+ //ListAccum<vertex> @@nodeList;   // Added by Chen Yuan
+
+ SumAccum<double> @sumG  = 0; // store for each node the total G on all of its edges
+ SumAccum<double> @sumB  = 0; //similar...
+ SumAccum<double> @sumBi = 0;
+ SumAccum<double> @cal_P = 0;
+ SumAccum<double> @cal_Q = 0;
+ 
+ //OrAccum @@showLog = false;
+
+ // Bus Types - PQ:0/1 PV:2 SLC:3 GND:4
+ SumAccum<double> @P = 0;
+ SumAccum<double> @Q = 0;
+ SumAccum<double> @Vm = 0;
+ SumAccum<double> @Va = 0;
+ //SumAccum<double> @Vs = 0;
+ 
+ SumAccum<int> @@iteration = 0;
+
+ SumAccum<int>    @alldgr = 0;   // the degree (number of edges connecting all buses) of a bus
+ string basecase_result;
+ string parameter_result;
+ 
+ SumAccum<int> @@vertexsize = 0;
+ SumAccum<int> @@edgesize = 0;
+ // ************************************************************************************
+ // Definition of variables needed only if "factorize" option is enabled(1)
+ // ************************************************************************************ 
+ SumAccum<int>    @pqvdgr = 0;   // the degree (number of edges connecting PV or PQ buses) of a bus
+ SumAccum<int>    @pqdgr = 0;    // the degree (number of edges connecting PQ buses) of a PQ bus
+ 
+ // define the HeapAccums, sorted based on ascending order of the key (key based on exId)
+ // The vertex HeapAccum which contains system state information like P, Q needs to be rebuild
+ // everytime
+ // HeapAccum<sort_id_vertex>(100000000, key asc) @@vertex; 
+ HeapAccum<sort_id_vertex>(100000000, key asc) @@vertex; 
+ HeapAccum<sort_iteration>(100, key asc) @@iterationInfo;
+ // The HeapAccum for Ybus, B' and B" matrix. This one only needs to be rebuild when there is
+ // known topology changes so LU factorization needs to be performed ("factorize" = 1)
+ //STATIC HeapAccum<sort_id_matrix_all>(100000000, key asc) @@matrix_all; 
+ HeapAccum<sort_id_matrix_all>(100000000, key asc) @@matrix_all;
+ 
+ // store the number of non-zeros in B' and B"
+ SumAccum<int> @@Bp = 0;
+ SumAccum<int> @@Bpp = 0; 
+ 
+ // ************************************************************************************
+ // Definition of variables needed only when NOT doing factorization ("factorize" = 0)
+ // ************************************************************************************ 
+ // If NOT performing factorization, use a trim down version of HeapAccums for Ybus.
+ // This one needs to be rebuild everytime since it contains state information  
+ HeapAccum<sort_id_vertex_VmVaPQ>(100000000, key asc) @@vertex_VmVaPQ;
+ 
+ // ********************************* Countinuous exId Attributes ************************
+ ListAccum<int> @@nodeList;
+ //SumAccum<int> @@counter = 0;
+ 
+ // ********************************* Query Parameters Definition ************************
+ double max_change_P = 0.05;
+ double max_change_Q = 0.05;
+ double initial_Va = 0;
+ double initial_Vm = 1;
+ int max_iteration = 100;
+ int flatstart = 1;
+ //SumAccum<int> @@factorize = 1;
+ string outputfile;
+ string alert_max_change_P = "";
+ string alert_max_change_Q = "";
+ string alert_pf_MaxIter = "";
+
+ MaxAccum<int> @@max_dP_ID = 0;
+ MaxAccum<int> @@max_dQ_ID = 0;
+ SumAccum<int> @@slackbus = 0;
+ SumAccum<string> @subid;
+ // ************************************************************************************
+ // End of variable definition
+ // ************************************************************************************
+ T0= {TopoND.*};   //start from all vertices in the graph
+ T_params = {parameters.*}; // include the parameters vertex
+ T_status =  {status.*};
+
+ log(false, "EMS: " , T0.size());
+ 
+ 
+ // ****************** Transfer parameters vertex attributes to this query's parameters ********************
+ 
+ T_params = SELECT s FROM T_params:s 
+			POST-ACCUM
+			// IF s.pf_MaxChange_P <= 0.05 and s.pf_MaxChange_P > 0 THEN
+			// 	max_change_P = s.pf_MaxChange_P,
+			// 	alert_max_change_P = "Threshold of deltaP is well set. Good Job!"
+			// ELSE IF s.pf_MaxChange_P > 0.05 THEN
+			// 	max_change_P = 0.05,
+			// 	alert_max_change_P = "Threshold of deltaP is set too large, it is recommended to reset it within the range of [0.001, 0.05]."
+			// ELSE 
+			// 	max_change_P = 0.001, 
+			// 	alert_max_change_P = "Threshold of deltaP is set as a non-positive value, it is recommended to reset it within the range of [0.001, 0.05]."
+			// END,			
+			// IF s.pf_MaxChange_Q <= 0.05 and s.pf_MaxChange_Q > 0 THEN
+			// 	max_change_Q = s.pf_MaxChange_Q,
+			// 	alert_max_change_Q = "Threshold of deltaQ is well set. Good Job!"
+			// ELSE IF s.pf_MaxChange_Q > 0.05 THEN
+			// 	max_change_Q = 0.05,
+			// 	alert_max_change_Q = "Threshold of deltaQ is set too large, it is recommended to reset it within the range of [0.001, 0.05]."
+			// ELSE 
+			// 	max_change_Q = 0.001,
+			// 	alert_max_change_Q = "Threshold of deltaQ is set as a non-positive value, it is recommended to reset it within the range of [0.001, 0.05]."
+			// END,
+			// IF s.pf_MaxIter > 100 THEN
+			// 	max_iteration = s.pf_MaxIter
+			// END,
+			max_change_P = s.pf_MaxChange_P,
+                        max_change_Q = s.pf_MaxChange_Q,
+                        max_iteration = s.pf_MaxIter,
+			initial_Va = s.initial_Va,
+			initial_Vm = s.initial_Vm,
+			flatstart = s.pf_flatstart,
+			//flatstart = 1,
+			//@@factorize += 1;
+			outputfile = s.pf_outputfile;
+			//log(true, max_change_P, max_change_Q, initial_Va, initial_Vm, max_iteration, flatstart);
+ print alert_max_change_P;
+ print alert_max_change_Q;
+
+ 
+
+// ------------------------------------------------------------------------------------------------
+// 			Construct Ybus and get the B matrix for fast-decoupled method
+// ------------------------------------------------------------------------------------------------     
+
+  
+// perform fast-decoupled power flow
+IF factorize == 1 THEN //perform LU factorization
+
+  //First factorize B' and B" matrix then perform power flow iteration using forward/backward substitution with resulting LU.
+  //add/update of edge and vertex attributes also preform in expression function.
+
+
+  T0 = select s
+           from T0:s-(topo_connect:e)->TopoND:t
+           WHERE s.island == 1 and t.island == 1
+         accum
+           @@matrix_all += sort_id_matrix_all(s.exId*100000 + t.exId, 0, 0, 0, 0, 0, 0)
+     post-accum
+           @@matrix_all += sort_id_matrix_all(s.exId*100000 + s.exId, 0, 0, 0, 0, 0, 0),
+           @@vertex += sort_id_vertex(s.exId, s.bus_name, s.Sub, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+// @@vertexsize = @@vertex.size();
+// @@edgesize = @@matrix_all.size();
+
+  foreach i in range [0,max_iteration - 1] do
+     @@iterationInfo += sort_iteration(max_iteration + 1,0,0,0,0);
+  end;
+
+  parameter_result = parameter_fdpf_factorize_v2 (initial_Vm, initial_Va, flatstart, @@Bp, @@Bpp, @@vertex, @@matrix_all);
+
+
+print @@Bp, @@Bpp, @@vertex.size(), @@matrix_all.size();
+//print @@vertex;
+//print @@matrix_all;
+
+//   basecase_result = GRAPHLU_fdpf_LU_factorize_EMS_rpi_cp_v2 (max_iteration, max_change_P, max_change_Q, @@iteration, @@Bp, @@Bpp, @@vertex, @@matrix_all);
+   basecase_result = GRAPHLU_fdpf_LU_factorize_EMS_rpi_cp_iterationInfo (max_iteration, max_change_P, max_change_Q, @@iteration, @@Bp, @@Bpp, @@iterationInfo, @@vertex, @@matrix_all);
+
+//print @@iterationInfo;
+
+  // Get the solved result
+  // Currently these are @s and are only printing into output file.
+  // They should also be shown on visualization which would require
+  // them to be vertex attributes. 
+
+ Tslack = select s from T0:s where s.busType == 3
+      post-accum
+         @@slackbus += s.exId;
+
+foreach k in range [0, @@iteration - 1] do
+  foreach x in @@iterationInfo do
+      if x.key == k + 1 then
+        print x.key;
+
+        IF (x.max_dP_ID+1 >= @@slackbus) THEN
+                @@max_dP_ID = x.max_dP_ID + 2;
+        ELSE
+                @@max_dP_ID = x.max_dP_ID + 1;
+        END;
+        @@max_dQ_ID = x.max_dQ_ID + 1;
+
+        print x.max_dP, "ID: ", @@max_dP_ID;
+
+        TdeltaP = select s from T0:s
+                WHERE s.exId == @@max_dP_ID;
+                PRINT TdeltaP[TdeltaP.exId, TdeltaP.bus_name, TdeltaP.Sub, TdeltaP.@subid];
+
+        print x.max_dQ, "ID: ", @@max_dQ_ID;
+
+        TdeltaQ = select s from T0:s
+                  WHERE s.exId == @@max_dQ_ID;
+                  PRINT TdeltaQ[TdeltaQ.exId, TdeltaQ.bus_name, TdeltaQ.Sub, TdeltaQ.@subid];
+     end;
+  end;
+end;
+
+/*
+  T2 = select  s
+       from T0:s
+       WHERE s.island == 1
+       post-accum	 
+	   s.PF_Vm = GRAPHLU_getVm_EMS(s.exId, @@vertex),  
+	   s.PF_Va = GRAPHLU_getVa_EMS(s.exId, @@vertex)*180/@@PI;	
+
+//print T2.exId, T2.PF_Vm, T2.PF_Va TO_CSV "/home/tigergraph/EMS_query_update/output_powerflow_v1.csv";
+
+ T1_status =  SELECT s FROM T_status:s
+            POST-ACCUM
+			s.pf_iteration = @@iteration,
+			s.pf_start_mode = flatstart,
+			s.pf_convergence_P = max_change_P,
+			s.pf_convergence_Q = max_change_Q,
+			s.pf_method = "P-Q分解法";		
+			
+
+*/
+// comment temporarily
+ELSE
+  // run_option is 2 which means:
+  // 1 - @@matrix_Ybus is not empty --> LU factorization was performed in the past
+  // 2 - HeapAccums for the factorized LU structure have been built
+  // There is no need to build them in gsql or sort in expression function. 
+  print "Ybus and Factorized LU matrices have previously been built and stored. Solve Power Flow!";
+  
+    
+  //if factorize is true, construct Ybus, B' and B" from scratch
+  T1 = select s
+	   from T0:s-(topo_connect:e)->TopoND:t
+	   WHERE s.island == 1 and t.island == 1
+	 //where e.outage == 0   // meaning no outage on this line
+     accum   
+		double tap_ratio = abs(e.transformer_final_turns_ratio),
+		double tap_ratio_square = (e.transformer_final_turns_ratio)*(e.transformer_final_turns_ratio),	
+		double newG = e.G*abs(tap_ratio),
+		double newB = e.B*abs(tap_ratio),
+       //compute the G and B contribution of the branches to the diagonal terms         
+       case when (e.transformer_final_turns_ratio == 0) then 
+           //compute contribution of each branch to the diagonal terms 
+  		   s.@sumG += e.G, 
+           s.@sumB += -1*e.B + e.hB,
+		   s.@cal_P += s.SE_Vm*t.SE_Vm * (-1*e.G*cos(s.SE_Va-t.SE_Va) + e.B * sin(s.SE_Va - t.SE_Va)),
+		   s.@cal_Q += s.SE_Vm*t.SE_Vm * (-1*e.G*sin(s.SE_Va-t.SE_Va) - e.B * cos(s.SE_Va - t.SE_Va))
+       when (e.transformer_final_turns_ratio > 0) then
+           //double tap_ratio = e.transformer_final_turns_ratio,
+           s.@sumG += e.G,
+           s.@sumB += (-1*e.B) + e.hB, // sqrt
+		   s.@cal_P += s.SE_Vm*t.SE_Vm * (-1*newG*cos(s.SE_Va-t.SE_Va) + newB * sin(s.SE_Va - t.SE_Va)),
+		   s.@cal_Q += s.SE_Vm*t.SE_Vm * (-1*newG*sin(s.SE_Va-t.SE_Va) - newB * cos(s.SE_Va - t.SE_Va))
+       else
+           //compute contribution of each branch to the diagonal terms 
+		   //double tap_ratio_square = (e.transformer_final_turns_ratio)*(e.transformer_final_turns_ratio),
+           //double tap_ratio = abs(e.transformer_final_turns_ratio), 
+           s.@sumG +=  tap_ratio_square*e.G, 
+           s.@sumB +=  tap_ratio_square*(-1*e.B) + e.hB,
+		   s.@cal_P += s.SE_Vm*t.SE_Vm * (-1*newG*cos(s.SE_Va-t.SE_Va) + newB * sin(s.SE_Va - t.SE_Va)),
+		   s.@cal_Q += s.SE_Vm*t.SE_Vm * (-1*newG*sin(s.SE_Va-t.SE_Va) - newB * cos(s.SE_Va - t.SE_Va))
+       end
+     post-accum
+	 //Initialization of the state variables 
+       // Shunt conductance and shunt susceptance at node s
+       s.@sumG += s.G,
+
+       s.@sumB += s.B + s.xk_hB, // xk_hB为悬空线路
+	   
+	   // avoid Ybus, Bp and Bpp matrices diagonal elements' values being zeros !!!!!
+	   case when (s.@sumG == 0) then
+		s.@sumG = 0.001
+	   end,
+	   case when (s.@sumB == 0) then
+		s.@sumB = 0.001
+	   end,
+	   
+	   s.@cal_P += s.SE_Vm*s.SE_Vm*s.@sumG,
+	   s.@cal_Q += (-1) * s.SE_Vm*s.SE_Vm*s.@sumB,
+	   s.@P = s.@cal_P, 
+	   s.@Q = s.@cal_Q,		   
+	   case when flatstart == 0 then  //not using flat start, set voltage manitude/angle based on input data files
+		 case when s.busType == 1 or s.busType == 0 then 
+		   s.@Va = s.SE_Va, s.@Vm = s.SE_Vm
+		 when s.busType == 2 then 
+		   s.@Va = s.SE_Va, s.@Vm = s.SE_Vm
+		 when s.busType == 3 then 
+		   s.@Va = s.SE_Va, s.@Vm = s.SE_Vm
+		 when s.busType == 4 then 
+		   s.@Vm = 0, s.@Va = 0, s.@P =0 , s.@Q =0
+		 end
+	   else                           //flat start, set voltage magnitude/angle based on user input
+		 case when s.busType == 1 or s.busType == 0 then 
+		   s.@Vm = initial_Vm, s.@Va = initial_Va 
+		 when s.busType == 2 then 
+		   s.@Vm = s.SE_Vm, s.@Va = initial_Va
+		 when s.busType == 3 then 
+		   s.@Vm = s.SE_Vm, s.@Va = s.SE_Va
+		 when s.busType == 4 then 
+		   s.@Vm = 0, s.@Va = 0, s.@P =0 , s.@Q =0
+		 end
+	   end,
+	   @@vertex_VmVaPQ += sort_id_vertex_VmVaPQ(s.exId, s.@Vm, s.@Va, s.@P, s.@Q, s.busType);
+
+  // run_option is 2, only solve power flow in expression function
+  // parameters_fdpf_nonfactorize(@@vertex_VmVaPQ);
+  
+  basecase_result = GRAPHLU_fdpf_LU_solve_EMS (max_iteration, max_change_P, max_change_Q, @@iteration, @@vertex_VmVaPQ); 
+     
+  // Get the solved result
+  // Currently these are @s and are only printing into output file.
+  // They should also be shown on visualization which would require
+  // them to be vertex attributes. 
+  T2 = select  s
+       from T1:s
+	   WHERE s.island == 1
+       post-accum
+	   s.PF_Vm = GRAPHLU_getVm_EMS(s.exId, @@vertex_VmVaPQ),  
+	   s.PF_Va = GRAPHLU_getVa_EMS(s.exId, @@vertex_VmVaPQ)*180/@@PI;
+
+
+ T2_status =  SELECT s FROM T_status:s
+            POST-ACCUM
+			s.pf_iteration = @@iteration,
+			s.pf_start_mode = flatstart,
+			s.pf_convergence_P = max_change_P,
+			s.pf_convergence_Q = max_change_Q,
+			s.pf_method = "P-Q分解法";	   
+END;
+
+
+ T_params = SELECT s FROM T_params:s 
+			POST-ACCUM
+			IF s.pf_MaxIter < @@iteration THEN
+				alert_pf_MaxIter = "The value of Maximum iteration " + ToString(s.pf_MaxIter) + " is smaller than the really needed iteration: " +  ToString(@@iteration)
+			END;
+@@vertex.clear();
+@@matrix_all.clear();
+ print @@iteration, alert_pf_MaxIter;
+
+print factorize;
+print basecase_result;
+//print @@iteration;
+//print T3.exId, T3.@P, T3.@Q, T3.SE_Vm, T3.SE_Va, T3.PF_Vm, T3.PF_Va, T3.busType TO_CSV outputfile;
+	 // print T2;
+	 
+	 
+}

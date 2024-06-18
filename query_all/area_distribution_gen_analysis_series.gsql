@@ -1,0 +1,36 @@
+CREATE QUERY area_distribution_gen_analysis_series(string timestamp, string companyID) FOR GRAPH gsql_EMS syntax v2{ 
+  //ListAccum<carbon_hist_info> @@distribution_list;
+  MapAccum<string,double> @@distribution_map;
+  SetAccum<string> @@Comp_ID;
+  SumAccum<string> @area_name;
+
+	comp = {gridcom.*};
+ 
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+  
+  area = select s from comp:s where s.id ==companyID;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  //first:finde target negative load namely distribution generate
+  dis_unit = select t2 from comp:s-(connected_grid_sub:e1)-:t1 -(connected_Sub_Load>:e2)-l_oad:t2-(topo_load:e)-:t where s.id in @@Comp_ID and t.island ==1
+              ACCUM
+                t2.@area_name = s.name;
+  //second: foreach distribution unit meas_history and sum the target value 
+  distribution_unit_mease_set = select s from dis_unit:s -(Load_meas_history:e)-:t 
+              ACCUM
+                FOREACH x in t.today DO
+                 if isOneDay(timestamp,x.t) then
+                      if(x.est_p<0) then 
+                         @@distribution_map +=(x.t ->abs(x.est_p))
+                      end
+                  end
+                END;
+  
+  
+  print @@distribution_map;
+  
+  print area[area.name,area.distributed_p] where area.id == companyID;
+}

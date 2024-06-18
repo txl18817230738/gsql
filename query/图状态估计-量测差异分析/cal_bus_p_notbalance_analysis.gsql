@@ -1,0 +1,405 @@
+CREATE QUERY cal_bus_p_notbalance_analysis(string companyID="113715890758877224", bool return_all=true) FOR GRAPH gsql_EMS { 
+  TYPEDEF TUPLE<int sub_id, string sub_name, string sub_id_true, string bus_name, int volt, double Pm_sum, double error_Pm>  bus_list;
+	
+        HeapAccum<bus_list>(1000000, sub_name DESC, volt DESC) @@bus_all;
+        HeapAccum<bus_list>(50, sub_name DESC, volt DESC) @@bus_part;
+        SetAccum<string> @@Comp_ID;
+        SumAccum<string> @sub_name;
+        SumAccum<string> @sub_id_true;
+       // SumAccum<int> @Pflag = 0;
+        //SumAccum<int> @Qflag = 0;
+        SumAccum<double> @Pm_sum_500;
+       // SumAccum<double> @Pc_sum_500;
+        //SumAccum<double> @Qm_sum_500;
+       // SumAccum<double> @Qc_sum_500;
+        SumAccum<double> @Pm_unit_500;
+        SumAccum<double> @Pc_unit_500;
+        SumAccum<double> @Qm_unit_500;
+        SumAccum<double> @Qc_unit_500;
+        SumAccum<double> @error_Pm_500;
+        //SumAccum<double> @error_Pc_500;
+        //SumAccum<double> @error_Qm_500;
+        //SumAccum<double> @error_Qc_500;
+        SumAccum<double> @Pm_sum_220;
+        //SumAccum<double> @Pc_sum_220;
+        //SumAccum<double> @Qm_sum_220;
+        //SumAccum<double> @Qc_sum_220;
+        SumAccum<double> @Pm_unit_220;
+        SumAccum<double> @Pc_unit_220;
+        SumAccum<double> @Qm_unit_220;
+        SumAccum<double> @Qc_unit_220;
+        SumAccum<double> @error_Pm_220;
+        //SumAccum<double> @error_Pc_220;
+        //SumAccum<double> @error_Qm_220;
+        //SumAccum<double> @error_Qc_220;
+        SumAccum<double> @Pm_sum_110;
+        SumAccum<double> @Pc_sum_110;
+        SumAccum<double> @Qm_sum_110;
+        SumAccum<double> @Qc_sum_110;
+        SumAccum<double> @Pm_unit_110;
+        SumAccum<double> @Pc_unit_110;
+        SumAccum<double> @Qm_unit_110;
+        SumAccum<double> @Qc_unit_110;
+        SumAccum<double> @error_Pm_110;
+        //SumAccum<double> @error_Pc_110;
+        //SumAccum<double> @error_Qm_110;
+        //SumAccum<double> @error_Qc_110;
+        SumAccum<double> @Pm_sum_35;
+        SumAccum<double> @Pc_sum_35;
+        SumAccum<double> @Qm_sum_35;
+        SumAccum<double> @Qc_sum_35;
+        SumAccum<double> @Pm_unit_35;
+        SumAccum<double> @Pc_unit_35;
+        SumAccum<double> @Qm_unit_35;
+        SumAccum<double> @Qc_unit_35;
+        SumAccum<double> @error_Pm_35;
+        //SumAccum<double> @error_Pc_35;
+        //SumAccum<double> @error_Qm_35;
+        //SumAccum<double> @error_Qc_35;
+        SumAccum<double> @Pm_sum_10;
+        SumAccum<double> @Pc_sum_10;
+        SumAccum<double> @Qm_sum_10;
+        SumAccum<double> @Qc_sum_10;
+        SumAccum<double> @Pm_unit_10;
+        SumAccum<double> @Pc_unit_10;
+        SumAccum<double> @Qm_unit_10;
+        SumAccum<double> @Qc_unit_10;
+        SumAccum<double> @error_Pm_10;
+        //SumAccum<double> @error_Pc_10;
+        //SumAccum<double> @error_Qm_10;
+        //SumAccum<double> @error_Qc_10;
+        SumAccum<double> @Pm_sum_other;
+        SumAccum<double> @Pc_sum_other;
+        SumAccum<double> @Qm_sum_other;
+        SumAccum<double> @Qc_sum_other;
+        SumAccum<double> @Pm_unit_other;
+        SumAccum<double> @Pc_unit_other;
+        SumAccum<double> @Qm_unit_other;
+        SumAccum<double> @Qc_unit_other;
+        SumAccum<double> @error_Pm_other;
+        //SumAccum<double> @error_Pc_10;
+        //SumAccum<double> @error_Qm_10;
+        //SumAccum<double> @error_Qc_10;
+        //SumAccum<double> @lineN_500;
+        //SumAccum<double> @lineN_220;
+        //SumAccum<double> @lineN_110;
+        //SumAccum<double> @lineN_35;
+       // SumAccum<double> @lineN_10;
+        SumAccum<double> @unitN_500;
+        SumAccum<double> @unitN_220;
+        SumAccum<double> @unitN_110;
+        SumAccum<double> @uintN_35;
+        SumAccum<double> @uintN_10;
+        SumAccum<double> @uintN_other;
+        SumAccum<double> @@balance_limit_P;
+        SumAccum<double> @@balance_limit_Q;
+        //SumAccum<string> @P_obstatus = "平衡";
+        //SumAccum<string> @Q_obstatus = "平衡";
+        SumAccum<string> @subname;
+        SumAccum<int> @@count_all;
+  
+  SumAccum<INT> @@count_5;
+  SumAccum<INT> @@count_5_20;
+  SumAccum<INT> @@count_20;
+  
+  SumAccum<INT> @@count_500;
+  SumAccum<INT> @@count_500_5;
+  SumAccum<INT> @@count_500_5_20;
+  SumAccum<INT> @@count_500_20;
+ 
+  
+  SumAccum<INT> @@count_220;
+  SumAccum<INT> @@count_220_5;
+  SumAccum<INT> @@count_220_5_20;
+  SumAccum<INT> @@count_220_20;
+  
+  
+  SumAccum<INT> @@count_110;
+  SumAccum<INT> @@count_110_5;
+  SumAccum<INT> @@count_110_5_20;
+  SumAccum<INT> @@count_110_20;
+  
+  
+  SumAccum<INT> @@count_35;
+  SumAccum<INT> @@count_35_5;
+  SumAccum<INT> @@count_35_5_20;
+  SumAccum<INT> @@count_35_20;
+  
+  SumAccum<INT> @@count_10;
+  SumAccum<INT> @@count_10_5;
+  SumAccum<INT> @@count_10_5_20;
+  SumAccum<INT> @@count_10_20;
+  
+  SumAccum<INT> @@count_other;
+  SumAccum<INT> @@count_other_5;
+  SumAccum<INT> @@count_other_5_20;
+  SumAccum<INT> @@count_other_20;
+  
+  
+
+  T_Sub = {Substation.*};
+  two_port = {two_port_transformer.*};
+  three_port = {three_port_transformer.*};
+	T_load = {l_oad.*};
+	T_unit = {unit.*};
+	T_bus ={BUS.*};
+	T_CP = {C_P.*};
+  
+  comp = {gridcom.*};
+
+	start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+	WHILE(start_comp.size()>0) DO
+	  start_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+	END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID;
+  
+  T0 = select t from sub:s-(topoid_subid:e)-:t where s.subtype != "虚拟T接站" and t.island ==1
+             accum
+             t.@sub_id_true = s.strid;
+        measSet = {meas.*};
+  
+        Tparameter = {parameters.*};
+
+        Tparameter = select s from Tparameter:s
+              post-accum
+              @@balance_limit_P += s.balance_limit_P,
+              @@balance_limit_Q += s.balance_limit_Q;
+   
+
+        T1 = SELECT s
+          from T0: s -(topo_unit:e)-> :t
+          where t.off == 0
+          accum
+             if (t.volt >= 500) then
+                 s.@unitN_500 += 1,
+                 s.@Pm_unit_500 += t.Pimeas,
+                 s.@Qm_unit_500 += t.Qimeas,
+                 s.@Pc_unit_500 += t.P,
+                 s.@Qc_unit_500 += t.Q
+             else if (t.volt >= 220 and t.volt < 500) then
+                 s.@unitN_220 += 1,
+                 s.@Pm_unit_220 += t.Pimeas,
+                 s.@Qm_unit_220 += t.Qimeas,
+                 s.@Pc_unit_220 += t.P,
+                 s.@Qc_unit_220 += t.Q
+             else if (t.volt >= 110 and t.volt < 220) then
+                 s.@unitN_110 += 1,
+                 s.@Pm_unit_110 += t.Pimeas,
+                 s.@Qm_unit_110 += t.Qimeas,
+                 s.@Pc_unit_110 += t.P,
+                 s.@Qc_unit_110 += t.Q
+             else if (t.volt >= 34.5 and t.volt < 110) then
+                 s.@Pm_unit_35 += t.Pimeas,
+                 s.@Qm_unit_35 += t.Qimeas,
+                 s.@Pc_unit_35 += t.P,
+                 s.@Qc_unit_35 += t.Q
+             else if (t.volt >= 10 and t.volt < 34.5) then
+                 s.@Pm_unit_10 += t.Pimeas,
+                 s.@Qm_unit_10 += t.Qimeas,
+                 s.@Pc_unit_10 += t.P,
+                 s.@Qc_unit_10 += t.Q
+            else
+                 s.@Pm_unit_other += t.Pimeas,
+                 s.@Qm_unit_other += t.Qimeas,
+                 s.@Pc_unit_other += t.P,
+                 s.@Qc_unit_other += t.Q
+             end;
+
+
+        T500 = SELECT s
+          from T0: s -((topo_aclinedot|topo_Tx_Two|topo_Tx_Three|topo_load|topo_compensatorP):e)-> :t
+          where t.off == 0 and s.base_kV >= 500
+          accum
+             s.@Pm_sum_500 += t.Pimeas
+          post-accum
+             s.@Pm_sum_500 += -s.@Pm_unit_500,
+             s.@error_Pm_500 = abs(s.@Pm_sum_500/ 1082)*100,
+           IF (s.@error_Pm_500 >= @@balance_limit_P) THEN
+             @@count_all += 1,
+             @@count_500 +=1,
+             if(s.@error_Pm_500 <=5) THEN
+              @@count_500_5 +=1,
+              @@count_5 += 1
+             else if(s.@error_Pm_500 >5 and s.@error_Pm_500<=20) THEN
+              @@count_500_5_20 +=1,
+              @@count_5_20 += 1
+             else 
+              @@count_500_20 +=1,
+              @@count_20 +=1
+             end,
+               @@bus_all += bus_list(s.exId, s.Sub, s.@sub_id_true, s.bus_name, s.base_kV, s.@Pm_sum_500, s.@error_Pm_500),
+               @@bus_part += bus_list(s.exId, s.Sub, s.@sub_id_true, s.bus_name, s.base_kV, s.@Pm_sum_500, s.@error_Pm_500)
+           END;
+
+          T220 = SELECT s
+          from T0: s -((topo_aclinedot|topo_Tx_Two|topo_Tx_Three|topo_load|topo_compensatorP):e)-> :t
+          where t.off == 0 and s.base_kV >= 220 and s.base_kV < 500
+          accum
+             s.@Pm_sum_220 += t.Pimeas
+          post-accum
+             s.@Pm_sum_220 += -s.@Pm_unit_220,
+             s.@error_Pm_220 = abs(s.@Pm_sum_220/305)*100,
+           IF (s.@error_Pm_220 >= @@balance_limit_P) THEN
+             @@count_all += 1,
+             @@count_220 +=1,
+              if(s.@error_Pm_220 <=5) THEN
+              @@count_220_5 +=1,
+              @@count_5 += 1
+             else if(s.@error_Pm_220 >5 and s.@error_Pm_220<=20) THEN
+              @@count_220_5_20 +=1,
+              @@count_5_20 +=1
+             else 
+              @@count_220_20 +=1,
+              @@count_20 +=1
+             end,
+               @@bus_all += bus_list(s.exId, s.Sub, s.@sub_id_true, s.bus_name, s.base_kV, s.@Pm_sum_220, s.@error_Pm_220),
+               @@bus_part += bus_list(s.exId, s.Sub, s.@sub_id_true, s.bus_name, s.base_kV, s.@Pm_sum_220, s.@error_Pm_220)
+           END;               
+ 
+          T110 = SELECT s
+          from T0: s -((topo_aclinedot|topo_Tx_Two|topo_Tx_Three|topo_load|topo_compensatorP):e)-> :t
+          where t.off == 0 and s.base_kV >= 110 and s.base_kV < 220
+          accum
+             s.@Pm_sum_110 += t.Pimeas
+          post-accum
+             s.@Pm_sum_110 += -s.@Pm_unit_110,
+             s.@error_Pm_110 = abs(s.@Pm_sum_110/114)*100,
+           IF (s.@error_Pm_110 >= @@balance_limit_P) THEN
+             @@count_all += 1,
+             @@count_110 +=1,
+             if(s.@error_Pm_110 <=5) THEN
+              @@count_110_5 +=1,
+              @@count_5 +=1
+             else if(s.@error_Pm_110 >5 and s.@error_Pm_110<=20) THEN
+              @@count_110_5_20 +=1,
+              @@count_5_20 +=1
+             else 
+              @@count_110_20 +=1,
+              @@count_20 +=1
+             end,
+               @@bus_all += bus_list(s.exId, s.Sub, s.@sub_id_true, s.bus_name, s.base_kV, s.@Pm_sum_110, s.@error_Pm_110),
+               @@bus_part += bus_list(s.exId, s.Sub, s.@sub_id_true, s.bus_name, s.base_kV, s.@Pm_sum_110, s.@error_Pm_110)
+           END;
+       
+       T35 = SELECT s
+          from T0: s -((topo_aclinedot|topo_Tx_Two|topo_Tx_Three|topo_load|topo_compensatorP):e)-> :t
+          where t.off == 0 and s.base_kV >= 34.5 and s.base_kV < 110
+          accum
+             s.@Pm_sum_35 += t.Pimeas
+          post-accum
+             s.@Pm_sum_35 += -s.@Pm_unit_35,
+             s.@error_Pm_35 = abs(s.@Pm_sum_35/114)*100, 
+           IF (s.@error_Pm_35 >= @@balance_limit_P) THEN
+             @@count_all += 1,
+             @@count_35 += 1,
+             if(s.@error_Pm_35 <=5) THEN
+              @@count_35_5 +=1,
+              @@count_5 +=1
+             else if(s.@error_Pm_35 >5 and s.@error_Pm_35<=20) THEN
+              @@count_35_5_20 +=1,
+              @@count_5_20 +=1
+             else 
+              @@count_35_20 +=1,
+              @@count_20 +=1
+             end,
+               @@bus_all += bus_list(s.exId, s.Sub, s.@sub_id_true, s.bus_name, s.base_kV, s.@Pm_sum_35, s.@error_Pm_35),
+               @@bus_part += bus_list(s.exId, s.Sub, s.@sub_id_true, s.bus_name, s.base_kV, s.@Pm_sum_35, s.@error_Pm_35)
+           END;
+
+      T10 = SELECT s
+          from T0: s -((topo_aclinedot|topo_Tx_Two|topo_Tx_Three|topo_load|topo_compensatorP):e)-> :t
+          where t.off == 0 and s.base_kV >= 10 and s.base_kV < 34.5
+          accum
+             s.@Pm_sum_10 += t.Pimeas
+          post-accum
+             s.@Pm_sum_10 += -s.@Pm_unit_10,
+             s.@error_Pm_10 = abs(s.@Pm_sum_10/114)*100,
+           IF (s.@error_Pm_10 >= @@balance_limit_P) THEN
+             @@count_all += 1,
+             @@count_10 += 1,
+             if(s.@error_Pm_10 <=5) THEN
+              @@count_10_5 +=1,
+              @@count_5 +=1
+             else if(s.@error_Pm_10 >5 and s.@error_Pm_10<=20) THEN
+              @@count_10_5_20 +=1,
+              @@count_5_20 +=1
+             else 
+              @@count_10_20 +=1,
+              @@count_20 +=1
+             end,
+               @@bus_all += bus_list(s.exId, s.Sub, s.@sub_id_true, s.bus_name, s.base_kV, s.@Pm_sum_10, s.@error_Pm_10),
+               @@bus_part += bus_list(s.exId, s.Sub, s.@sub_id_true, s.bus_name, s.base_kV, s.@Pm_sum_10, s.@error_Pm_10)
+             END;
+
+  
+  Tother = SELECT s
+          from T0: s -((topo_aclinedot|topo_Tx_Two|topo_Tx_Three|topo_load|topo_compensatorP):e)-> :t
+          where t.off == 0 and s.base_kV < 10 
+          accum
+             s.@Pm_sum_other += t.Pimeas
+          post-accum
+             s.@Pm_sum_other += -s.@Pm_unit_other,
+             s.@error_Pm_other = abs(s.@Pm_sum_other/114)*100,
+           IF (s.@error_Pm_other >= @@balance_limit_P) THEN
+             @@count_all += 1,
+             @@count_other += 1,
+             if(s.@error_Pm_other <=5) THEN
+              @@count_other_5 +=1,
+              @@count_5 +=1
+             else if(s.@error_Pm_other >5 and s.@error_Pm_other<=20) THEN
+              @@count_other_5_20 +=1,
+              @@count_5_20 +=1
+             else 
+              @@count_other_20 +=1,
+              @@count_20 +=1
+             end,
+               @@bus_all += bus_list(s.exId, s.Sub, s.@sub_id_true, s.bus_name, s.base_kV, s.@Pm_sum_other, s.@error_Pm_other),
+               @@bus_part += bus_list(s.exId, s.Sub, s.@sub_id_true, s.bus_name, s.base_kV, s.@Pm_sum_other, s.@error_Pm_other)
+           END;
+
+      if return_all then
+        print @@bus_all;
+      else
+        print @@bus_part;
+      end;
+        print @@count_all;
+
+        print @@count_5;
+	print @@count_5_20;
+	print @@count_20;
+  
+  print @@count_500;
+  print @@count_500_5;
+  print @@count_500_5_20;
+  print @@count_500_20;
+ 
+  
+  print @@count_220;
+  print @@count_220_5;
+  print @@count_220_5_20;
+  print @@count_220_20;
+  
+  
+  print @@count_110;
+  print @@count_110_5;
+  print @@count_110_5_20;
+  print @@count_110_20;
+  
+  
+  print @@count_35;
+  print @@count_35_5;
+  print @@count_35_5_20;
+  print @@count_35_20;
+  
+  print @@count_10;
+  print @@count_10_5;
+  print @@count_10_5_20;
+  print @@count_10_20;
+  
+  print @@count_other;
+  print @@count_other_5;
+  print @@count_other_5_20;
+  print @@count_other_20;
+}

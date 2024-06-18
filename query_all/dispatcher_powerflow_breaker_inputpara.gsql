@@ -1,0 +1,110 @@
+CREATE QUERY dispatcher_powerflow_breaker_inputpara(string companyID="113715890758877224", bool return_all=true) FOR GRAPH gsql_EMS { 
+  TYPEDEF TUPLE <STRING sub_name, STRING sub_id, double volt, STRING area,  int count_all, int count_500, int count_220, int count_110, int count_35, int count_10, int count_other> row;
+    
+  SumAccum<string> @area;
+  //SumAccum<string> @sub_id;
+	SetAccum<string> @@Comp_ID;
+  HeapAccum<row>(50, sub_name DESC) @@result_part;
+  HeapAccum<row>(10000000, sub_name DESC) @@result;
+  
+  SumAccum<INT> @@count_all;
+  SumAccum<INT> @@count_all_involtmode;
+  
+  SumAccum<INT> @@count_500;
+  SumAccum<INT> @@count_220;
+  SumAccum<INT> @@count_110;
+  SumAccum<INT> @@count_35;
+  SumAccum<INT> @@count_10;
+  SumAccum<INT> @@count_other;
+  
+  SumAccum<INT> @count_all_breaker;
+  
+  SumAccum<INT> @count_500_breaker;
+  SumAccum<INT> @count_220_breaker;
+  SumAccum<INT> @count_110_breaker;
+  SumAccum<INT> @count_35_breaker;
+  SumAccum<INT> @count_10_breaker;
+  SumAccum<INT> @count_other_breaker;
+  
+	
+	T0 = {TopoND.*};
+ // sub = {Substation.*};
+	comp = {gridcom.*};
+   start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+  /**
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID
+                accum 
+                    t.@area =s.name;
+  sub = select s from sub:s - (topoid_subid:e)-:t where t.island==1;
+  **/
+  Tsub = select t from comp:s-(connected_grid_sub:e)-:t where s.id in @@Comp_ID;
+
+  Tsub_gridcom = SELECT s from Tsub:s - (connected_grid_sub:e) - :t 
+   ACCUM
+        s.@area = t.name; 
+  
+  subStationSet = select s from Tsub:s -(topoid_subid:e)-TopoND:t where t.island==1;
+ 
+  Tsub = select s from subStationSet:s -(connected_Sub_Breaker)->Breaker:t 
+                accum 
+                  s.@count_all_breaker +=1,
+                  @@count_all_involtmode +=1,
+                  double volt = t.volt,
+                  if volt >= 500 then
+                  @@count_500 += 1,
+                  s.@count_500_breaker +=1
+                else if volt >= 220 then
+                  @@count_220+=1,
+                  s.@count_220_breaker+=1         
+                else if volt >= 110 then
+                  @@count_110+=1,
+                  s.@count_110_breaker +=1               
+                else if volt >= 34.5 then
+                  @@count_35+=1,
+                  s.@count_35_breaker+=1     
+  
+                else if volt >= 10 then
+                  @@count_10+=1,
+                  s.@count_10_breaker+=1
+                else
+                  @@count_other+=1,
+                  s.@count_other_breaker +=1
+                end
+                POST-ACCUM
+                  @@count_all +=1,
+                  @@result+=row(s.name, s.strid, s.volt, s.@area,  s.@count_all_breaker, s.@count_500_breaker, s.@count_220_breaker, s.@count_110_breaker, s.@count_35_breaker, s.@count_10_breaker, s.@count_other_breaker),
+		  @@result_part+=row(s.name, s.strid, s.volt, s.@area,  s.@count_all_breaker, s.@count_500_breaker, s.@count_220_breaker, s.@count_110_breaker, s.@count_35_breaker, s.@count_10_breaker, s.@count_other_breaker);
+                    
+	
+		if return_all then
+    print @@result;
+  else
+    print @@result_part;
+  end;
+
+  
+  //print @@result.size();
+
+	print @@count_all;
+  
+ 
+  
+  print @@count_500;
+
+  print @@count_220;
+ 
+  print @@count_110;
+ 
+  print @@count_35;
+
+  print @@count_10;
+
+  print @@count_other;
+  
+  print @@count_all_involtmode;
+ 
+}

@@ -1,0 +1,14 @@
+"""
+use ems match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:connected_Sub_Load]->(t:`l_oad`) where startid.gridid = "113715890758877224"
+let
+ pimeas = case when t.Pimeas is not NULL then t.Pimeas else 0.0 end
+let
+ p_meas_neg = case when pimeas < 0.0 then abs(t.Pimeas) else 0.0 end,
+ p_meas_pos = case when pimeas > 0.0 then t.Pimeas else 0.0 end,
+
+ less_0_p_meas = case when pimeas < 0.0 then 1 else 0 end,
+ small_p_meas = case when pimeas >= 0.0 and pimeas < 10.0 then 1 else 0 end,
+ middle_p_meas = case when pimeas >=10.0 and pimeas < 50.0 then 1 else 0 end,
+ large_p_meas = case when pimeas >= 50.0 then 1 else 0 end
+ return case when t.volt >= 500.0 then "500" when t.volt >= 220.0 and t.volt < 500.0 then "220" when t.volt >= 110.0 and t.volt < 220.0 then "110" when t.volt >= 35.0 and t.volt < 110.0 then "35" when t.volt >= 10.0 and t.volt < 35.0 then "10" else "other" end as voltLevel, count(*) as total, sum(t.P) as cal, sum(p_meas_neg) as neg_meas_total, sum(p_meas_pos) as pos_meas_total, sum(less_0_p_meas) as less_load, sum(small_p_meas) as small_load, sum(middle_p_meas) as middle_load, sum(large_p_meas) as large_load group by voltLevel Next return voltLevel, total,  pos_meas_total, neg_meas_total,cal, less_load, small_load, middle_load, large_load
+ """

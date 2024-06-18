@@ -1,0 +1,718 @@
+CREATE QUERY gridcom_meas_se_pf_stastic(/* Parameters here */) FOR GRAPH gsql_EMS syntax v2{ 
+  SumAccum<int> @island;
+  SumAccum<double> @count_sub;
+  SumAccum<double> @count_P;
+  SumAccum<double> @count_Q;
+  SumAccum<double> @measNum;
+  SumAccum<double> @count_all;
+  SumAccum<double> @count_AClinedot;
+  SumAccum<double> @count_AClinedotP;
+  SumAccum<double> @count_AClinedotQ;
+  SumAccum<double> @count_unit;
+  SumAccum<double> @count_unit_SVG;
+  SumAccum<double> @count_unitP;
+  SumAccum<double> @count_unitQ;
+  SumAccum<double> @count_load;
+  SumAccum<double> @count_loadP;
+  SumAccum<double> @count_loadQ;
+  SumAccum<double> @count_twoport;
+  SumAccum<double> @count_twoportP;
+  SumAccum<double> @count_twoportQ;
+  SumAccum<double> @count_threeport;
+  SumAccum<double> @count_threeportP;
+  SumAccum<double> @count_threeportQ;
+  SumAccum<double> @count_CP;
+  SumAccum<double> @count_CPQ;
+  SumAccum<double> @count_CS;
+  SumAccum<double> @count_bus_section;
+  SumAccum<double> @count_busV;
+  
+  
+  SumAccum<double> @se_OKNum_AClinedot;
+  SumAccum<double> @se_OKNum_unit;
+  SumAccum<double> @se_OKNum_load;
+  SumAccum<double> @se_OKNum_twoport;
+  SumAccum<double> @se_OKNum_threeport;
+  SumAccum<double> @se_OKNum_CP;
+  SumAccum<double> @se_OKNum_bus;
+  //SumAccum<double> @se_meas_OKNum;
+  SumAccum<double> @@error_limit_P;
+  SumAccum<double> @@error_limit_Q;
+  
+  SumAccum<double> @area_gen;//发电量测
+  SumAccum<double> @area_load;//负荷量测
+  SumAccum<double> @area_input; //厂站输入功率
+  SumAccum<double> @area_output; //厂站输出功率
+  
+  SumAccum<double> @count_acline_p_qualified;
+  SumAccum<double> @count_acline_q_qualified;
+  SumAccum<double> @count_unit_p_qualified;
+  SumAccum<double> @count_unit_q_qualified;
+  SumAccum<double> @count_load_p_qualified;
+  SumAccum<double> @count_load_q_qualified;
+  SumAccum<double> @count_trans2_p_qualified;
+  SumAccum<double> @count_trans2_q_qualified;
+  SumAccum<double> @count_trans3_p_qualified;
+  SumAccum<double> @count_trans3_q_qualified;
+  SumAccum<double> @count_bus_v_qualified;
+  SumAccum<double> @count_bus;
+  SumAccum<double> @V_error_pct;
+  
+  
+  SumAccum<double> @total_acline_pf;
+  SumAccum<double> @total_acline_se;
+  SumAccum<double> @total_gen_pf;
+  SumAccum<double> @total_gen_se;
+  SumAccum<double> @total_load_pf;
+  SumAccum<double> @total_load_se;
+  SumAccum<double> @total_trans2_pf;
+  SumAccum<double> @total_trans2_se;
+  SumAccum<double> @total_trans3_pf;
+  SumAccum<double> @total_trans3_se;
+  
+  SumAccum<double> @distribution_gen_total_p;
+  
+  OrAccum @inArea;
+  MapAccum<string, double> @area_statistic;
+  
+  SumAccum<double> @count_sub_meas;
+  SumAccum<double> @area_loss;
+  
+  SumAccum<double> @count_breaker;
+  SumAccum<double> @count_disconnector;
+  
+  SumAccum<double> @bus_analysis_num;
+  SumAccum<double> @acline_analysis_num;
+  SumAccum<double> @unit_analysis_num;
+  SumAccum<double> @load_analysis_num;
+  SumAccum<double> @trans2_analysis_num;
+  SumAccum<double> @trans3_analysis_num;
+  
+  
+ 
+  Tsub={Substation.*};
+  T0 = {TopoND.*};
+  comp = {gridcom.*};
+  comp_stat = {gridcom_stat.*};
+  Tparameter = {parameters.*};
+  
+  
+  //parameter setting
+  Tparameter = select s from Tparameter:s
+     post-accum
+     @@error_limit_P += s.error_limit_P/100,
+     @@error_limit_Q += s.error_limit_Q/100;
+  
+  
+  // ACline
+    Tacline = select t from T0:s- (topo_aclinedot:e) -:t
+            accum
+                t.@island = s.island;
+
+    TAClinedotSet = select t from Tsub:s - (connected_Sub_Aclinedot>:e) -:t-(aclinedot_aclinedot>:e1) -:t1
+          where s.subtype != "虚拟站" and s.subtype != "其他" and s.subtype != "线端连接站" and t.@island == 1 and t1.@island ==1
+          accum 
+                s.@count_AClinedot += 1,
+                double line_loss = (t.P_pf + t1.P_pf),
+                s.@area_loss += line_loss,
+                IF (abs(t.Pimeas) > 0) THEN
+                      s.@count_AClinedotP += 1
+                end,
+                IF (abs(t.Qimeas) > 0) THEN
+                        s.@count_AClinedotQ += 1
+                end,
+                if ((t.p_se_error < @@error_limit_P) or (t.q_se_error < @@error_limit_Q)) then 
+                        s.@se_OKNum_AClinedot += 1
+                end,
+                        
+                if t.p_pf_error <=@@error_limit_P then 
+                        s.@count_acline_p_qualified +=1 
+                end,
+                if t.q_pf_error <=@@error_limit_Q then 
+                        s.@count_acline_q_qualified +=1
+                end,
+                double p_diff = 0,
+                IF (t.P != 0) THEN
+                      p_diff = (abs(t.P_pf)-abs(t.P))/abs(t.P)*100
+                END,
+                IF abs(p_diff) > 2 THEN
+                      s.@acline_analysis_num += 1
+                end,
+                s.@total_acline_pf += abs(t.P_pf),
+				        s.@total_acline_se += abs(t.P);
+  
+  
+  
+  
+  // Gen:unit
+    Tunit = select t from T0:s- (topo_unit:e) -:t
+            accum
+                t.@island = s.island;
+    TGenSet = select t from Tsub:s - (connected_Sub_Unit>:e) -:t
+             where t.@island == 1 and t.Gentype != "虚拟机组" and t.Gentype != "交换机组"
+             ACCUM
+             if (lastN_Name(t.name,3) == "SVG" or lastN_Name(t.name,3) == "COM") then
+                s.@count_unit_SVG += 1
+             end,
+             s.@count_unit += 1,
+             if (abs(t.Pimeas) > 0.0001) then
+               s.@count_unitP += 1
+             end,
+             if (abs(t.Qimeas) > 0.0001) then
+                s.@count_unitQ += 1
+             end,
+             if ((t.p_se_error < @@error_limit_P) or (t.q_se_error < @@error_limit_Q)) then 
+                s.@se_OKNum_unit += 1
+             end,
+             IF t.P_pf > 0 THEN  
+                s.@total_gen_pf += t.P_pf
+            ELSE
+                s.@total_load_pf += abs(t.P_pf)
+            END,
+            IF t.P > 0 THEN  
+                s.@total_gen_se += t.P
+            ELSE
+                s.@total_load_se += abs(t.P)
+            END,
+            if t.Pimeas >0 THEN
+                s.@area_gen += t.Pimeas 
+            ELSE
+                s.@area_load += t.Pimeas 
+            END,
+            if t.p_pf_error <=@@error_limit_P then //TODO 
+                  s.@count_unit_p_qualified +=1 
+             end,
+            if t.q_pf_error <=@@error_limit_Q then 
+                  s.@count_unit_q_qualified +=1 
+            end,
+            double p_change = 0,
+            IF (t.P != 0) THEN
+              p_change = (abs(t.P_pf)-abs(t.P))/abs(t.P)*100
+            END,
+            IF abs(p_change) > 2 THEN
+              s.@unit_analysis_num += 1
+            end;
+   
+   // Load
+   TLoad = select t from T0:s- (topo_load:e) -:t
+            accum
+                t.@island = s.island;
+   TLoadSet = select t from Tsub:s - (connected_Sub_Load>:e) -:t where t.@island == 1
+             accum
+             s.@count_load += 1,
+             if (abs(t.Pimeas) > 0.0001) then
+                s.@count_loadP += 1
+             end,
+             if (abs(t.Qimeas) > 0.0001) then
+                s.@count_loadQ += 1
+             end,
+             if ((t.p_se_error < 10) or (t.q_se_error < 10)) then 
+                s.@se_OKNum_load += 1
+             end,
+              IF t.P_pf > 0 THEN
+                //s.@area_load += t.P_pf,
+                s.@total_load_pf += t.P_pf
+            // 负值负荷统计入区域发电量
+              ELSE
+                //s.@area_gen += abs(t.P_pf),
+                s.@total_gen_pf += abs(t.P_pf)
+              END,
+              IF t.P > 0 THEN
+                s.@total_load_se += t.P
+            // 负值负荷统计入区域发电量
+              ELSE
+                s.@total_gen_se += abs(t.P),
+                s.@distribution_gen_total_p += abs(t.P)
+				
+              END,
+              IF t.Pimeas > 0 THEN 
+                s.@area_load += t.Pimeas 
+              ELSE 
+                s.@area_gen += abs(t.Pimeas)
+              END,
+              if t.p_pf_error <=10 then 
+                  s.@count_load_p_qualified +=1 
+              end,
+              if t.q_pf_error <=10 then 
+                  s.@count_load_q_qualified +=1 
+              end,
+              double p_change = 0,
+              IF (t.P != 0) THEN
+                p_change = (abs(t.P_pf)-abs(t.P))/abs(t.P)*100
+              END,
+              IF abs(p_change) > 2 THEN
+                s.@load_analysis_num += 1
+              end;
+
+// Two port Trans
+   Ttrans2 = select t from T0:s- (topo_Tx_Two:e) -:t
+            accum
+                t.@island = s.island;
+   TTwoportSet = select t from Tsub:s - (connected_Sub_Trans_two>:e) -:t where t.@island == 1
+
+           accum
+             s.@count_twoport += 1,
+             IF (abs(t.Pimeas) > 0) THEN
+                    s.@count_twoportP += 1
+             END,
+             IF (abs(t.Qimeas) > 0) THEN
+                    s.@count_twoportQ += 1
+             END,
+             if ((t.p_se_error < @@error_limit_P) or (t.q_se_error < @@error_limit_Q)) then 
+                s.@se_OKNum_twoport += 1
+             end,
+             if t.p_pf_error <=@@error_limit_P then 
+                    s.@count_trans2_p_qualified +=1 
+             end,
+             if t.q_pf_error <=@@error_limit_Q then 
+                    s.@count_trans2_q_qualified +=1
+              end,
+              s.@total_trans2_pf += abs(t.P_pf),
+				      s.@total_trans2_se += abs(t.P);
+  
+    T_trans2_loss = select t1 from Tsub:s -(connected_Sub_Trans_two>:e1)-:t1 -(txI_txJ_transformerline>:e)-:t where t1.@island==1 and t.@island==1
+                ACCUM 
+                    double trans2_loss = (t1.P_pf + t.P_pf),
+                    s.@area_loss += trans2_loss,
+                    double p_change = 0,
+                    IF (t1.P != 0) THEN
+                      p_change = (abs(t1.P_pf)-abs(t1.P))/abs(t1.P)*100
+                    END,
+                    IF abs(p_change) > 2 THEN
+                      s.@trans2_analysis_num += 1
+                    end;
+
+// Three port Trans
+   Ttrans3 = select t from T0:s- (topo_Tx_Three:e) -:t
+            accum
+                t.@island = s.island;
+   TThreeportSet = select t from Tsub:s - (connected_Sub_Trans_three>:e) -:t where t.@island == 1
+             
+             accum
+             s.@count_threeport += 1,
+             IF (abs(t.Pimeas) > 0) THEN
+                  s.@count_threeportP += 1
+              END,
+              IF (abs(t.Qimeas) > 0) THEN
+                  s.@count_threeportQ += 1
+              END,
+              if ((t.p_se_error < @@error_limit_P) or (t.q_se_error < @@error_limit_Q)) then 
+                s.@se_OKNum_threeport += 1
+             end,
+              if t.p_pf_error <=@@error_limit_P then 
+                   s.@count_trans3_p_qualified +=1 
+              end,
+              if t.q_pf_error <=@@error_limit_Q then 
+                    s.@count_trans3_q_qualified +=1
+              end,
+              s.@total_trans3_pf += abs(t.P_pf),
+				      s.@total_trans3_se += abs(t.P);
+  
+   T_trans3_loss = select s from Tsub:s -(np_sub:e1)-:t1-(neutral_three:e)-:t where t.@island ==1 
+                  ACCUM
+                    s.@area_loss += t.P_pf;
+   Ttrans3_analysis_num = select s from TThreeportSet:s - (neutral_three:e) - :t where s.@island == 1
+	                accum 
+      	          double p_change = 0,
+                  IF (s.P != 0) THEN
+                    p_change = (abs(s.P_pf)-abs(s.P))/abs(s.P)*100
+                  END,
+                  IF abs(p_change) > 2 THEN
+                  s.@trans3_analysis_num += 1
+                  end;
+
+//CP
+   Tcp = select t from T0:s- (topo_compensatorP:e) -:t
+            accum
+                t.@island = s.island;
+   TCPSet = select t from Tsub:s - (connected_Sub_Compensator_P>:e) -:t where t.@island == 1
+            accum
+             s.@count_CP += 1,
+             IF (abs(t.Qimeas) > 0) THEN
+                  s.@count_CPQ += 1
+             end,
+             if(t.q_se_error < @@error_limit_Q) then 
+                   s.@se_OKNum_CP += 1
+             end;
+  //CS 
+   csSet = SELECT t FROM Tsub:s - (connected_Sub_Compensator_S>:e) -:t
+            ACCUM
+              s.@count_CS +=1;
+   // bus
+   Tbus = select t from T0:s- (topo_bus:e) -:t
+            accum
+                t.@island = s.island;
+   TBusSet = select t from Tsub:s - (connected_Sub_Bus>:e) -:t where t.@island == 1
+             accum
+               s.@count_bus_section +=1,
+              IF (abs(t.Pimeas) > 0) THEN
+                    s.@count_busV += 1
+              END,
+              if(t.v_se_error < @@error_limit_P) then 
+                    s.@se_OKNum_bus += 1
+              END;
+  
+  //开关数量
+  T1 = select t from Tsub:s -(connected_Sub_Breaker>:e)-Breaker:t 
+                accum 
+                  s.@count_breaker +=1;
+  
+  //刀闸数量
+   T2 = select t from Tsub:s -(connected_Sub_Disconnector>:e)-Disconnector:t 
+                accum 
+                  s.@count_disconnector +=1;
+  
+   // for calculate bus 
+   T2 = select s from T0:s
+		 WHERE s.island == 1
+		 POST-ACCUM
+		if (s.volt >= 500) then
+                  if (abs(s.SE_Vm) > 0.01) then
+                    s.@V_error_pct = abs(s.PF_Vm - s.SE_Vm)/1082
+                  else
+                    s.@V_error_pct = 0
+                  end
+                else if (s.volt >= 330 and s.volt < 500) then
+                  if (abs(s.SE_Vm) > 0.01) then
+                    s.@V_error_pct = abs(s.PF_Vm - s.SE_Vm)/686
+                  else
+                    s.@V_error_pct = 0
+                  end
+                else if (s.volt >= 220 and s.volt< 330) then
+                  if (abs(s.SE_Vm) > 0.01) then
+                    s.@V_error_pct = abs(s.PF_Vm - s.SE_Vm)/305
+                  else
+                    s.@V_error_pct = 0
+                  end
+				else
+                  if (abs(s.SE_Vm) > 0.01) then
+                    s.@V_error_pct = abs(s.PF_Vm - s.SE_Vm)/141
+                  else
+                    s.@V_error_pct = 0
+                  end
+                end;
+  
+   Tcalbus_normal = select t from Tsub:s-(topoid_subid:e)- :t where t.island ==1 
+                      accum
+                        s.@count_bus +=1,
+                        s.@island = t.island,
+                        if t.@V_error_pct <=@@error_limit_P then 
+                            s.@count_bus_v_qualified +=1 
+                        end;
+   Tcalbus_neutral = select t from Tsub:s - (np_sub:e1)-neutral_point:t1-(topo_neutral:e)-:t where t.island==1
+                        accum
+                        s.@count_bus +=1,
+                        s.@island = t.island,
+                        if t.@V_error_pct <=@@error_limit_P then 
+                            s.@count_bus_v_qualified +=1 
+                        end; 
+  TopoSet = Tcalbus_normal union Tcalbus_neutral;
+   //电压计算对比分析（表格结果数量）
+  T3 = SELECT s FROM TopoSet:s
+			where s.island == 1
+			ACCUM
+          double vm_ratio =0,
+          if(s.SE_Vm !=0) then 
+					vm_ratio = 100*(abs(s.PF_Vm) - abs(s.SE_Vm))/ abs(s.SE_Vm) 
+				end,
+          if abs(vm_ratio) > 2 THEN 
+            s.@bus_analysis_num +=1 
+          end;
+  
+  
+  //区域汇总 -Tarea即为地调区域
+  Tarea = select s from comp:s-(connected_grid_sub:e)-:t 
+                accum
+                  s.@area_gen += t.@area_gen,
+                  s.@area_load += t.@area_load,
+                  s.@acline_analysis_num += t.@acline_analysis_num,
+                  s.@unit_analysis_num += t.@unit_analysis_num,
+                  s.@bus_analysis_num += t.@bus_analysis_num,
+                  s.@load_analysis_num += t.@load_analysis_num,
+                  s.@trans2_analysis_num += t.@trans2_analysis_num,
+                  s.@trans3_analysis_num += t.@trans3_analysis_num,
+                  s.@count_breaker += t.@count_breaker,
+                  s.@count_disconnector += t.@count_disconnector,
+                  s.@area_loss += t.@area_loss,
+                  s.@area_input += t.@area_input,
+                  s.@area_output += t.@area_output,
+                  s.@count_AClinedot += t.@count_AClinedot,
+                  s.@count_unit += t.@count_unit,
+                  s.@count_load += t.@count_load,
+                  s.@count_twoport += t.@count_twoport,
+                  s.@count_threeport += t.@count_threeport,
+                  s.@count_bus_section += t.@count_bus_section,
+                  s.@count_bus += t.@count_bus,
+                  s.@count_CP += t.@count_CP,
+                  s.@count_CS += t.@count_CS,
+                  s.@count_AClinedotP += t.@count_AClinedotP,
+                  s.@count_AClinedotQ += t.@count_AClinedotQ,
+                  s.@count_unit_SVG += t.@count_unit_SVG,
+                  s.@count_unitP += t.@count_unitP,
+                  s.@count_unitQ += t.@count_unitQ,
+                  s.@count_loadP += t.@count_loadP,
+                  s.@count_loadQ += t.@count_loadQ,
+                  s.@count_twoportP += t.@count_twoportP,
+                  s.@count_twoportQ += t.@count_twoportQ,
+                  s.@count_threeportP += t.@count_threeportP,
+                  s.@count_threeportQ += t.@count_threeportQ,
+                  s.@count_CPQ += t.@count_CPQ,
+                  s.@count_busV += t.@count_busV,
+                  s.@se_OKNum_AClinedot += t.@se_OKNum_AClinedot,
+                  s.@se_OKNum_unit += t.@se_OKNum_unit,
+                  s.@se_OKNum_load += t.@se_OKNum_load,
+                  s.@se_OKNum_twoport += t.@se_OKNum_twoport,
+                  s.@se_OKNum_threeport += t.@se_OKNum_threeport,
+                  s.@se_OKNum_CP += t.@se_OKNum_CP,
+                  s.@se_OKNum_bus += t.@se_OKNum_bus,
+                  s.@distribution_gen_total_p += t.@distribution_gen_total_p,
+                  s.@count_acline_p_qualified += t.@count_acline_p_qualified,
+                  s.@count_acline_q_qualified += t.@count_acline_q_qualified,
+                  s.@count_unit_p_qualified += t.@count_unit_p_qualified,
+                  s.@count_unit_q_qualified += t.@count_unit_q_qualified,
+                  s.@count_load_p_qualified += t.@count_load_p_qualified,
+                  s.@count_load_q_qualified += t.@count_load_q_qualified,
+                  s.@count_trans2_p_qualified += t.@count_trans2_p_qualified,
+                  s.@count_trans2_q_qualified += t.@count_trans2_q_qualified,
+                  s.@count_trans3_p_qualified += t.@count_trans3_p_qualified,
+                  s.@count_trans3_q_qualified += t.@count_trans3_q_qualified,
+                  s.@count_bus_v_qualified += t.@count_bus_v_qualified,
+                  s.@total_acline_pf += t.@total_acline_pf,
+                  s.@total_acline_se += t.@total_acline_se,
+                  s.@total_gen_pf += t.@total_gen_pf,
+                  s.@total_gen_se += t.@total_gen_se,
+                  s.@total_load_pf += t.@total_load_pf,
+                  s.@total_load_se += t.@total_load_se,
+                  s.@total_trans2_pf += t.@total_trans2_pf,
+                  s.@total_trans2_se += t.@total_trans2_se,
+                  s.@total_trans3_pf += t.@total_trans3_pf,
+                  s.@total_trans3_se += t.@total_trans3_se,
+		              if(t.@island==1) then 
+			                s.@count_sub +=1
+		              end,
+                  if(t.@count_AClinedotP>0 or t.@count_AClinedotQ>0 or t.@count_unitP>0 or t.@count_unitQ>0 or t.@count_loadP>0 or t.@count_loadQ>0 or t.@count_twoportP>0 or t.@count_twoportQ>0 or t.@count_threeportP>0 or t.@count_threeportQ>0 or t.@count_CPQ>0 or t.@count_busV>0) then 
+                      s.@count_sub_meas +=1 
+                  end;
+  // root gridcom
+  Troot = select t from Tarea:s -(gridcom_gridcom:e) -:t 
+                ACCUM
+                  t.@acline_analysis_num += s.@acline_analysis_num,
+                  t.@unit_analysis_num += s.@unit_analysis_num,
+                  t.@bus_analysis_num += s.@bus_analysis_num,
+                  t.@load_analysis_num += s.@load_analysis_num,
+                  t.@trans2_analysis_num += s.@trans2_analysis_num,
+                  t.@trans3_analysis_num += s.@trans3_analysis_num,
+                  t.@count_breaker += s.@count_breaker,
+                  t.@count_disconnector += s.@count_disconnector,
+		              t.@count_sub += s.@count_sub,
+                  t.@count_sub_meas += s.@count_sub_meas,
+                  t.@area_gen += s.@area_gen,
+                  t.@area_load += s.@area_load,
+                  t.@area_loss += s.@area_loss,
+                  t.@area_input += s.@area_input,
+                  t.@area_output += s.@area_output,
+                  t.@count_AClinedot += s.@count_AClinedot,
+                  t.@count_unit += s.@count_unit,
+                  t.@count_load += s.@count_load,
+                  t.@count_twoport += s.@count_twoport,
+                  t.@count_threeport += s.@count_threeport,
+                  t.@count_bus_section += s.@count_bus_section,
+                  t.@count_bus += s.@count_bus,
+                  t.@count_CP += s.@count_CP,
+                  t.@count_CS += s.@count_CS,
+                  t.@count_AClinedotP += s.@count_AClinedotP,
+                  t.@count_AClinedotQ += s.@count_AClinedotQ,
+                  t.@count_unit_SVG += s.@count_unit_SVG,
+                  t.@count_unitP += s.@count_unitP,
+                  t.@count_unitQ += s.@count_unitQ,
+                  t.@count_loadP += s.@count_loadP,
+                  t.@count_loadQ += s.@count_loadQ,
+                  t.@count_twoportP += s.@count_twoportP,
+                  t.@count_twoportQ += s.@count_twoportQ,
+                  t.@count_threeportP += s.@count_threeportP,
+                  t.@count_threeportQ += s.@count_threeportQ,
+                  t.@count_CPQ += s.@count_CPQ,
+                  t.@count_busV += s.@count_busV,
+                  t.@se_OKNum_AClinedot += s.@se_OKNum_AClinedot,
+                  t.@se_OKNum_unit += s.@se_OKNum_unit,
+                  t.@se_OKNum_load += s.@se_OKNum_load,
+                  t.@se_OKNum_twoport += s.@se_OKNum_twoport,
+                  t.@se_OKNum_threeport += s.@se_OKNum_threeport,
+                  t.@se_OKNum_CP += s.@se_OKNum_CP,
+                  t.@se_OKNum_bus += s.@se_OKNum_bus,
+                  t.@distribution_gen_total_p += s.@distribution_gen_total_p,
+                  t.@count_acline_p_qualified += s.@count_acline_p_qualified,
+                  t.@count_acline_q_qualified += s.@count_acline_q_qualified,
+                  t.@count_unit_p_qualified += s.@count_unit_p_qualified,
+                  t.@count_unit_q_qualified += s.@count_unit_q_qualified,
+                  t.@count_load_p_qualified += s.@count_load_p_qualified,
+                  t.@count_load_q_qualified += s.@count_load_q_qualified,
+                  t.@count_trans2_p_qualified += s.@count_trans2_p_qualified,
+                  t.@count_trans2_q_qualified += s.@count_trans2_q_qualified,
+                  t.@count_trans3_p_qualified += s.@count_trans3_p_qualified,
+                  t.@count_trans3_q_qualified += s.@count_trans3_q_qualified,
+                  t.@count_bus_v_qualified += s.@count_bus_v_qualified,
+                  t.@total_acline_pf += s.@total_acline_pf,
+                  t.@total_acline_se += s.@total_acline_se,
+                  t.@total_gen_pf += s.@total_gen_pf,
+                  t.@total_gen_se += s.@total_gen_se,
+                  t.@total_load_pf += s.@total_load_pf,
+                  t.@total_load_se += s.@total_load_se,
+                  t.@total_trans2_pf += s.@total_trans2_pf,
+                  t.@total_trans2_se += s.@total_trans2_se,
+                  t.@total_trans3_pf += s.@total_trans3_pf,
+                  t.@total_trans3_se += s.@total_trans3_se;
+  // gridcom -gridcom_stat
+  Tgridcom_stat = select s from comp_stat:s -(gridcom_gridcom_stat:e) -:t
+                  ACCUM
+                  s.@acline_analysis_num = t.@acline_analysis_num,
+                  s.@unit_analysis_num = t.@unit_analysis_num,
+                  s.@bus_analysis_num = t.@bus_analysis_num,
+                  s.@load_analysis_num = t.@load_analysis_num,
+                  s.@trans2_analysis_num = t.@trans2_analysis_num,
+                  s.@trans3_analysis_num = t.@trans3_analysis_num,
+                  s.@count_breaker = t.@count_breaker,
+                  s.@count_disconnector = t.@count_disconnector,
+                  s.@area_input = t.@area_input,
+                  s.@area_output = t.@area_output,
+                  s.@area_gen = t.@area_gen,
+                  s.@area_load = t.@area_load,
+                  s.@area_loss = t.@area_loss,
+		              s.@count_sub = t.@count_sub,
+                  s.@count_sub_meas = t.@count_sub_meas,
+                  s.@count_AClinedot = t.@count_AClinedot,
+                  s.@count_unit = t.@count_unit,
+                  s.@count_load = t.@count_load,
+                  s.@count_twoport = t.@count_twoport,
+                  s.@count_threeport = t.@count_threeport,
+                  s.@count_bus_section = t.@count_bus_section,
+                  s.@count_bus = t.@count_bus,
+                  s.@count_CP = t.@count_CP,
+                  s.@count_CS = t.@count_CS,
+                  s.@count_AClinedotP = t.@count_AClinedotP,
+                  s.@count_AClinedotQ = t.@count_AClinedotQ,
+                  s.@count_unit_SVG = t.@count_unit_SVG,
+                  s.@count_unitP = t.@count_unitP,
+                  s.@count_unitQ = t.@count_unitQ,
+                  s.@count_loadP = t.@count_loadP,
+                  s.@count_loadQ = t.@count_loadQ,
+                  s.@count_twoportP = t.@count_twoportP,
+                  s.@count_twoportQ = t.@count_twoportQ,
+                  s.@count_threeportP = t.@count_threeportP,
+                  s.@count_threeportQ = t.@count_threeportQ,
+                  s.@count_CPQ = t.@count_CPQ,
+                  s.@count_busV = t.@count_busV,
+                  s.@se_OKNum_AClinedot = t.@se_OKNum_AClinedot,
+                  s.@se_OKNum_unit = t.@se_OKNum_unit,
+                  s.@se_OKNum_load = t.@se_OKNum_load,
+                  s.@se_OKNum_twoport = t.@se_OKNum_twoport,
+                  s.@se_OKNum_threeport = t.@se_OKNum_threeport,
+                  s.@se_OKNum_CP = t.@se_OKNum_CP,
+                  s.@se_OKNum_bus = t.@se_OKNum_bus,
+                  s.@distribution_gen_total_p = t.@distribution_gen_total_p,
+                  s.@count_acline_p_qualified = t.@count_acline_p_qualified,
+                  s.@count_acline_q_qualified = t.@count_acline_q_qualified,
+                  s.@count_unit_p_qualified = t.@count_unit_p_qualified,
+                  s.@count_unit_q_qualified = t.@count_unit_q_qualified,
+                  s.@count_load_p_qualified = t.@count_load_p_qualified,
+                  s.@count_load_q_qualified = t.@count_load_q_qualified,
+                  s.@count_trans2_p_qualified = t.@count_trans2_p_qualified,
+                  s.@count_trans2_q_qualified = t.@count_trans2_q_qualified,
+                  s.@count_trans3_p_qualified = t.@count_trans3_p_qualified,
+                  s.@count_trans3_q_qualified = t.@count_trans3_q_qualified,
+                  s.@count_bus_v_qualified = t.@count_bus_v_qualified,
+                  s.@total_acline_pf = t.@total_acline_pf,
+                  s.@total_acline_se = t.@total_acline_se,
+                  s.@total_gen_pf = t.@total_gen_pf,
+                  s.@total_gen_se = t.@total_gen_se,
+                  s.@total_load_pf = t.@total_load_pf,
+                  s.@total_load_se = t.@total_load_se,
+                  s.@total_trans2_pf = t.@total_trans2_pf,
+                  s.@total_trans2_se = t.@total_trans2_se,
+                  s.@total_trans3_pf = t.@total_trans3_pf,
+                  s.@total_trans3_se = t.@total_trans3_se
+                  POST-ACCUM
+                  s.acline_analysis_num = s.@acline_analysis_num,
+                  s.unit_analysis_num = s.@unit_analysis_num,
+                  s.bus_analysis_num = s.@bus_analysis_num,
+                  s.load_analysis_num = s.@load_analysis_num,
+                  s.trans2_analysis_num = s.@trans2_analysis_num,
+                  s.trans3_analysis_num = s.@trans3_analysis_num,
+                  s.count_breaker = s.@count_breaker,
+                  s.count_disconnector = s.@count_disconnector,
+                  s.area_input = s.@area_input,
+                  s.area_output = s.@area_output,
+                  s.area_gen = s.@area_gen,
+                  s.area_load = s.@area_load,
+                  s.area_loss = s.@area_loss,
+		              s.count_sub = s.@count_sub,
+                  s.count_sub_meas = s.@count_sub_meas,
+                  s.count_acline = s.@count_AClinedot,
+                  s.count_unit = s.@count_unit,
+                  s.count_load = s.@count_load,
+                  s.count_trans2 = s.@count_twoport,
+                  s.count_trans3 = s.@count_threeport,
+                  s.count_bus_section = s.@count_bus_section,
+                  s.count_bus = s.@count_bus,
+                  s.count_CP = s.@count_CP,
+                  s.count_CS = s.@count_CS,
+                  s.count_AClinedotP = s.@count_AClinedotP,
+                  s.count_AClinedotQ = s.@count_AClinedotQ,
+                  s.count_unit_SVG = s.@count_unit_SVG,
+                  s.count_unitP = s.@count_unitP,
+                  s.count_unitQ = s.@count_unitQ,
+                  s.count_loadP = s.@count_loadP,
+                  s.count_loadQ = s.@count_loadQ,
+                  s.count_twoportP = s.@count_twoportP,
+                  s.count_twoportQ = s.@count_twoportQ,
+                  s.count_threeportP = s.@count_threeportP,
+                  s.count_threeportQ = s.@count_threeportQ,
+                  s.count_CPQ = s.@count_CPQ,
+                  s.count_busV = s.@count_busV,
+                  s.se_OKNum_AClinedot = s.@se_OKNum_AClinedot,
+                  s.se_OKNum_unit = s.@se_OKNum_unit,
+                  s.se_OKNum_load = s.@se_OKNum_load,
+                  s.se_OKNum_twoport = s.@se_OKNum_twoport,
+                  s.se_OKNum_threeport = s.@se_OKNum_threeport,
+                  s.se_OKNum_CP = s.@se_OKNum_CP,
+                  s.se_OKNum_bus = s.@se_OKNum_bus,
+                  s.distribution_gen_total_p = s.@distribution_gen_total_p,
+                  s.count_acline_p_qualified = s.@count_acline_p_qualified,
+                  s.count_acline_q_qualified = s.@count_acline_q_qualified,
+                  s.count_unit_p_qualified = s.@count_unit_p_qualified,
+                  s.count_unit_q_qualified = s.@count_unit_q_qualified,
+                  s.count_load_p_qualified = s.@count_load_p_qualified,
+                  s.count_load_q_qualified = s.@count_load_q_qualified,
+                  s.count_trans2_p_qualified = s.@count_trans2_p_qualified,
+                  s.count_trans2_q_qualified = s.@count_trans2_q_qualified,
+                  s.count_trans3_p_qualified = s.@count_trans3_p_qualified,
+                  s.count_trans3_q_qualified = s.@count_trans3_q_qualified,
+                  s.count_bus_v_qualified = s.@count_bus_v_qualified,
+                  s.total_acline_pf = s.@total_acline_pf,
+                  s.total_acline_se = s.@total_acline_se,
+                  s.total_gen_pf = s.@total_gen_pf,
+                  s.total_gen_se = s.@total_gen_se,
+                  s.total_load_pf = s.@total_load_pf,
+                  s.total_load_se = s.@total_load_se,
+                  s.total_trans2_pf = s.@total_trans2_pf,
+                  s.total_trans2_se = s.@total_trans2_se,
+                  s.total_trans3_pf = s.@total_trans3_pf,
+                  s.total_trans3_se = s.@total_trans3_se;
+  
+  //统计厂站输入输出功率
+  Tgridcomstat_inout = select s from comp_stat:s 
+                      ACCUM 
+                          if s.id!="" then
+            	                s.@area_statistic = dispatcher_powerflow_area_stastic_subquery(s.id)
+	                        end
+	                    post-accum
+                          s.area_input = s.@area_statistic.get("area_input"),
+                          s.area_output = s.@area_statistic.get("area_output");
+  
+//分布式电源信息统计
+loadSet ={l_oad.*};
+Tload_distribution = select s from loadSet:s -(topo_load:e)-:t where s.Pimeas <0 and t.island==1
+			post-accum
+				s.distribution_gen_flag=1;
+print "gridcom_stat stastic finished";
+}

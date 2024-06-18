@@ -1,0 +1,245 @@
+CREATE QUERY dispatcher_powerflow_bus_analysis(string companyID="113715890758877224", bool return_all=true) FOR GRAPH gsql_EMS { 
+  TYPEDEF TUPLE <string area, string sub_name, string sub_id, string bus_type, string tap_bus_name, double base_kV,  double SE_Vm, double PF_Vm,  double Vm_ratio, double SE_Va, double PF_Va,  double Va_ratio, string volt_violation> row;
+  SumAccum<string> @area;
+  SumAccum<string> @sub_id;
+  SetAccum<string> @@Comp_ID;
+  string G_volt_violation;
+  SumAccum<double> @V_error_pct;
+  HeapAccum<row>(50, tap_bus_name DESC) @@result_part;
+  HeapAccum<row>(1000000, tap_bus_name DESC) @@result;
+  
+  SumAccum<INT> @@count_all;
+  
+  SumAccum<INT> @@count_5;
+  SumAccum<INT> @@count_5_10;
+  SumAccum<INT> @@count_above10;
+  
+  
+  SumAccum<INT> @@count_500;
+  SumAccum<INT> @@count_500_5;
+  SumAccum<INT> @@count_500_5_10;
+  SumAccum<INT> @@count_500_10;
+
+  
+  SumAccum<INT> @@count_220;
+  SumAccum<INT> @@count_220_5;
+  SumAccum<INT> @@count_220_5_10;
+  SumAccum<INT> @@count_220_10;
+  
+  
+  SumAccum<INT> @@count_110;
+  SumAccum<INT> @@count_110_5;
+  SumAccum<INT> @@count_110_5_10;
+  SumAccum<INT> @@count_110_10;
+
+  
+  SumAccum<INT> @@count_35;
+  SumAccum<INT> @@count_35_5;
+  SumAccum<INT> @@count_35_5_10;
+  SumAccum<INT> @@count_35_10;
+
+  
+  SumAccum<INT> @@count_10;
+  SumAccum<INT> @@count_10_5;
+  SumAccum<INT> @@count_10_5_10;
+  SumAccum<INT> @@count_10_10;
+
+  
+  SumAccum<INT> @@count_other;
+  SumAccum<INT> @@count_other_5;
+  SumAccum<INT> @@count_other_5_10;
+  SumAccum<INT> @@count_other_10;
+
+	
+	T0 = {TopoND.*};
+  sub = {Substation.*};
+	comp = {gridcom.*};
+   start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID
+                accum 
+                    t.@area =s.name;
+  
+  TopoSet = select t from sub:s -(topoid_subid:e) -:t where t.island ==1
+                accum 
+                    t.@area = s.@area,
+                    t.@sub_id = s.strid;
+  
+  
+  TopoSet = SELECT s FROM TopoSet:s
+		 WHERE s.island == 1
+		 POST-ACCUM
+		 case when (s.PF_Vm >= s.up_V) then
+			s.OV = 1
+		 else s.OV = 0
+		 end,
+		 case when (s.PF_Vm <= s.lo_V) then
+			s.UV = 1
+		 else s.UV = 0
+		 end;
+	
+	T1 = SELECT s FROM TopoSet:s
+			where s.island == 1
+			ACCUM
+				string busType = "",
+				double vm_ratio =0,
+				double va_ratio =0,
+				if(s.SE_Vm !=0) then 
+					vm_ratio = 100*(abs(s.PF_Vm) - abs(s.SE_Vm))/ abs(s.SE_Vm)
+				end,
+				if(s.SE_Va !=0) then 
+					va_ratio = (abs(s.PF_Va - s.SE_Va / s.SE_Va))*100
+				end,
+				if (s.busType == 0 or s.busType == 1) then
+					busType = "PQ母线"
+				else if (s.busType == 2) then
+					busType = "PV母线"
+				else if (s.busType == 3) then
+					busType = "平衡母线"
+				else
+				busType = "异常母线"
+				end,
+			if vm_ratio > 2 then 
+				case when (s.OV == 1) then
+					@@result+= row(s.@area, s.Sub, s.@sub_id,busType, s.bus_name, s.base_kV,  s.SE_Vm, s.PF_Vm, vm_ratio, s.SE_Va, s.PF_Va, va_ratio, "高电压越限"),
+					@@result_part+= row(s.@area, s.Sub, s.@sub_id,busType, s.bus_name, s.base_kV,  s.SE_Vm, s.PF_Vm, vm_ratio, s.SE_Va, s.PF_Va, va_ratio, "高电压越限")
+				when (s.UV == 1) then
+					@@result+= row(s.@area, s.Sub, s.@sub_id,busType, s.bus_name, s.base_kV,  s.SE_Vm, s.PF_Vm, vm_ratio, s.SE_Va, s.PF_Va, va_ratio, "低电压越限"),
+					@@result_part+= row(s.@area, s.Sub, s.@sub_id,busType, s.bus_name, s.base_kV,  s.SE_Vm, s.PF_Vm, vm_ratio, s.SE_Va, s.PF_Va, va_ratio, "低电压越限")
+				else
+					@@result+= row(s.@area, s.Sub, s.@sub_id,busType, s.bus_name, s.base_kV,  s.SE_Vm, s.PF_Vm, vm_ratio, s.SE_Va, s.PF_Va, va_ratio, "正常"),
+					@@result_part+= row(s.@area, s.Sub, s.@sub_id,busType, s.bus_name, s.base_kV,  s.SE_Vm, s.PF_Vm, vm_ratio, s.SE_Va, s.PF_Va, va_ratio, "正常")
+				end,
+			@@count_all += 1,
+			double volt = s.base_kV,
+            if volt >= 500 then
+                @@count_500 += 1,
+				  if vm_ratio <=5 then 
+                     @@count_5 +=1,
+                     @@count_500_5 +=1 
+                  else if vm_ratio <=10  then 
+                     @@count_500_5_10 +=1,
+                     @@count_5_10 +=1
+                  else 
+					 @@count_500_10 +=1,
+                     @@count_above10 +=1
+                  end
+                else if volt >= 220 then
+                  @@count_220+=1,
+                  if vm_ratio <=5 then 
+                     @@count_5 +=1,
+                     @@count_220_5 +=1 
+                  else if vm_ratio <=10  then 
+                     @@count_220_5_10 +=1,
+                     @@count_5_10 +=1
+                  else 
+					 @@count_220_10 +=1,
+                     @@count_above10 +=1
+                  end
+                  
+                else if volt >= 110 then
+                  @@count_110+=1,
+                  if vm_ratio <=5 then 
+                     @@count_5 +=1,
+                     @@count_110_5 +=1 
+                  else if vm_ratio <=10  then 
+                     @@count_110_5_10 +=1,
+                     @@count_5_10 +=1
+                  else 
+					 @@count_110_10 +=1,
+                     @@count_above10 +=1
+                  end                
+                else if volt >= 34.5 then
+                  @@count_35+=1,
+                  if vm_ratio <=5 then 
+                     @@count_5 +=1,
+                     @@count_35_5 +=1 
+                  else if vm_ratio <=10  then 
+                     @@count_35_5_10 +=1,
+                     @@count_5_10 +=1
+                  else 
+					 @@count_35_10 +=1,
+                     @@count_above10 +=1
+                  end     
+  
+                else if volt >= 10 then
+                  @@count_10+=1,
+                  if vm_ratio <=5 then 
+                     @@count_5 +=1,
+                     @@count_10_5 +=1 
+                  else if vm_ratio <=10  then 
+                     @@count_10_5_10 +=1,
+                     @@count_5_10 +=1
+                  else 
+					 @@count_10_10 +=1,
+                     @@count_above10 +=1
+                  end
+                else
+                  @@count_other+=1,
+                  if vm_ratio <=5 then 
+                     @@count_5 +=1,
+                     @@count_other_5 +=1 
+                  else if vm_ratio <=10  then 
+                     @@count_other_5_10 +=1,
+                     @@count_5_10 +=1
+                  else 
+					 @@count_other_10 +=1,
+                     @@count_above10 +=1
+                  end
+				 end
+                end;
+			
+		if return_all then
+    print @@result;
+  else
+    print @@result_part;
+  end;
+	        
+			
+
+  print @@count_all;
+  
+  print @@count_5;
+  print @@count_5_10;
+  print @@count_above10;
+  
+  
+  print @@count_500;
+  print @@count_500_5;
+  print @@count_500_5_10;
+  print @@count_500_10;
+
+  
+  print @@count_220;
+  print @@count_220_5;
+  print @@count_220_5_10;
+  print @@count_220_10;
+  
+  
+  print @@count_110;
+  print @@count_110_5;
+  print @@count_110_5_10;
+  print @@count_110_10;
+
+  
+  print @@count_35;
+  print @@count_35_5;
+  print @@count_35_5_10;
+  print @@count_35_10;
+
+  
+  print @@count_10;
+  print @@count_10_5;
+  print @@count_10_5_10;
+  print @@count_10_10;
+
+  
+  print @@count_other;
+  print @@count_other_5;
+  print @@count_other_5_10;
+  print @@count_other_10;
+}

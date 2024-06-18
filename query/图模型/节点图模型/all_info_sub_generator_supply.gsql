@@ -1,0 +1,50 @@
+create query all_info_sub_generator_supply (SET<string> strId, STRING pring_flag="1", STRING cur_sub="") for graph gsql_EMS {
+  typedef tuple <string name, string volt, double p, double p_cal, double p_rate> info;
+  SetAccum<info> @unit;
+  
+  SumAccum<double> @Pg = 0;
+  SumAccum<double> @Qg = 0;
+  SumAccum<double> @sumG_gen  = 0; // store for each node the total G on all of its edges
+  SumAccum<double> @sumB_gen  = 0;
+  SumAccum<double> @cal_gen_P = 0;
+  SumAccum<double> @cal_gen_Q = 0;
+  SumAccum<double> @total_gen_P = 0;
+  SumAccum<double> @total_gen_Q = 0;
+  SumAccum<int> @total_number_gen = 0;
+
+  SumAccum<double> @@total_unit_p = 0;
+  SumAccum<double> @@total_unit_cal_p = 0;
+
+  SumAccum<double> @@total_unit_self_p = 0;
+  SumAccum<double> @@total_unit_self_cal_p = 0;
+  SumAccum<INT> @island;
+
+  
+  sub = {Substation.*};
+  sub = select s from sub:s where s.strid in strId;	 
+  unit_set = SELECT t FROM sub:s - (connected_Sub_Unit:e) ->:t
+             accum s.@unit+=info(t.name, ToString(s.volt), t.Pimeas, t.P, t.P_rate);
+  unit_set = SELECT t FROM unit_set:s - (topo_unit:e) - TopoND:t
+             WHERE t.island == 1 
+             ACCUM @@total_unit_p += s.Pimeas,
+		               @@total_unit_cal_p += s.P;
+
+  if pring_flag == "1" then
+    print sub;
+  end;
+
+  print @@total_unit_p;
+  print @@total_unit_cal_p;
+
+  if cur_sub != "" then
+    units(ANY) = SELECT t FROM sub:s - (connected_Sub_Unit:e) ->:t
+                 WHERE s.strid == cur_sub;
+    N_unit(ANY) = SELECT t FROM units:s - (topo_unit:e) - TopoND:t
+                  WHERE t.island == 1 
+                  ACCUM @@total_unit_self_p += s.Pimeas,
+                        @@total_unit_self_cal_p += s.P;
+
+    print @@total_unit_self_p;
+    print @@total_unit_self_cal_p;
+  end;
+}

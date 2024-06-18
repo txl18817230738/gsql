@@ -1,0 +1,423 @@
+CREATE QUERY dispatcher_powerflow_load_cal(string companyID="113715890758877224", bool return_all=true,double p_qualified_factor) FOR GRAPH gsql_EMS { 
+  TYPEDEF TUPLE<string load_name, string area, string sub_name, string sub_id, double sub_volt, double unit_volt, double load_P, double Mis_Pij_per, double load_Q, double Mis_Qij_per, double factor, double Vm, double Vm_pu> load_list;
+	SetAccum<string> @@Comp_ID;
+	SumAccum<string> @sub_name;
+	SumAccum<string> @bus_name;
+  SumAccum<string> @area;
+  SumAccum<double> @sub_volt;
+  
+  
+  MaxAccum<double> @@PI = 3.1415926535898;
+	//SumAccum<double> @sumG  = 0; // store for each node the total G on all of its edges
+	//SumAccum<double> @sumB  = 0; //similar...
+  SumAccum<double> @cal_P  = 0; // store for each node the total G on all of its edges
+	SumAccum<double> @cal_Q  = 0; //similar...
+	SumAccum<double> @total_load_P = 0;
+	SumAccum<double> @total_load_Q = 0;
+	SumAccum<double> @Pld = 0;
+	SumAccum<double> @Qld = 0;
+	SumAccum<double> @cal_Vm = 0;
+	SumAccum<double> @cal_Vm_pu = 0;
+	SumAccum<double> @factor = 0;
+  //SumAccum<double> @P_error_pct;
+  //SumAccum<double> @Q_error_pct;
+	
+  SumAccum<INT> @@count_all;
+	HeapAccum<load_list>(10000000, load_P DESC, Mis_Pij_per DESC, load_name ASC) @@loads_all;
+	HeapAccum<load_list>(50, load_P DESC, Mis_Pij_per DESC, load_name ASC) @@loads_part;
+	SumAccum<string> @sub_id;
+    
+	SumAccum<INT> @@count_0;
+	SumAccum<INT> @@count_0_10;
+	SumAccum<INT> @@count_10_50;
+	SumAccum<INT> @@count_50;
+  SumAccum<INT> @@count_p_qualified;
+  
+  SumAccum<double> @@total_pf;
+  //SumAccum<double> @@total_cal;
+  
+  
+	SumAccum<INT> @@count_500;
+	SumAccum<INT> @@count_500_0;
+	SumAccum<INT> @@count_500_0_10;
+	SumAccum<INT> @@count_500_10_50;
+	SumAccum<INT> @@count_500_50;
+	SumAccum<double> @@count_500_pf;
+  SumAccum<INT> @@count_500_p_qualified;
+	//SumAccum<double> @@count_500_cal;
+  
+	SumAccum<INT> @@count_220;
+	SumAccum<INT> @@count_220_0;
+	SumAccum<INT> @@count_220_0_10;
+	SumAccum<INT> @@count_220_10_50;
+	SumAccum<INT> @@count_220_50;
+	SumAccum<double> @@count_220_pf;
+  SumAccum<INT> @@count_220_p_qualified;
+	//SumAccum<double> @@count_220_cal;
+  
+  
+    SumAccum<INT> @@count_110;
+	SumAccum<INT> @@count_110_0;
+	SumAccum<INT> @@count_110_0_10;
+	SumAccum<INT> @@count_110_10_50;
+	SumAccum<INT> @@count_110_50;
+	SumAccum<double> @@count_110_pf;
+  SumAccum<INT> @@count_110_p_qualified;
+	//SumAccum<double> @@count_110_cal;
+  
+	SumAccum<INT> @@count_35;
+	SumAccum<INT> @@count_35_0;
+	SumAccum<INT> @@count_35_0_10;
+	SumAccum<INT> @@count_35_10_50;
+	SumAccum<INT> @@count_35_50;
+	SumAccum<double> @@count_35_pf;
+  SumAccum<INT> @@count_35_p_qualified;
+	//SumAccum<double> @@count_35_cal;
+  
+	SumAccum<INT> @@count_10;
+	SumAccum<INT> @@count_10_0;
+	SumAccum<INT> @@count_10_0_10;
+	SumAccum<INT> @@count_10_10_50;
+	SumAccum<INT> @@count_10kv_50;
+	SumAccum<double> @@count_10_pf;
+  SumAccum<INT> @@count_10_p_qualified;
+	//SumAccum<double> @@count_10_cal;
+	
+  
+	SumAccum<INT> @@count_other;
+	SumAccum<INT> @@count_other_0;
+	SumAccum<INT> @@count_other_0_10;
+	SumAccum<INT> @@count_other_10_50;
+	SumAccum<INT> @@count_other_50;
+  SumAccum<double> @@count_other_pf;
+  SumAccum<INT> @@count_other_p_qualified;
+	//SumAccum<double> @@count_other_cal;
+  SumAccum<double> @@error_limit_P;
+  SumAccum<double> @@error_limit_Q; 
+
+	T0 = {TopoND.*};
+	sub = {Substation.*};
+	comp = {gridcom.*};
+  Tparameter = {parameters.*};
+	
+	start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+  
+  //parameter setting
+  Tparameter = select s from Tparameter:s
+     post-accum
+     @@error_limit_P += s.error_limit_P,
+     @@error_limit_Q += s.error_limit_Q;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID
+              accum 
+               t.@area = s.name;
+        
+  loadSet = SELECT t FROM sub:s - (connected_Sub_Load:e) ->:t
+                accum
+                t.@sub_name = s.name,
+                t.@sub_id = s.strid,
+                t.@area = s.@area,
+                t.@sub_volt = s.volt;
+  T_load = SELECT s FROM loadSet:s - (topo_load:e) - TopoND:t where t.island ==1;
+	  		
+	T_load = SELECT t
+			FROM T_load:t - (topo_load:e) - :s
+			where s.island == 1 // (s.Pimeas != 0 or s.Qimeas != 0) and
+			ACCUM
+			s.@total_load_P += 1,
+			s.@total_load_Q += 1;
+			/**
+      post-accum
+			 if (t.volt >= 500) then
+                  if (abs(t.Pimeas) > 0.01) then
+                    //t.@P_error_abs = abs(t.P_pf - t.Pimeas),
+                    t.@P_error_pct = abs(t.P_pf - t.Pimeas)/1082*100
+                  else
+                    //t.@P_error_abs = 0,
+                    t.@P_error_pct = 0
+                  end,
+                  if (abs(t.Qimeas) > 0.01) then
+                    //t.@Q_error_abs = abs(t.Q_pf - t.Qimeas),
+                    t.@Q_error_pct = abs(t.Q_pf - t.Qimeas)/1082*100
+                  else
+                    //t.@Q_error_abs = 0,
+                    t.@Q_error_pct = 0
+                  end
+                else if (t.volt >= 330 and t.volt < 500) then
+                  if (abs(t.Pimeas) > 0.01) then
+                    //t.@P_error_abs = abs(t.P_pf - t.Pimeas),
+                    t.@P_error_pct = abs(t.P_pf - t.Pimeas)/686*100
+                  else
+                    //t.@P_error_abs = 0,
+                    t.@P_error_pct = 0
+                  end,
+				  if (abs(t.Qimeas) > 0.01) then
+                    //t.@Q_error_abs = abs(t.Q_pf - t.Qimeas),
+                    t.@Q_error_pct = abs(t.Q_pf - t.Qimeas)/686*100
+                  else
+                    //t.@Q_error_abs = 0,
+                    t.@Q_error_pct = 0
+                  end
+                else if (t.volt >= 220 and t.volt< 330) then
+                  if (abs(t.Pimeas) > 0.01) then
+                    //t.@P_error_abs = abs(t.P_pf - t.Pimeas),
+                    t.@P_error_pct = abs(t.P_pf - t.Pimeas)/305*100
+                  else
+                    //t.@P_error_abs = 0,
+                    t.@P_error_pct = 0
+                  end,
+                  if (abs(t.Qimeas) > 0.01) then
+                    //t.@Q_error_abs = abs(t.Q_pf - t.Qimeas),
+                    t.@Q_error_pct = abs(t.Q_pf - t.Qimeas)/305*100
+                  else
+                    //t.@Q_error_abs = 0,
+                    t.@Q_error_pct = 0
+                  end
+				else
+                  if (abs(t.Pimeas) > 0.01) then
+                    //t.@P_error_abs = abs(t.P_pf - t.Pimeas),
+                    t.@P_error_pct = abs(t.P_pf - t.Pimeas)/141*100
+                  else
+                    //t.@P_error_abs = 0,
+                    t.@P_error_pct = 0
+                  end,
+                  if (abs(t.Qimeas) > 0.01) then
+                    //t.@Q_error_abs = abs(t.Q_pf - t.Qimeas),
+                    t.@Q_error_pct = abs(t.Q_pf - t.Qimeas)/141*100
+                  else
+                    //t.@Q_error_abs = 0,
+                    t.@Q_error_pct = 0
+                  end
+                end;
+        **/
+	
+	T_load = SELECT s
+		    FROM T_load:s - (topo_load:e) - TopoND:t
+			where t.island == 1 //(s.Pimeas != 0 or s.Qimeas != 0) and 
+		    accum
+			IF (t.@cal_P < 0) THEN
+				s.@Pld = -1/(t.@total_load_P) * t.@cal_P * 100
+			END,
+			IF (t.@cal_Q < 0) THEN
+				s.@Qld = -1/(t.@total_load_Q) * t.@cal_Q * 100
+			END,
+			//s.@desired_volts = t.desired_volts,
+			s.@cal_Vm = t.PF_Vm*t.desired_volts,
+			s.@cal_Vm_pu = t.PF_Vm
+			post-accum
+			IF (s.@Pld == 0 and s.@Qld == 0) THEN
+				s.@factor = 1
+			ELSE
+				s.@factor = s.@Pld/(sqrt(s.@Pld*s.@Pld + s.@Qld*s.@Qld))
+			END;
+			
+	T_load = SELECT s FROM T_load:s
+			POST-ACCUM
+			@@loads_all += load_list(s.name, s.@area, s.@sub_name, s.@sub_id, s.@sub_volt, s.volt, s.P_pf, s.p_pf_error, s.Q_pf, s.q_pf_error, s.@factor,s.@cal_Vm, s.@cal_Vm_pu),
+      @@loads_part += load_list(s.name, s.@area, s.@sub_name, s.@sub_id, s.@sub_volt, s.volt, s.P_pf, s.p_pf_error, s.Q_pf, s.q_pf_error, s.@factor,s.@cal_Vm, s.@cal_Vm_pu),
+			@@count_all += 1,
+			@@total_pf += s.P_pf,
+			double volt = s.volt,
+			if volt >= 500 then
+				 @@count_500 += 1,
+				 @@count_500_pf += s.P_pf,
+         if s.p_pf_error <= @@error_limit_P then 
+                     @@count_500_p_qualified +=1,
+                     @@count_p_qualified +=1 
+                  end,
+				 if s.P_pf < 0 then
+                    @@count_500_0+=1,
+                    @@count_0+=1
+                  else if s.P_pf >= 0 and s.P_pf < 10 then
+                    @@count_500_0_10+=1,
+                    @@count_0_10+=1
+                  else if s.P_pf >= 10 and s.P_pf < 50 then
+                    @@count_500_10_50+=1,
+                    @@count_10_50+=1            
+                  else if s.P_pf >= 50 then
+                    @@count_500_50+=1,
+                    @@count_50+=1
+                  end
+			else if volt >= 220 then
+                  @@count_220+=1,
+                  @@count_220_pf += s.P_pf,
+                  if s.p_pf_error <= @@error_limit_P then 
+                     @@count_220_p_qualified +=1,
+                     @@count_p_qualified +=1 
+                  end,
+				 if s.P_pf < 0 then
+                    @@count_220_0+=1,
+                    @@count_0+=1
+                  else if s.P_pf >= 0 and s.P_pf < 10 then
+                    @@count_220_0_10+=1,
+                    @@count_0_10+=1
+                  else if s.P_pf >= 10 and s.P_pf < 50 then
+                    @@count_220_10_50+=1,
+                    @@count_10_50+=1            
+                  else if s.P_pf >= 50 then
+                    @@count_220_50+=1,
+                    @@count_50+=1
+                  end
+                  
+                else if volt >= 110 then
+                  @@count_110+=1,
+                  @@count_110_pf += s.P_pf,
+                  if s.p_pf_error <= @@error_limit_P then 
+                     @@count_110_p_qualified +=1,
+                     @@count_p_qualified +=1 
+                  end,
+				 if s.P_pf < 0 then
+                    @@count_110_0+=1,
+                    @@count_0+=1
+                  else if s.P_pf >= 0 and s.P_pf < 10 then
+                    @@count_110_0_10+=1,
+                    @@count_0_10+=1
+                  else if s.P_pf >= 10 and s.P_pf < 50 then
+                    @@count_110_10_50+=1,
+                    @@count_10_50+=1            
+                  else if s.P_pf >= 50 then
+                    @@count_110_50+=1,
+                    @@count_50+=1
+                  end
+                  
+                else if volt >= 34.5 then
+                  @@count_35+=1,
+                  @@count_35_pf += s.P_pf,
+                  if s.p_pf_error <= @@error_limit_P then 
+                     @@count_35_p_qualified +=1,
+                     @@count_p_qualified +=1 
+                  end,
+				 if s.P_pf < 0 then
+                    @@count_35_0+=1,
+                    @@count_0+=1
+                  else if s.P_pf >= 0 and s.P_pf < 10 then
+                    @@count_35_0_10+=1,
+                    @@count_0_10+=1
+                  else if s.P_pf >= 10 and s.P_pf < 50 then
+                    @@count_35_10_50+=1,
+                    @@count_10_50+=1            
+                  else if s.P_pf >= 50 then
+                    @@count_35_50+=1,
+                    @@count_50+=1
+                  end
+  
+                else if volt >= 10 then
+                  @@count_10+=1,
+                  @@count_10_pf += s.P_pf,
+                  if s.p_pf_error <= @@error_limit_P then 
+                     @@count_10_p_qualified +=1,
+                     @@count_p_qualified +=1 
+                  end,
+				 if s.P_pf < 0 then
+                    @@count_10_0+=1,
+                    @@count_0+=1
+                  else if s.P_pf >= 0 and s.P_pf < 10 then
+                    @@count_10_0_10+=1,
+                    @@count_0_10+=1
+                  else if s.P_pf >= 10 and s.P_pf < 50 then
+                    @@count_10_10_50+=1,
+                    @@count_10_50+=1            
+                  else if s.P_pf >= 50 then
+                    @@count_10kv_50+=1,
+                    @@count_50+=1
+                  end
+                  
+                else
+                  @@count_other+=1,
+                  @@count_other_pf += s.P_pf,
+                  if s.p_pf_error <= 1-p_qualified_factor then 
+                     @@count_other_p_qualified +=1,
+                     @@count_p_qualified +=1 
+                  end,
+				 if s.P_pf < 0 then
+                    @@count_other_0+=1,
+                    @@count_0+=1
+                  else if s.P_pf >= 0 and s.P_pf < 10 then
+                    @@count_other_0_10+=1,
+                    @@count_0_10+=1
+                  else if s.P_pf >= 10 and s.P_pf < 50 then
+                    @@count_other_10_50+=1,
+                    @@count_10_50+=1            
+                  else if s.P_pf >= 50 then
+                    @@count_other_50+=1,
+                    @@count_50+=1
+                  end
+                end;
+						
+	if return_all then
+    print @@loads_all;
+  else
+    print @@loads_part;
+  end;
+  print @@count_all;//总数
+  
+  print @@count_0;//按负荷水平分组，负负荷的个数(小于0),供饼图用
+	print @@count_0_10;//按负荷水平分组，小负荷的个数(小于0),供饼图用
+	print @@count_10_50;//按负荷水平分组，中负荷的个数(小于0),供饼图用
+	print @@count_50;//按负荷水平分组，大负荷的个数(小于0),供饼图用
+  print @@count_p_qualified; //
+  
+  
+	print @@count_500;//电压等级为500kv及以上的个数
+	print @@count_500_0;//电压等级为500kv及以上的负负荷个数
+	print @@count_500_0_10;//电压等级为500kv及以上的小负荷个数
+	print @@count_500_10_50;//电压等级为500kv及以上的中负荷个数
+	print @@count_500_50;//电压等级为500kv及以上的大负荷个数
+	print @@count_500_pf;//电压等级为500kv及以上的量测负荷之和（兆瓦）
+	//print @@count_500_cal;//电压等级为500kv及以上的估计负荷之和（兆瓦）
+  print @@count_500_p_qualified;
+  
+	print @@count_220;//电压等级为220kv的个数
+	print @@count_220_0;//电压等级为220kv的负负荷个数
+	print @@count_220_0_10;//电压等级为220kv的小负荷个数
+	print @@count_220_10_50;//电压等级为220kv的中负荷个数
+	print @@count_220_50;//电压等级为220kv的大负荷个数
+	print @@count_220_pf;//电压等级为220kv的量测负荷之和（兆瓦）
+	//print @@count_220_cal;//电压等级为220kv的估计负荷之和（兆瓦）
+  print @@count_220_p_qualified;
+  
+    print @@count_110;//电压等级为110kv的个数
+	print @@count_110_0;//电压等级为110kv的负负荷个数
+	print @@count_110_0_10;//电压等级为110kv的小负荷个数
+	print @@count_110_10_50;//电压等级为110kv的中负荷个数
+	print @@count_110_50;//电压等级为110kv的大负荷个数
+	print @@count_110_pf;//电压等级为110kv的量测负荷之和（兆瓦）
+	//print @@count_110_cal;//电压等级为110kv的估计负荷之和（兆瓦）
+  print @@count_110_p_qualified;
+  
+	print @@count_35;//电压等级为35kv的个数
+	print @@count_35_0;
+	print @@count_35_0_10;
+	print @@count_35_10_50;
+	print @@count_35_50;
+	print @@count_35_pf;
+	//print @@count_35_cal;
+  print @@count_35_p_qualified;
+  
+	print @@count_10;//电压等级为10kv的个数
+	print @@count_10_0;
+	print @@count_10_0_10;
+	print @@count_10_10_50;
+	print @@count_10kv_50;
+	print @@count_10_pf;
+	//print @@count_10_cal;
+	print @@count_10_p_qualified;
+  
+	print @@count_other;//其他电压等级的个数
+	print @@count_other_0;
+	print @@count_other_0_10;
+	print @@count_other_10_50;
+	print @@count_other_50;
+  print @@count_other_pf;
+	//print @@count_other_cal;
+  print @@count_other_p_qualified;
+	
+	
+  
+  print @@total_pf;//总的量测
+  //print @@total_cal;//总的估计值
+}

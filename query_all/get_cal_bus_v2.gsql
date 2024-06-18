@@ -1,0 +1,126 @@
+CREATE QUERY get_cal_bus_v2(STRING subId) FOR GRAPH gsql_EMS syntax V2{
+  TYPEDEF TUPLE <string id, STRING cal_bus_name, string name, DOUBLE volt, string device_type, double p, double cal_p, double mis_p, double q,  double cal_q, double mis_q, STRING breaker_status, STRING substation> info;
+  TYPEDEF TUPLE <string id, string name, string subid, string subname> acline_info;
+  TYPEDEF TUPLE<topo_id INT, bus_name string, volt DOUBLE> cal_bus;
+  TYPEDEF TUPLE<string head_id,string tail_id> acline;
+
+  
+  SumAccum<STRING> @bus_name;
+  
+  OrAccum<bool> @isHighVolt;
+  SumAccum<int> @island;
+  SumAccum<string> @edge_volt;
+  
+  SetAccum<string> @@acline_list;
+  SumAccum<string> @acline_name;
+  ListAccum<acline_info> @@aclines;
+  HeapAccum<cal_bus>(100000, volt DESC)  @@result;
+  HeapAccum<info>(100000, volt DESC)  @@trans3_result;
+  HeapAccum<info>(100000, volt DESC)  @@trans2_result;
+  HeapAccum<info>(100000, volt DESC)  @@aclinedot_result;
+  HeapAccum<info>(100000, volt DESC)  @@bus_result;
+  HeapAccum<info>(100000, volt DESC)  @@cp_result;
+  HeapAccum<info>(100000, volt DESC)  @@load_result;
+  HeapAccum<info>(100000, volt DESC)  @@unit_result;
+  SumAccum<INT> @@flag = 3;
+  SumAccum<INT> @flag = 0;
+  HeapAccum<info>(100000, volt DESC)  @@dis_result;
+  HeapAccum<info>(100000, volt DESC)  @@breaker_result;
+ HeapAccum<acline>(100000, head_id DESC)  @@acline_map;
+  SumAccum<STRING> @cal_bus_name;
+  SetAccum<string> @@breaker_dis_name_list;
+  
+  start = {Substation.*};
+  start = select s from start:s where s.strid == subId;
+  
+  cal = SELECT T from start:s - (topoid_subid) -:T where T.island == 1
+                      ACCUM
+                        @@result += cal_bus(T.TOPOID,T.bus_name,T.base_kV);
+  equips(ANY) = SELECT t
+                FROM start:sub - ((connected_Sub_Bus>|connected_Sub_Load>|connected_Sub_Unit>|connected_Sub_Trans_two>|connected_Sub_Trans_three>|connected_Sub_Compensator_P> |connected_Sub_Compensator_S>|connected_Sub_Aclinedot>):e) -:t
+          WHERE t.off == 0;
+  
+  T_bus = SELECT s FROM equips:s - (topo_bus:e) - TopoND:t
+          WHERE t.island == 1
+          ACCUM
+             s.@bus_name = t.bus_name
+          post-accum 
+             @@bus_result += info(s.strid, s.@bus_name, s.name, s.volt, "母线", s.Pimeas, s.V, s.Pimeas-s.V, 0,0,0,"-","-");
+  
+  T_unit = SELECT s FROM equips:s - (topo_unit:e) - TopoND:t
+           WHERE t.island == 1
+           ACCUM
+             s.@bus_name = t.bus_name
+           POST-ACCUM
+             @@unit_result += info(s.strid,s.@bus_name,s.name,s.volt, "机组", s.Pimeas, s.P, s.Pimeas - s.P, s.Qimeas, s.Q, s.Qimeas - s.Q, "-","-");
+  
+  T_load = SELECT s FROM equips:s - (topo_load:e) - TopoND:t
+           WHERE t.island == 1 and s.off == 0
+           ACCUM
+             s.@bus_name = t.bus_name
+           POST-ACCUM
+             @@load_result += info(s.strid, s.@bus_name,s.name,s.volt, "负荷", s.Pimeas, s.P, s.Pimeas - s.P, s.Qimeas, s.Q, s.Qimeas - s.Q,"-","-");
+  
+  T_CP = SELECT s FROM equips:s - (topo_compensatorP:e) - TopoND:t
+           WHERE t.island == 1
+           ACCUM
+             s.@bus_name = t.bus_name
+           POST-ACCUM
+             @@cp_result += info(s.strid, s.@bus_name,s.name,s.volt, "电容电抗器", s.Pimeas, s.P, s.Pimeas - s.P, s.Qimeas, s.Q, s.Qimeas - s.Q,"-","-"); 
+  
+  trans2Set = SELECT s FROM equips:s - (topo_Tx_Two:e) - TopoND:t
+              WHERE t.island == 1
+               ACCUM
+               s.@bus_name = t.bus_name
+              POST-ACCUM
+                @@trans2_result+= info(s.strid,s.@bus_name,s.name,s.volt, "双绕组变压器",s.Pimeas, s.P, s.Pimeas-s.P, s.Qimeas, s.Q, s.Qimeas-s.Q,"-","-");
+              
+
+  trans3Set = SELECT s FROM equips:s - (topo_Tx_Three:e) - TopoND:t
+              WHERE t.island == 1
+               ACCUM
+               s.@bus_name = t.bus_name
+              POST-ACCUM
+                @@trans2_result+= info(s.strid,s.@bus_name,s.name,s.volt, "三绕组变压器",s.Pimeas, s.P, s.Pimeas-s.P, s.Qimeas, s.Q, s.Qimeas-s.Q,"-","-");
+  
+  newAclineSet = SELECT s FROM equips:s - (topo_aclinedot:e) - TopoND:t where t.island == 1
+                 ACCUM
+                    s.@bus_name = t.bus_name;
+  newAclineSet = select s from newAclineSet:s - (topo_aclinedot:e) - TopoND:t where t.island == 1
+                 accum
+                    @@aclinedot_result += info(s.strid,s.@bus_name,s.name,s.volt, "线端",s.Pimeas, s.P, s.Pimeas-s.P,s.Qimeas, s.Q, s.Qimeas-s.Q,"-","-");
+  
+  Tacline = select s from newAclineSet:s -((aclinedot_aclinedot>|aclinedot_aclinedot_reverse>):e) - :t
+                accum
+                    @@acline_map += acline(s.strid,t.strid),
+                    @@acline_list += e.name;
+  
+  acline_set = {ACline_dot.*};
+  acline_set = SELECT s FROM acline_set:s - ((aclinedot_aclinedot>|aclinedot_aclinedot_reverse>):e) - ACline_dot:t
+               where s.Substation != subId and e.name in @@acline_list
+         accum
+         s.@acline_name = e.name;
+  acline_set = SELECT s FROM acline_set:s - (connected_Aclinedot_Sub>:e) - Substation:t
+         accum
+               @@aclines+=acline_info(s.strid, s.@acline_name, t.strid, t.name);
+  
+  CN_list = select t from equips:s - (connected_Bus_CN|CN_tx_three|CN_tx_two|aclinedot_cn|connected_Compensator_P_CN|connected_Load_CN|connected_Unit_CN) - :t
+            ACCUM
+                t.@bus_name = s.@bus_name;
+
+  while @@flag > 0 do
+    CN_list = SELECT t from  CN_list:c - (connected_Disconnector_CN|connected_Breaker_CN) - :d - (connected_Disconnector_CN|connected_Breaker_CN) - :t where d.point == 1 and t.@flag == 0 and t.@bus_name != ""
+              ACCUM
+                t.@flag = 1,
+                if d.typename == "Disconnector" THEN
+                  @@dis_result += info(d.strid, c.@bus_name, d.name, d.volt, "刀闸",0, 0,0,0, 0, 0,"闭合","-")
+                else
+                  @@breaker_result += info(d.strid, c.@bus_name, d.name, d.volt, "开关",0, 0, 0,0, 0, 0,"闭合","-")
+                end;
+    @@flag = @@flag - 1;
+  end;
+
+  PRINT @@result,@@trans3_result,@@trans2_result,@@aclinedot_result,@@bus_result,@@cp_result,@@load_result,@@unit_result,@@dis_result,@@breaker_result;
+  PRINT @@aclines;
+  PRINT @@acline_map;
+}

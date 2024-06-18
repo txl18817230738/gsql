@@ -1,0 +1,14 @@
+'''
+use ems_v1 match (v:Breaker)
+set
+v.connecting_type = "other",
+v.connecting_dev = "N/A"
+'''
+
+
+'''
+use ems_v1 match (v:Disconnector)
+set
+v.connecting_type = "other",
+v.connecting_dev = "N/A"
+'''

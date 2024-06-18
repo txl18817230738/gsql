@@ -1,0 +1,18 @@
+se_all_info_voltageVio_overview
+'''
+use ems_v1 match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:topoid_subid]->(t:`TopoND`) filter where startid.id = "113715890758877224" and t.island = 1
+let
+subid = s.strid,
+volt = t.base_kV,
+PF_Vm = case when t.PF_Vm is not NULL then t.PF_Vm else 0.0 end,
+up_V = case when t.up_V is not NULL then t.up_V else 0.0 end,
+lo_V = case when t.lo_V is not NULL then t.lo_V else 0.0 end,
+Vmax = 1.1,
+Vmin = 0.9
+let
+vio_type = case when PF_Vm >= up_V then "高电压越限" when PF_Vm <= lo_V then "低电压越限" else "正常" end,
+let
+count_vio_high = case when vio_type = "高电压越限" then 1 else 0 end,
+count_vio_low = case when vio_type = "低电压越限" then 1 else 0 end
+return case when volt >= 500.0 then "500kV" when volt >= 220.0 then "220kV"  when volt >= 110.0 then "110kV" when volt >= 34.5 then "35kV" when volt >= 10.0 then "10kV" else "other" end as voltageLevel, count(*) as total, sum(count_vio_high) as count_vio_high_total, sum(count_vio_low) as count_vio_low_total group by voltageLevel Next return voltageLevel, total, count_vio_high_total, count_vio_low_total
+'''

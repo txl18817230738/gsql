@@ -1,0 +1,284 @@
+CREATE QUERY FaultManagement(bool return_all=true) FOR GRAPH gsql_EMS { 
+typedef tuple<string faultid, string faultname, double volt, string faulttype, string faultdevtype, string groupname, int decesion_flag, int fastscreen_flag, int detailedanalysis_flag> fault;
+
+  SumAccum<INT> @@count_all;
+  SumAccum<INT> @@count_acline;
+  SumAccum<INT> @@count_twoport;
+  SumAccum<INT> @@count_threeport;
+  SumAccum<INT> @@count_unit;
+  SumAccum<INT> @@count_complex;  
+  
+  SumAccum<INT> @@count_500;
+  SumAccum<INT> @@count_500_acline;
+  SumAccum<INT> @@count_500_twoport;
+  SumAccum<INT> @@count_500_threeport;
+  SumAccum<INT> @@count_500_unit;
+  SumAccum<INT> @@count_500_complex;
+  
+  SumAccum<INT> @@count_220;
+  SumAccum<INT> @@count_220_acline;
+  SumAccum<INT> @@count_220_twoport;
+  SumAccum<INT> @@count_220_threeport;
+  SumAccum<INT> @@count_220_unit;
+  SumAccum<INT> @@count_220_complex;
+  
+  SumAccum<INT> @@count_110;
+  SumAccum<INT> @@count_110_acline;
+  SumAccum<INT> @@count_110_twoport;
+  SumAccum<INT> @@count_110_threeport;
+  SumAccum<INT> @@count_110_unit;
+  SumAccum<INT> @@count_110_complex;
+  
+  SumAccum<INT> @@count_35;
+  SumAccum<INT> @@count_35_acline;
+  SumAccum<INT> @@count_35_twoport;
+  SumAccum<INT> @@count_35_threeport;
+  SumAccum<INT> @@count_35_unit;
+  SumAccum<INT> @@count_35_complex;
+
+  SumAccum<INT> @@count_10;
+  SumAccum<INT> @@count_10_acline;
+  SumAccum<INT> @@count_10_twoport;
+  SumAccum<INT> @@count_10_threeport;
+  SumAccum<INT> @@count_10_unit;
+  SumAccum<INT> @@count_10_complex;
+  
+  SumAccum<INT> @@count_other;
+  SumAccum<INT> @@count_other_acline;
+  SumAccum<INT> @@count_other_twoport;
+  SumAccum<INT> @@count_other_threeport;
+  SumAccum<INT> @@count_other_unit;
+  SumAccum<INT> @@count_other_complex;
+  
+  HeapAccum<fault>(50, faultid asc) @@result_part;
+  HeapAccum<fault>(1000000, faultid asc) @@result;
+  
+  SumAccum<int> @island;
+	
+	sub = {Substation.*};
+  comp = {gridcom.*};
+  Tfault = {Fault.*};
+  topoSet = {TopoND.*};
+  
+  equip(ANY) = select t from topoSet:s -((topo_Tx_Two|topo_Tx_Three|topo_unit|topo_aclinedot):e)-:t 
+                  ACCUM
+                        t.@island = s.island;
+  fault_target = select t from equip:s -((fault_unit_select|fault_threeport_select|fault_aclinedot_select|fault_twoport_select):e) -:t
+                  ACCUM
+                        t.@island = s.@island;
+  
+
+   faultSet = select s from Tfault:s-(faultgroup_fault)-:t where s.@island ==1
+        accum
+          double volt = s.volt.get(0),
+          @@result += fault(convertToString(s.id), s.name, volt, s.faulttype, s.faultdevtype.get(0), t.groupname, s.decesion_flag, s.fastscreen_flag, s.detailedanalysis_flag),
+          @@result_part += fault(convertToString(s.id), s.name, volt, s.faulttype, s.faultdevtype.get(0), t.groupname, s.decesion_flag, s.fastscreen_flag, s.detailedanalysis_flag),
+          @@count_all += 1,
+          if volt >= 500 then
+                  @@count_500 += 1,
+                  if s.faultdevtype.get(0)  == "AClinedot" then
+                    @@count_500_acline += 1,
+                    @@count_acline += 1
+                  else if s.faultdevtype.get(0)  == "two_port_transformer" then
+                    @@count_500_twoport += 1,
+                    @@count_twoport += 1
+                  else if s.faultdevtype.get(0)  == "three_port_transformer" then
+                    @@count_500_threeport += 1,
+                    @@count_threeport += 1  
+                  else if s.faultdevtype.get(0)  == "Unit" then
+                    @@count_500_unit += 1,
+                    @@count_unit += 1 
+                  /**
+                  else if s.faulttype=="复杂故障" then
+                    @@count_500_complex += 1,
+                    @@count_complex += 1
+                  **/
+                  end
+                
+                else if volt >= 220 then
+                  @@count_220+=1,
+                  if s.faultdevtype.get(0) == "AClinedot" then
+                    @@count_220_acline += 1,
+                    @@count_acline += 1
+                  else if s.faultdevtype.get(0) == "two_port_transformer" then
+                    @@count_220_twoport += 1,
+                    @@count_twoport += 1
+                  else if s.faultdevtype.get(0) == "three_port_transformer" then
+                    @@count_220_threeport += 1,
+                    @@count_threeport += 1
+                  else if s.faultdevtype.get(0) == "Unit" then
+                    @@count_220_unit += 1,
+                    @@count_unit += 1
+                  /**
+                  else if s.faulttype=="复杂故障" then
+                    @@count_220_complex += 1,
+                    @@count_complex += 1
+                  **/
+                  end
+                  
+                else if volt >= 110 then
+                  @@count_110+=1,
+                  if s.faultdevtype.get(0)  == "AClinedot" then
+                    @@count_110_acline += 1,
+                    @@count_acline += 1
+                  else if s.faultdevtype.get(0)  == "two_port_transformer" then
+                    @@count_110_twoport += 1,
+                    @@count_twoport += 1
+                  else if s.faultdevtype.get(0)  == "three_port_transformer" then
+                    @@count_110_threeport += 1,
+                    @@count_threeport += 1
+                  else if s.faultdevtype.get(0)  == "Unit" then
+                    @@count_110_unit += 1,
+                    @@count_unit += 1
+                  /**
+                  else if s.faulttype=="复杂故障" then
+                    @@count_110_complex += 1,
+                    @@count_complex += 1
+                    **/
+                  end
+                  
+                else if volt >= 34 then
+                  @@count_35+=1,
+                  if s.faultdevtype.get(0)  == "AClinedot" then
+                    @@count_35_acline += 1,
+                    @@count_acline += 1
+                  else if s.faultdevtype.get(0)  == "two_port_transformer" then
+                    @@count_35_twoport += 1,
+                    @@count_twoport += 1
+                  else if s.faultdevtype.get(0)  == "three_port_transformer" then
+                    @@count_35_threeport += 1,
+                    @@count_threeport += 1
+                  else if s.faultdevtype.get(0)  == "Unit" then
+                    @@count_35_unit += 1,
+                    @@count_unit += 1
+                  /**
+                  else if s.faulttype=="复杂故障" then
+                    @@count_35_complex += 1,
+                    @@count_complex += 1
+                  **/
+                  end
+  
+                else if volt >= 10 then
+                  @@count_10+=1,
+                  if s.faultdevtype.get(0) == "AClinedot" then
+                    @@count_10_acline += 1,
+                    @@count_acline += 1
+                  else if s.faultdevtype.get(0) == "two_port_transformer" then
+                    @@count_10_twoport += 1,
+                    @@count_twoport += 1
+                  else if s.faultdevtype.get(0) == "three_port_transformer" then
+                    @@count_10_threeport += 1,
+                    @@count_threeport += 1
+                  else if s.faultdevtype.get(0) == "Unit" then
+                    @@count_10_unit += 1,
+                    @@count_unit += 1
+                  /**
+                  else if s.faulttype=="复杂故障" then
+                    @@count_10_complex += 1,
+                    @@count_complex += 1
+                    **/
+                  end
+                else
+                  @@count_other+=1,
+                  if s.faultdevtype.get(0) == "AClinedot" then
+                    @@count_other_acline += 1,
+                    @@count_acline += 1
+                  else if s.faultdevtype.get(0) == "two_port_transformer" then
+                    @@count_other_twoport += 1,
+                    @@count_twoport += 1
+                  else if s.faultdevtype.get(0) == "three_port_transformer" then
+                    @@count_other_threeport += 1,
+                    @@count_threeport += 1
+                  else if s.faultdevtype.get(0) == "Unit" then
+                    @@count_other_unit += 1,
+                    @@count_unit += 1
+                  /**
+                  else if s.faulttype=="复杂故障" then
+                    @@count_other_complex += 1,
+                    @@count_complex += 1
+                    **/
+                  end
+                end; 
+  
+  T_comples = select s from Tfault:s where s.faulttype=="复杂故障"
+                   accum
+                        double volt = s.volt.get(0),
+                        @@count_complex += 1,
+                        @@result += fault(convertToString(s.id), s.name, volt, s.faulttype, "complex", "复杂故障组", s.decesion_flag, s.fastscreen_flag, s.detailedanalysis_flag),
+                        @@result_part += fault(convertToString(s.id), s.name, volt, s.faulttype, "complex", "复杂故障组", s.decesion_flag, s.fastscreen_flag, s.detailedanalysis_flag),
+                        if volt >= 500 then
+                        @@count_500_complex += 1
+                        else if volt >= 220 then
+                        @@count_220_complex += 1
+                        else if volt >= 110 then
+                        @@count_110_complex += 1
+                        else if volt >= 34 then
+                        @@count_35_complex += 1
+                        else if volt >= 10 then
+                        @@count_10_complex += 1
+                        else
+                          @@count_other_complex += 1
+                        end;
+  @@count_all += @@count_complex;
+  @@count_500 += @@count_500_complex;
+  @@count_220 += @@count_220_complex;
+  @@count_110 += @@count_110_complex;
+  @@count_35 += @@count_35_complex;
+  @@count_10 += @@count_10_complex;
+  @@count_other += @@count_other_complex;
+  
+  if return_all then
+    print @@result;
+  else
+    print @@result_part;
+  end;
+  
+  print @@count_all;
+  print @@count_acline;
+  print @@count_twoport;
+  print @@count_threeport;
+  print @@count_unit;
+  print @@count_complex;
+  
+  print @@count_500;
+  print @@count_500_acline;
+  print @@count_500_twoport;
+  print @@count_500_threeport;
+  print @@count_500_unit;
+  print @@count_500_complex;
+  
+  print @@count_220;
+  print @@count_220_acline;
+  print @@count_220_twoport;
+  print @@count_220_threeport;
+  print @@count_220_unit;
+  print @@count_220_complex;
+
+  print @@count_110;
+  print @@count_110_acline;
+  print @@count_110_twoport;
+  print @@count_110_threeport;
+  print @@count_110_unit;
+  print @@count_110_complex;
+ 
+  print @@count_35;
+  print @@count_35_acline;
+  print @@count_35_twoport;
+  print @@count_35_threeport;
+  print @@count_35_unit;
+  print @@count_35_complex;
+
+  print @@count_10;
+  print @@count_10_acline;
+  print @@count_10_twoport;
+  print @@count_10_threeport;
+  print @@count_10_unit;
+  print @@count_10_complex;
+
+  print @@count_other;
+  print @@count_other_acline;
+  print @@count_other_twoport;
+  print @@count_other_threeport;
+  print @@count_other_unit;
+  print @@count_other_complex;
+}

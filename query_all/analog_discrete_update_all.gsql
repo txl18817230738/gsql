@@ -1,0 +1,249 @@
+CREATE QUERY analog_discrete_update_all() FOR GRAPH gsql_EMS{
+  
+  SumAccum<double> @p_meas;
+  SumAccum<double> @q_meas;
+  MaxAccum<DOUBLE> @latitude;
+  MaxAccum<DOUBLE> @longitude;
+  SumAccum<int> @breaker_point;
+  SumAccum<int> @dis_point;  
+  SumAccum<int> @@meas_counter;
+  SumAccum<int> @@discrete_counter;
+  SumAccum<int> @statusM = 0;
+  SumAccum<int> @flagM = 0;
+  SumAccum<int> @flag = 0;
+  SumAccum<int> @updateFlag = 0;
+  OrAccum<bool> @isupdate;
+
+  MapAccum<INT, double> @@acline_p_MapAccum;
+  MapAccum<INT, double> @@acline_q_MapAccum;
+
+  MapAccum<INT, double> @@two_port_p_MapAccum;
+  MapAccum<INT, double> @@two_port_q_MapAccum;
+  MapAccum<INT, double> @@three_port_p_MapAccum;
+  MapAccum<INT, double> @@three_port_q_MapAccum;
+
+  measSet = {meas.*};
+  DeviceSet = SELECT t 
+            FROM measSet:s - ((Meas_AClinedot | Meas_CP | Meas_Bus | Meas_Load | Meas_trans2 | Meas_trans3 | Meas_Unit ):e) -> :t
+            ACCUM
+            if s.P_ManualFlag == 1 then t.@p_meas = s.PManual
+            else t.@p_meas = s.P*s.meas_A + s.meas_B end,
+            if s.Q_ManualFlag == 1 then t.@q_meas = s.QManual
+            else t.@q_meas = s.Q end
+            POST-ACCUM 
+            @@meas_counter += 1,
+            t.Pimeas = t.@p_meas,
+            t.Qimeas = t.@q_meas,
+            if (t.name == "韶关.湾头水电厂.1主变高端绕组") then
+                t.Pimeas = 3,
+                t.Qimeas = -2.4
+            end,
+            if (t.name == "韶关.湾头水电厂.1主变低端绕组") then
+                t.Pimeas = -3,
+                t.Qimeas = 2.4
+            end,
+            if (t.name == "韶关.湾头水电厂.2主变低端绕组") then
+                t.Pimeas = 10.7,
+                t.Qimeas = 3.1
+            end,
+            if (t.name == "东莞.锦厦站.1主变110") then
+                t.Pimeas = 34.7,
+                t.Qimeas = 7.4
+            end,
+            if (t.name == "东莞.锦厦站.2主变110") then
+                t.Pimeas = 25.1,
+                t.Qimeas = 6.3
+            end,
+            if (t.name == "东莞.锦厦站.3主变110") then
+                t.Qimeas = 5.4
+            end,
+            if (t.id == 115404740971463029 or t.id == 115404740971463028) then
+                t.Pimeas = 6
+            end,
+            if (t.id == 115404740619141426) then
+                t.Pimeas = 35
+            end,
+            if (t.id == 115404740770136223) then
+                t.Pimeas = 110
+            end,
+            if (t.name == "惠州.大州站.10kV大桥线F27") then
+                t.Pimeas = t.@p_meas/1000,
+                t.Qimeas = t.@q_meas/1000
+            end,
+            if (t.name == "花地站.花地站-220kV.牛花甲线9143_T2") then
+                t.Pimeas = -214.9,
+                t.Qimeas = -8.7
+            end,
+            if (t.name == "牛角站.牛角站-220kV.牛花甲线9143_T1") then
+                t.Pimeas = 215.7,
+                t.Qimeas = 10.2
+            end,
+            if (t.name == "佛山.石塘站.110kV石塘站.110kV电压等级.110kV后石线149线路_T2") then
+                t.Pimeas = 24.75,
+                t.Qimeas = -3.15
+            end,
+            if (t.name == "佛山.石塘站.110kV石塘站.110kV电压等级.110kV高石线130线路_T2") then
+                t.Pimeas = 25,
+                t.Qimeas = 4.8
+            end,
+            if (t.name == "佛山.石塘站.2主变低端绕组") then
+                t.Pimeas = -25,
+                t.Qimeas = 4.6
+            end,
+            if (t.name == "上寨站.上寨站-500kV.嘉上甲线_T1") then
+                t.Pimeas = 579.3
+            end,
+            if (t.name == "嘉应站.嘉应站-500kV.嘉上甲线_T2") then
+                t.Pimeas = -578.2
+            end,
+            if (t.name == "裕元站.F29") then
+                t.Qimeas = 2.3
+            end,
+            if (t.id == 115404740971463306) then
+                t.Pimeas = 110
+            end;
+
+  BusSet = select t 
+           from measSet:s - (Meas_Bus:e) ->:t
+           post-accum
+           if (abs(t.@p_meas) < 0.0001) then
+              t.Pimeas = t.base_value
+           end;
+
+
+//===============update bus branch model=============================
+total_topo ={TopoND.*};
+aclinedotSet = {ACline_dot.*};
+two_port = {two_port_transformer.*};
+three_port = {three_port_transformer.*};
+//===================================================================================
+        X = select s from aclinedotSet:s -(aclinedot_aclinedot:e) - :t
+                accum
+                        int id = e.id,
+                        if s.id == e.I_mRID then
+                        //log(TRUE, "ACLINE_+", id, s.pimeas, s.qimeas),
+                                @@acline_p_MapAccum += (id -> s.Pimeas/100),
+                                @@acline_q_MapAccum += (id -> s.Qimeas/100)
+                        else
+                        //log(TRUE, "ACLINE_-", -id, s.pimeas, s.qimeas),
+                                @@acline_p_MapAccum += (-id -> s.Pimeas/100),
+                                @@acline_q_MapAccum += (-id -> s.Qimeas/100)
+                        end;
+        X2 = select s from aclinedotSet:s -(aclinedot_aclinedot_reverse:e) - :t
+                accum
+                        int id = e.id,
+                        if s.id == e.I_mRID then
+                        //log(TRUE, "ACLINE_+", id, s.pimeas, s.qimeas),
+                                @@acline_p_MapAccum += (id -> s.Pimeas/100),
+                                @@acline_q_MapAccum += (id -> s.Qimeas/100)
+                        else
+                        //log(TRUE, "ACLINE_-", -id, s.pimeas, s.qimeas),
+                                @@acline_p_MapAccum += (-id -> s.Pimeas/100),
+                                @@acline_q_MapAccum += (-id -> s.Qimeas/100)
+                        end;
+                        //log(TRUE, "inserted_ACLINE_+", id, @@acline_p_MapAccum.get(id), @@acline_q_MapAccum.get(id)),
+                        //log(TRUE, "inserted_ACLINE_-", -id, @@acline_p_MapAccum.get(-id), @@acline_q_MapAccum.get(-id));
+
+  Y = Select src from two_port:src
+      ACCUM
+      @@two_port_p_MapAccum += (src.id ->  src.Pimeas/100),
+    @@two_port_q_MapAccum += (src.id -> src.Qimeas/100);
+  Z = Select src from three_port:src
+      ACCUM
+      @@three_port_p_MapAccum += (src.id ->  src.Pimeas/100),
+    @@three_port_q_MapAccum += (src.id -> src.Qimeas/100),
+      @@three_port_p_MapAccum += (-src.id -> -src.Pimeas/100),
+      @@three_port_q_MapAccum += (-src.id -> -src.Qimeas/100);
+
+  updae_edge = select s
+                from total_topo:s-(topo_connect:e)->:t
+    where s.island == 1 and t.island == 1
+                ACCUM
+                CASE WHEN (e.device_type == "AC传输线") THEN
+                        e.M_P_TLPF = GetEdgeValuesFromList(@@acline_p_MapAccum, e.key_list),
+                        e.M_Q_TLPF = GetEdgeValuesFromList(@@acline_q_MapAccum, e.key_list)
+                     WHEN (e.device_type == "双组变压器") THEN
+                        e.M_P_TLPF = GetEdgeValuesFromList(@@two_port_p_MapAccum, e.key_list),
+                        e.M_Q_TLPF = GetEdgeValuesFromList(@@two_port_q_MapAccum, e.key_list)
+                     WHEN (e.device_type == "三绕组变压器") THEN
+                        e.M_P_TLPF = GetEdgeValuesFromList(@@three_port_p_MapAccum, e.key_list),
+                        e.M_Q_TLPF = GetEdgeValuesFromList(@@three_port_q_MapAccum, e.key_list)
+                END;
+
+
+
+
+//================================================================
+
+  discreteSet = {discrete.*};
+ // discreteSet = SELECT s FROM discreteSet:s
+ //               WHERE s.status_previous != s.status;
+
+  breaker_Set = SELECT t
+            FROM discreteSet:s - (discrete_breaker:e) -> :t
+            accum
+            if s.flagM == 1 then 
+               t.@breaker_point = s.statusM,
+               if s.updateFlag == 1 then
+                  @@discrete_counter += 1
+               end
+            else 
+	       if s.flag==1 then
+                   t.@breaker_point = s.status
+		end
+            end
+            post-accum
+               t.point = t.@breaker_point;
+
+/*
+  dis_Set = SELECT t
+            FROM discreteSet:s - (discrete_dis:e) -> :t
+            where t.connecting_type == "load_Switching"
+            post-accum
+                s.flag = 0;
+*/
+
+  dis_Set = SELECT t
+            FROM discreteSet:s - (discrete_dis:e) -> :t
+            accum
+	   
+            if s.flagM == 1 then 
+              t.@dis_point = s.statusM,
+              if s.updateFlag == 1 then
+                 @@discrete_counter += 1
+              end
+            else if s.flagM == 0 and t.connecting_type != "load_Switching" then
+	        if s.flag==1 then
+                    t.@dis_point = s.status
+		end
+            else if s.flagM == 0 and t.connecting_type == "load_Switching" then
+                t.@dis_point = 1
+            end
+            post-accum
+              t.point = t.@dis_point;
+            /*
+	    if s.flag==1 then
+		t.@isupdate =true,
+                t.@dis_point = s.status
+	    else
+	       if s.flagM == 1 then 
+              	   t.@dis_point = s.statusM,
+		   t.@isupdate = true,
+             	   if s.updateFlag == 1 then
+                      @@discrete_counter += 1
+                   end
+		end
+            end
+            post-accum
+	          IF(t.@isupdate ==true) then 
+		     t.point = t.@dis_point
+	          end;
+           */
+ // statusSet = {status.*};
+
+ // statusSet = select s from statusSet:s
+ //          post-accum
+ //            s.analog_meas_number = @@meas_counter,
+ //            s.analog_point_number = @@discrete_counter;
+
+}

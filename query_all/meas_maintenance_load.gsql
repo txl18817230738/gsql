@@ -1,0 +1,404 @@
+CREATE QUERY meas_maintenance_load(string companyID="113715890758877224", bool return_all=true) FOR GRAPH gsql_EMS { 
+  
+	TYPEDEF TUPLE<string load_name, string sub_name, string sub_id, string bus_name, double volt, double desired_volts, string P_mark, int P_mark_num, double P_meas_real, string Q_mark, int Q_mark_num, double Q_meas_real, double next_value> load_list;
+	SetAccum<string> @@Comp_ID;
+	SumAccum<string> @sub_name;
+	SumAccum<string> @bus_name;
+	
+  SumAccum<INT> @@count_all;
+	HeapAccum<load_list>(10000000, P_mark_num DESC, Q_mark_num DESC, load_name ASC) @@loads_all;
+	HeapAccum<load_list>(50, P_mark_num DESC, Q_mark_num DESC, load_name ASC) @@loads_part;
+	SumAccum<string> @sub_id;
+    
+	SumAccum<INT> @@count_0;
+	SumAccum<INT> @@count_0_10;
+	SumAccum<INT> @@count_10_50;
+	SumAccum<INT> @@count_50;
+  SumAccum<INT> @@count_neg;
+  SumAccum<INT> @@count_pos;
+  
+  SumAccum<double> @@total_meas;
+  SumAccum<double> @@total_meas_pos;
+  SumAccum<double> @@total_meas_neg;
+  SumAccum<double> @@total_cal;
+  
+  
+	SumAccum<INT> @@count_500;
+	SumAccum<INT> @@count_500_0;
+	SumAccum<INT> @@count_500_0_10;
+	SumAccum<INT> @@count_500_10_50;
+	SumAccum<INT> @@count_500_50;
+  SumAccum<INT> @@count_500_neg;
+  SumAccum<INT> @@count_500_pos;
+	SumAccum<double> @@count_500_meas;
+	SumAccum<double> @@count_500_meas_pos;
+	SumAccum<double> @@count_500_meas_neg;
+	SumAccum<double> @@count_500_cal;
+  
+	SumAccum<INT> @@count_220;
+	SumAccum<INT> @@count_220_0;
+	SumAccum<INT> @@count_220_0_10;
+	SumAccum<INT> @@count_220_10_50;
+	SumAccum<INT> @@count_220_50;
+  SumAccum<INT> @@count_220_neg;
+  SumAccum<INT> @@count_220_pos;
+	SumAccum<double> @@count_220_meas;
+	SumAccum<double> @@count_220_meas_pos;
+	SumAccum<double> @@count_220_meas_neg;
+	SumAccum<double> @@count_220_cal;
+  
+  
+    SumAccum<INT> @@count_110;
+	SumAccum<INT> @@count_110_0;
+	SumAccum<INT> @@count_110_0_10;
+	SumAccum<INT> @@count_110_10_50;
+	SumAccum<INT> @@count_110_50;
+  SumAccum<INT> @@count_110_neg;
+  SumAccum<INT> @@count_110_pos;
+	SumAccum<double> @@count_110_meas;
+	SumAccum<double> @@count_110_meas_pos;
+	SumAccum<double> @@count_110_meas_neg;
+	SumAccum<double> @@count_110_cal;
+  
+	SumAccum<INT> @@count_35;
+	SumAccum<INT> @@count_35_0;
+	SumAccum<INT> @@count_35_0_10;
+	SumAccum<INT> @@count_35_10_50;
+	SumAccum<INT> @@count_35_50;
+  SumAccum<INT> @@count_35_neg;
+  SumAccum<INT> @@count_35_pos;
+	SumAccum<double> @@count_35_meas;
+	SumAccum<double> @@count_35_meas_pos;
+	SumAccum<double> @@count_35_meas_neg;
+	SumAccum<double> @@count_35_cal;
+  
+	SumAccum<INT> @@count_10;
+	SumAccum<INT> @@count_10_0;
+	SumAccum<INT> @@count_10_0_10;
+	SumAccum<INT> @@count_10_10_50;
+	SumAccum<INT> @@count_10kv_50;
+  SumAccum<INT> @@count_10_neg;
+  SumAccum<INT> @@count_10_pos;
+	SumAccum<double> @@count_10_meas;
+	SumAccum<double> @@count_10_meas_pos;
+	SumAccum<double> @@count_10_meas_neg;
+	SumAccum<double> @@count_10_cal;
+	
+  
+	SumAccum<INT> @@count_other;
+	SumAccum<INT> @@count_other_0;
+	SumAccum<INT> @@count_other_0_10;
+	SumAccum<INT> @@count_other_10_50;
+	SumAccum<INT> @@count_other_50;
+  SumAccum<INT> @@count_other_neg;
+  SumAccum<INT> @@count_other_pos;
+  SumAccum<double> @@count_other_meas;
+	SumAccum<double> @@count_other_meas_pos;
+	SumAccum<double> @@count_other_meas_neg;
+	SumAccum<double> @@count_other_cal;
+   
+
+	T0 = {TopoND.*};
+	sub = {Substation.*};
+	comp = {gridcom.*};
+	
+	start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID; 
+        
+  loadSet = SELECT t FROM sub:s - (connected_Sub_Load:e) ->:t
+                accum
+                t.@sub_name = s.name,
+                t.@sub_id = s.strid;
+	
+	
+	// load
+	
+	T_load = SELECT s FROM loadSet:s - (topo_load:e) - TopoND:t
+			WHERE t.island == 1
+                        ACCUM
+                        s.@bus_name = t.bus_name;
+	
+			
+	T_load = SELECT s FROM T_load:s		
+			POST-ACCUM
+			IF s.Pimeas != 0 and s.Qimeas != 0 THEN
+			// lazy_loading
+				@@loads_all += load_list(s.name, s.@sub_name, s.@sub_id, s.@bus_name, s.volt, s.base_value, "实测", 1, s.Pimeas, "实测", 1, s.Qimeas, s.meas_t_next),
+				@@loads_part += load_list(s.name, s.@sub_name, s.@sub_id, s.@bus_name, s.volt, s.base_value, "实测", 1, s.Pimeas, "实测", 1, s.Qimeas, s.meas_t_next)
+			ELSE IF s.Pimeas == 0 and s.Qimeas != 0 THEN
+				@@loads_all += load_list(s.name, s.@sub_name, s.@sub_id, s.@bus_name, s.volt, s.base_value, "无实测", 0, 0, "实测", 1, s.Qimeas, s.meas_t_next),
+				@@loads_part += load_list(s.name, s.@sub_name, s.@sub_id, s.@bus_name, s.volt, s.base_value, "无实测", 0, 0, "实测", 1, s.Qimeas, s.meas_t_next)
+			ELSE IF s.Pimeas != 0 and s.Qimeas == 0 THEN
+				@@loads_all += load_list(s.name, s.@sub_name, s.@sub_id, s.@bus_name, s.volt, s.base_value, "实测", 1, s.Pimeas, "无实测", 0, 0, s.meas_t_next),
+				@@loads_part += load_list(s.name, s.@sub_name, s.@sub_id, s.@bus_name, s.volt, s.base_value, "实测", 1, s.Pimeas, "无实测", 0, 0, s.meas_t_next)
+			ELSE
+				@@loads_all += load_list(s.name, s.@sub_name, s.@sub_id, s.@bus_name, s.volt, s.base_value, "无实测", 0, 0, "无实测", 0, 0, s.meas_t_next),
+				@@loads_part += load_list(s.name, s.@sub_name, s.@sub_id, s.@bus_name, s.volt, s.base_value, "无实测", 0, 0, "无实测", 0, 0, s.meas_t_next)
+			END,
+			@@count_all += 1,
+            @@total_meas += s.Pimeas,
+	        if s.Pimeas <0 then 
+                        @@total_meas_neg += abs(s.Pimeas),
+                        @@count_neg += 1
+            else  
+                        @@total_meas_pos += s.Pimeas,
+                        @@count_pos += 1
+            end,
+            @@total_cal += s.P,
+			double volt = s.volt,
+			if volt >= 500 then
+				 @@count_500 += 1,
+				 @@count_500_meas += s.Pimeas,
+				 if s.Pimeas <0 then 
+                        @@count_500_meas_neg += abs(s.Pimeas),
+                        @@count_500_neg += 1
+                 else  
+                        @@count_500_meas_pos += s.Pimeas,
+                        @@count_500_pos += 1
+                 end,
+				 @@count_500_cal += s.P, 
+				 if s.Pimeas < 0 then
+                    @@count_500_0+=1,
+                    @@count_0+=1
+                  else if s.Pimeas >= 0 and s.Pimeas < 10 then
+                    @@count_500_0_10+=1,
+                    @@count_0_10+=1
+                  else if s.Pimeas >= 10 and s.Pimeas < 50 then
+                    @@count_500_10_50+=1,
+                    @@count_10_50+=1            
+                  else if s.Pimeas >= 50 then
+                    @@count_500_50+=1,
+                    @@count_50+=1
+                  end
+			else if volt >= 220 then
+                  @@count_220+=1,
+                  @@count_220_meas += s.Pimeas,
+                  if s.Pimeas <0 then 
+                        @@count_220_meas_neg += abs(s.Pimeas),
+                        @@count_220_neg += 1
+                  else  
+                        @@count_220_meas_pos += s.Pimeas,
+                        @@count_220_pos += 1
+                  end,
+				  @@count_220_cal += abs(s.P),
+				 if s.Pimeas < 0 then
+                    @@count_220_0+=1,
+                    @@count_0+=1
+                  else if s.Pimeas >= 0 and s.Pimeas < 10 then
+                    @@count_220_0_10+=1,
+                    @@count_0_10+=1
+                  else if s.Pimeas >= 10 and s.Pimeas < 50 then
+                    @@count_220_10_50+=1,
+                    @@count_10_50+=1            
+                  else if s.Pimeas >= 50 then
+                    @@count_220_50+=1,
+                    @@count_50+=1
+                  end
+                  
+                else if volt >= 110 then
+                  @@count_110+=1,
+                  @@count_110_meas += s.Pimeas,
+				  if s.Pimeas <0 then 
+                        @@count_110_meas_neg += abs(s.Pimeas),
+                        @@count_110_neg += 1
+                  else  
+                        @@count_110_meas_pos += s.Pimeas,
+                        @@count_110_pos += 1
+                  end,
+				  @@count_110_cal += abs(s.P),
+				 if s.Pimeas < 0 then
+                    @@count_110_0+=1,
+                    @@count_0+=1
+                  else if s.Pimeas >= 0 and s.Pimeas < 10 then
+                    @@count_110_0_10+=1,
+                    @@count_0_10+=1
+                  else if s.Pimeas >= 10 and s.Pimeas < 50 then
+                    @@count_110_10_50+=1,
+                    @@count_10_50+=1            
+                  else if s.Pimeas >= 50 then
+                    @@count_110_50+=1,
+                    @@count_50+=1
+                  end
+                  
+                else if volt >= 34.5 then
+                  @@count_35+=1,
+                  @@count_35_meas += s.Pimeas,
+				  if s.Pimeas <0 then 
+                        @@count_35_meas_neg += abs(s.Pimeas),
+                        @@count_35_neg += 1
+                  else  
+                        @@count_35_meas_pos += s.Pimeas,
+                        @@count_35_pos += 1
+                  end,
+				  @@count_35_cal += abs(s.P),
+				 if s.Pimeas < 0 then
+                    @@count_35_0+=1,
+                    @@count_0+=1
+                  else if s.Pimeas >= 0 and s.Pimeas < 10 then
+                    @@count_35_0_10+=1,
+                    @@count_0_10+=1
+                  else if s.Pimeas >= 10 and s.Pimeas < 50 then
+                    @@count_35_10_50+=1,
+                    @@count_10_50+=1            
+                  else if s.Pimeas >= 50 then
+                    @@count_35_50+=1,
+                    @@count_50+=1
+                  end
+  
+                else if volt >= 10 then
+                  @@count_10+=1,
+                  @@count_10_meas += s.Pimeas,
+				  if s.Pimeas <0 then 
+                        @@count_10_meas_neg += abs(s.Pimeas),
+                        @@count_10_neg += 1
+                  else  
+                        @@count_10_meas_pos += s.Pimeas,
+                        @@count_10_pos += 1
+                  end,
+				  @@count_10_cal += abs(s.P),
+				 if s.Pimeas < 0 then
+                    @@count_10_0+=1,
+                    @@count_0+=1
+                  else if s.Pimeas >= 0 and s.Pimeas < 10 then
+                    @@count_10_0_10+=1,
+                    @@count_0_10+=1
+                  else if s.Pimeas >= 10 and s.Pimeas < 50 then
+                    @@count_10_10_50+=1,
+                    @@count_10_50+=1            
+                  else if s.Pimeas >= 50 then
+                    @@count_10kv_50+=1,
+                    @@count_50+=1
+                  end
+                  
+                else
+                  @@count_other+=1,
+                  @@count_other_meas += s.Pimeas,
+				  if s.Pimeas <0 then 
+                        @@count_other_meas_neg += abs(s.Pimeas),
+                        @@count_other_neg += 1
+                  else  
+                        @@count_other_meas_pos += s.Pimeas,
+                        @@count_other_pos += 1
+                  end,
+				  @@count_other_cal += abs(s.P),
+				 if s.Pimeas < 0 then
+                    @@count_other_0+=1,
+                    @@count_0+=1
+                  else if s.Pimeas >= 0 and s.Pimeas < 10 then
+                    @@count_other_0_10+=1,
+                    @@count_0_10+=1
+                  else if s.Pimeas >= 10 and s.Pimeas < 50 then
+                    @@count_other_10_50+=1,
+                    @@count_10_50+=1            
+                  else if s.Pimeas >= 50 then
+                    @@count_other_50+=1,
+                    @@count_50+=1
+                  end
+                end;	  
+				  
+	
+						
+	if return_all then
+    print @@loads_all;
+  else
+    print @@loads_part;
+  end;
+  
+  
+    print @@count_0;//按负荷水平分组，负负荷的个数(小于0),供饼图用
+	print @@count_0_10;//按负荷水平分组，小负荷的个数(小于0),供饼图用
+	print @@count_10_50;//按负荷水平分组，中负荷的个数(小于0),供饼图用
+	print @@count_50;//按负荷水平分组，大负荷的个数(小于0),供饼图用
+  
+  
+	print @@count_500;//电压等级为500kv及以上的个数
+	print @@count_500_0;//电压等级为500kv及以上的负负荷个数
+	print @@count_500_0_10;//电压等级为500kv及以上的小负荷个数
+	print @@count_500_10_50;//电压等级为500kv及以上的中负荷个数
+	print @@count_500_50;//电压等级为500kv及以上的大负荷个数
+	print @@count_500_meas;//电压等级为500kv及以上的量测负荷之和（兆瓦）
+	print @@count_500_cal;//电压等级为500kv及以上的估计负荷之和（兆瓦）
+  
+	print @@count_220;//电压等级为220kv的个数
+	print @@count_220_0;//电压等级为220kv的负负荷个数
+	print @@count_220_0_10;//电压等级为220kv的小负荷个数
+	print @@count_220_10_50;//电压等级为220kv的中负荷个数
+	print @@count_220_50;//电压等级为220kv的大负荷个数
+	print @@count_220_meas;//电压等级为220kv的量测负荷之和（兆瓦）
+	print @@count_220_cal;//电压等级为220kv的估计负荷之和（兆瓦）
+  
+  
+    print @@count_110;//电压等级为110kv的个数
+	print @@count_110_0;//电压等级为110kv的负负荷个数
+	print @@count_110_0_10;//电压等级为110kv的小负荷个数
+	print @@count_110_10_50;//电压等级为110kv的中负荷个数
+	print @@count_110_50;//电压等级为110kv的大负荷个数
+	print @@count_110_meas;//电压等级为110kv的量测负荷之和（兆瓦）
+	print @@count_110_cal;//电压等级为110kv的估计负荷之和（兆瓦）
+  
+	print @@count_35;//电压等级为35kv的个数
+	print @@count_35_0;
+	print @@count_35_0_10;
+	print @@count_35_10_50;
+	print @@count_35_50;
+	print @@count_35_meas;
+	print @@count_35_cal;
+  
+	print @@count_10;//电压等级为10kv的个数
+	print @@count_10_0;
+	print @@count_10_0_10;
+	print @@count_10_10_50;
+	print @@count_10kv_50;
+	print @@count_10_meas;
+	print @@count_10_cal;
+	
+  
+	print @@count_other;//其他电压等级的个数
+	print @@count_other_0;
+	print @@count_other_0_10;
+	print @@count_other_10_50;
+	print @@count_other_50;
+  print @@count_other_meas;
+	print @@count_other_cal;
+	
+	print @@count_all;//总数
+  
+  print @@total_meas;//总的量测
+  print @@total_cal;//总的估计值
+
+
+  print @@total_meas_pos;
+  print @@total_meas_neg;
+  print @@count_500_meas_pos;
+  print @@count_500_meas_neg;
+  print @@count_220_meas_pos;
+  print @@count_220_meas_neg;
+  print @@count_110_meas_pos;
+  print @@count_110_meas_neg;
+  print @@count_35_meas_pos;
+  print @@count_35_meas_neg;
+  print @@count_10_meas_pos;
+  print @@count_10_meas_neg;
+  print @@count_other_meas_pos;
+  print @@count_other_meas_neg;
+
+  print @@count_neg;
+  print @@count_pos;
+  print @@count_500_neg;
+  print @@count_500_pos;
+  print @@count_220_neg;
+  print @@count_220_pos;
+  print @@count_110_neg;
+  print @@count_110_pos;
+  print @@count_35_neg;
+  print @@count_35_pos;
+  print @@count_10_neg;
+  print @@count_10_pos;
+  print @@count_other_neg;
+  print @@count_other_pos;
+}

@@ -1,0 +1,75 @@
+CREATE QUERY SIupdate() FOR GRAPH gsql_EMS{
+
+  SumAccum<string> @faultname;
+  SumAccum<string> @faulttype;
+  SumAccum<string> @linename;
+  SumAccum<string> @groupname;
+  SumAccum<double> @SI;
+  SumAccum<double> @CSeverity;
+  SumAccum<int> @decesion_flag = 1;
+  SumAccum<int> @fastscreen_flag = 0;
+  SumAccum<int> @detailedanalysis_flag = 0;
+  SumAccum<int> @FaultGroup_select_flag = 0;
+  MapAccum<INT, double> @@topo_connect_SI;
+  MapAccum<INT, double> @@topo_connect_CSeverity;
+
+  Tfault = {Fault.*};
+  Tunit = {unit.*};
+  Tacline = {ACline_dot.*};
+  Ttwoport = {two_port_transformer.*};
+  Tthreeport = {three_port_transformer.*};
+  Tbus = {BUS.*};
+  Tsub = {Substation.*};
+  T0 = {TopoND.*}; 
+ 
+   T0 = select s from T0:s -(topo_connect:e)->:t
+     where s.island == 1 and t.island == 1 and e.reverse == 1
+     accum
+     foreach i in range [0, e.X.size()-1] do
+         int id = e.key_list.get(i),
+         @@topo_connect_SI += (id -> e.SI.get(i)),
+         @@topo_connect_CSeverity += (id -> e.CSeverity.get(i))
+     end;
+
+   aclineSet = select s from Tacline:s -(aclinedot_aclinedot:e) - :t
+     accum
+       s.@SI = @@topo_connect_SI.get(e.id),
+       s.@CSeverity = @@topo_connect_CSeverity.get(e.id)
+     post-accum
+       s.SI = s.@SI,
+       s.OverLimit_count = s.@CSeverity;
+
+   aclineSet = select s from Tacline:s -(aclinedot_aclinedot_reverse:e) - :t
+     accum
+       s.@SI = @@topo_connect_SI.get(e.id),
+       s.@CSeverity = @@topo_connect_CSeverity.get(e.id)
+     post-accum
+       s.SI = s.@SI,
+       s.OverLimit_count = s.@CSeverity;
+
+   twoportSet = select s from Ttwoport:s
+     post-accum
+       s.@SI = @@topo_connect_SI.get(s.id),
+       s.@CSeverity = @@topo_connect_CSeverity.get(s.id),
+       s.SI = @@topo_connect_SI.get(s.id),
+       s.OverLimit_count = @@topo_connect_CSeverity.get(s.id);
+
+   threeSet = select s from Tthreeport:s
+     post-accum
+       s.@SI = @@topo_connect_SI.get(s.id),
+       s.@CSeverity = @@topo_connect_CSeverity.get(s.id),
+       s.SI = @@topo_connect_SI.get(s.id),
+       s.OverLimit_count = @@topo_connect_CSeverity.get(s.id);
+
+
+   faultSet = select s from Tfault:s-((fault_aclinedot_select|fault_twoport_select|fault_threeport_select):e)-:t
+        accum
+          s.@SI = t.@SI,
+          s.@CSeverity = t.@CSeverity
+        post-accum
+          s.SI = s.@SI,
+          s.linevio = s.@CSeverity;
+ 
+//print @@topo_connect_SI;
+//print @@topo_connect_CSeverity;
+}

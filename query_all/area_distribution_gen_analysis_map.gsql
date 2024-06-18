@@ -1,0 +1,18 @@
+CREATE QUERY area_distribution_gen_analysis_map(/* Parameters here */) FOR GRAPH gsql_EMS { 
+  TYPEDEF TUPLE<string area_name, double distribution_p> info;
+  
+	HeapAccum<info>(500, area_name DESC) @@result_all;
+  SumAccum<string> @area_name;
+ 
+  comp_stat = {gridcom_stat.*};
+ 
+  comp_stat = select s from comp_stat:s -(gridcom_gridcom_stat:e) -:t 
+                ACCUM 
+                    s.@area_name = t.name;
+  
+  T0 = select s from comp_stat:s where s.id !="113715890758877224"
+            ACCUM 
+               @@result_all += info(s.@area_name,s.distribution_gen_total_p);
+       
+  print @@result_all;
+}

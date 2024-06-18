@@ -1,0 +1,37 @@
+CREATE QUERY zero_score(string timestamp, string companyID = "0010513200", int time_interval=900000) FOR GRAPH gsql_EMS syntax v2{
+  ListAccum<carbon_hist_info> @@carbonscore_list;
+  AvgAccum @@average_score;
+  ListAccum<carbon_hist_info> @tempListAccum;
+  string last_history_time;
+  
+  comp = {gridcom.*};
+  comp = select s from comp:s where s.id == companyID;
+  history_set(ANY) = select t from comp:s-(com_history_add3:e) - :t where s.id == companyID
+    ACCUM
+      FOREACH x in t.today DO
+        IF isOneDay(timestamp, x.t) THEN
+            @@average_score +=x.v
+        END
+      END;
+  
+  //==============================================================================
+  ////////////// update carbon history ///////////////////////////////////////
+  //==============================================================================
+  IF timestamp != "" THEN
+    statusSet = {status.*};
+    statusSet = select s from statusSet:s ACCUM last_history_time = s.last_history_time;
+    IF last_history_time == "" OR isMoreThanInterval(timestamp, last_history_time, time_interval) THEN
+      print "update history data";
+  comp = select s from gridcom:s - (com_history_add4:e) - :t
+              accum
+              FOREACH x in t.today DO
+                IF isOneDay(timestamp, x.t) THEN
+                  t.@tempListAccum+=x
+                END
+              END,
+                t.@tempListAccum+=carbon_hist_info(@@average_score, timestamp)
+              post-accum
+              t.today = t.@tempListAccum;
+    END;
+  END;
+  }

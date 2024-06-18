@@ -1,0 +1,53 @@
+se_all_info_bus
+'''
+use ems_v1 match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s1:Substation)-[topoid_subid]->(td:TopoND) where startid.id = "113715890758877224"
+let
+sub_id = s1.strid
+return td as topond
+
+UNION
+
+match (s2:Substation)-[connected_Sub_Trans_three]->(t:`three_port_transformer`)-[neutral_three]->(neutral_point)-[topo_neutral]->(TD:TopoND)
+let
+sub_id = s2.strid
+return TD as topond
+
+NEXT
+match (s:topond) where s.island = 1
+let
+volt_residual_pct = case when s.M_Vm <> 0 and s.base_kV >= 500 then abs(s.M_Vm-s.SE_Vm)*s.desired_volts/600*100 when s.M_Vm <> 0 and s.base_kV >= 330 and s.base_kV < 500 then abs(s.M_Vm-s.SE_Vm)*s.desired_volts/396*100 when s.M_Vm <> 0 and s.base_kV >= 220 and s.base_kV < 330 then abs(s.M_Vm-s.SE_Vm)*s.desired_volts/264*100 when s.M_Vm <> 0 then abs(s.M_Vm-s.SE_Vm)*s.desired_volts/132*100 else 0.0 end
+let
+volt_mark = case when s.M_Vm > 0.0001  then "实测" else "无实测" end,
+volt_mark_num = case when s.M_Vm > 0.0001 then 1 else 0 end,
+volt_meas_pu = case when s.M_Vm > 0.0001 then s.M_Vm else 0.0 end,
+volt_meas_real = case when s.M_Vm > 0.0001 then s.M_Vm*s.desired_volts else 0.0 end,
+
+volt_residual_pu_abs = case when s.M_Vm > 0.0001 then abs(s.M_Vm-s.SE_Vm) else 0.0 end,
+volt_residual_real_abs = case when s.M_Vm > 0.0001 then abs(s.M_Vm-s.SE_Vm)*s.desired_volts else 0.0 end,
+volt_residual_pct_result = case when s.M_Vm > 0.0001 then volt_residual_pct else 0.0 end
+
+return s.bus_name, s.Sub, sub_id, s.base_kV, s.desired_volts, volt_mark, volt_mark_num, volt_meas_pu, volt_meas_real, s.SE_Vm, s.SE_Vm*s.desired_volts, volt_residual_pu_abs, volt_residual_real_abs, volt_residual_pct_result, s.cal_P*100, s.cal_Q*100, s.ZJP, s.ZJQ, s.outdegree
+ 
+'''
+
+
+
+NEXT
+match (srcnd:TopoND)-[e:topo_connect]-(tarnd:TopoND) where srcnd.island = 1 and tarnd.island = 1
+let
+tap_ratio = abs(e.transformer_final_turns_ratio),
+tap_ratio_square = abs((e.transformer_final_turns_ratio)*(e.transformer_final_turns_ratio))
+
+let
+newG = case when e.transformer_final_turns_ratio <> 0 then e.G*abs(tap_ratio) else 0.0 end,
+newB = case when e.transformer_final_turns_ratio <> 0 then e.B*abs(tap_ratio) else 0.0 end
+
+let
+sumG = case when e.transformer_final_turns_ratio >= 0 then e.G else e.G*tap_ratio_square end,
+sumB = case when e.transformer_final_turns_ratio >= 0 then -1*e.B + e.hB - e.from_CP else -1*e.B*tap_ratio_square + e.hB - e.from_CP end,
+cal_P = case when e.transformer_final_turns_ratio = 0 then s.SE_Vm*t.SE_Vm * (-1*e.G*cos(s.SE_Va-t.SE_Va) + e.B * sin(s.SE_Va - t.SE_Va)) else s.SE_Vm*t.SE_Vm * (-1*newG*cos(s.SE_Va-t.SE_Va) + newB * sin(s.SE_Va - t.SE_Va)) end,
+cal_Q = case when e.transformer_final_turns_ratio = 0 then s.SE_Vm*t.SE_Vm * (-1*e.G*sin(s.SE_Va-t.SE_Va) - e.B * cos(s.SE_Va - t.SE_Va)) else s.SE_Vm*t.SE_Vm * (-1*newG*sin(s.SE_Va-t.SE_Va) - newB * cos(s.SE_Va - t.SE_Va)) end
+
+let
+cal_P = s.SE_Vm*s.SE_Vm*s.@sumG
+cal_Q = (-1) * s.SE_Vm*s.SE_Vm*s.@sumB

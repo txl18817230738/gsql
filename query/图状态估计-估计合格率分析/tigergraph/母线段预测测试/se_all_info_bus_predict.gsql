@@ -1,0 +1,62 @@
+CREATE QUERY se_all_info_bus_predict(string companyID="113715890758877224", bool return_all=true) FOR GRAPH gsql_EMS { 
+  TYPEDEF TUPLE <string bus_name, string sub, string sub_id, double volt,  double volt_meas_real, double volt_est_real, double volt_residual_real_abs, double volt_residual_pct, double v_predict, double ang_est, double ang_predict, string busid> bus_list;
+	ListAccum<bus_list> @@bus_list;
+	SumAccum<INT> @@count_all;
+  HeapAccum<bus_list>(10000000,  bus_name DESC) @@bus_all;
+  HeapAccum<bus_list>(50, bus_name DESC) @@bus_part;
+  SumAccum<string> @sub_id;
+  SumAccum<int> @island;
+  //SumAccum<double> @desired_volts;
+  SumAccum<double> @volt_residual_pct;
+  SetAccum<string> @@Comp_ID;
+  
+
+  T_bus = {BUS.*};
+  sub = {Substation.*};
+  comp = {gridcom.*};
+
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID;
+
+        
+ T_bus_tmp = select t from sub:s -(connected_Sub_Bus:e) -:t 
+                ACCUM 
+                t.@sub_id = s.strid;
+
+  T_bus_target = select s from T_bus_tmp:s -(topo_bus:e)-:t 
+                  ACCUM
+                    s.@island = t.island;
+                    //s.@desired_volts =t.desired_volts;
+  
+
+ T_bus_result = select s from T_bus_target:s where s.@island==1
+               POST-ACCUM 
+               if (abs(s.Pimeas) > 0.0001) then
+                 if (s.volt >= 500) then
+                     s.@volt_residual_pct = 100*abs(s.Pimeas-s.V)/600
+                 else if (s.volt >= 330 and s.volt < 500) then
+                     s.@volt_residual_pct = 100*abs(s.Pimeas-s.V)/396
+                 else if (s.volt >= 220 and s.volt < 330) then
+                     s.@volt_residual_pct = 100*abs(s.Pimeas-s.V)/264
+                 else
+                     s.@volt_residual_pct = 100*abs(s.Pimeas-s.V)/132
+                 end
+               else
+                     s.@volt_residual_pct = 0
+               end,
+		     @@count_all +=1,
+			          @@bus_all += bus_list(s.name, s.Substation, s.@sub_id, s.volt,  s.Pimeas, s.V, abs(s.Pimeas-s.V), s.@volt_residual_pct, s.V_t_next, s.Ang, s.Ang_t_next, s.strid),
+                @@bus_part += bus_list(s.name, s.Substation, s.@sub_id, s.volt,  s.Pimeas, s.V, abs(s.Pimeas-s.V), s.@volt_residual_pct, s.V_t_next, s.Ang, s.Ang_t_next, s.strid);
+
+  if return_all then
+    print @@bus_all;
+  else
+    print @@bus_part;
+  end;
+print @@count_all;
+}

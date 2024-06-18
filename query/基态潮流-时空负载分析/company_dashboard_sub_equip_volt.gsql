@@ -1,0 +1,142 @@
+CREATE QUERY company_dashboard_sub_equip_volt(string companyID="1407374883553283", string devtype="") FOR GRAPH gsql_EMS {
+  SumAccum<INT> @@count_0to60kV;
+  SumAccum<INT> @@count_110kV;
+  SumAccum<INT> @@count_220kV;
+  SumAccum<INT> @@count_500kV;
+  SumAccum<INT> @@count_all;
+  SetAccum<string> @@Comp_ID;
+  SetAccum<double> @@vol;
+  
+  sub = {Substation.*};
+  comp = {gridcom.*};
+  @@vol = (500,220,110,35,10);
+
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID;
+	
+  equips(ANY) = SELECT t FROM sub:s - ((connected_Sub_Load|connected_Sub_Unit|connected_Sub_Trans_two|connected_Sub_Trans_three|connected_Sub_Aclinedot):e) ->:t
+	        WHERE t.off == 0;
+  
+  IF devtype=="two_port_transformer" THEN
+	T_trans2 = SELECT t FROM equips:s - (topo_Tx_Two:e) - TopoND:t
+	           WHERE t.island == 1;
+	T_trans2 = select t from T_trans2:s -(topo_connect:e)->TopoND:t
+	           WHERE s.island == 1 and t.island == 1;
+	T_trans2 = SELECT s FROM T_trans2:s-(topo_connect:e)->TopoND:t
+		   where e.reverse == 1 and s.island == 1 and t.island == 1
+		   ACCUM		
+		   FOREACH i in range [0, e.X.size()-1] DO	
+                      IF e.device_type =="双绕组变压器" THEN	
+		         @@count_all+=1,
+			 float vol_flo = getVoltFirstPart(e.volt),
+			 IF vol_flo <= 60 THEN
+			         @@count_0to60kV += 1
+		           ELSE IF vol_flo <= 115 THEN
+			         @@count_110kV += 1
+		           ELSE IF vol_flo <= 230 THEN
+			         @@count_220kV += 1
+		           ELSE
+			         @@count_500kV += 1
+		           END
+                 END				 
+  END;         END;	
+  
+  IF devtype=="three_port_transformer" THEN
+	T_trans3 = SELECT t FROM equips:s - (topo_Tx_Three:e) - TopoND:t
+			   WHERE t.island == 1; 
+	T_trans3 = select s from T_trans3:s -(topo_connect:e)->TopoND:t
+	           WHERE s.island == 1 and t.island == 1;
+	T_trans3 = SELECT s FROM T_trans3:s-(topo_connect:e)->TopoND:t
+		       where e.reverse == 1 and s.island == 1 and t.island == 1
+		       ACCUM		
+		       FOREACH i in range [0, e.X.size()-1] DO
+			     IF e.device_type =="三绕组变压器" THEN
+				   @@count_all+=1,
+				   float vol_flo = str_to_int(e.volt),
+				   IF vol_flo <= 60 THEN
+			         @@count_0to60kV += 1
+		           ELSE IF vol_flo <= 115 THEN
+			         @@count_110kV += 1
+		           ELSE IF vol_flo <= 230 THEN
+			         @@count_220kV += 1
+		           ELSE
+			         @@count_500kV += 1
+		           END
+				 END
+			   END;
+  END;
+  
+  IF devtype=="Unit" THEN
+	T_unit(ANY) = SELECT t FROM equips:s - (topo_unit:e) - TopoND:t
+	         WHERE t.island == 1;
+	T_unit = SELECT s from T_unit: s -(topo_connect:e)->TopoND:t 
+	         where s.island == 1 and t.island == 1;
+	T_unit = SELECT t FROM T_unit:s - (topo_unit:e) - unit:t
+			 where s.island == 1
+	         ACCUM 
+			   @@count_all+=1,
+			   IF t.volt <= 60 THEN
+			     @@count_0to60kV += 1
+		       ELSE IF t.volt <= 115 THEN
+			     @@count_110kV += 1
+		       ELSE IF t.volt <= 230 THEN
+			     @@count_220kV += 1
+		       ELSE
+			     @@count_500kV += 1
+		       END;
+  END;
+  
+  IF devtype=="AClinedot" THEN
+	T_aclinedot = SELECT t FROM equips:s - (topo_aclinedot:e) - TopoND:t
+			      WHERE t.island == 1;
+	T_aclinedot = select s from T_aclinedot:s -(topo_connect:e)->TopoND:t
+	              WHERE s.island == 1 and t.island == 1
+				  ACCUM		
+		          FOREACH i in range [0, e.X.size()-1] DO
+				    IF e.device_type =="AC传输线" THEN
+					  @@count_all+=1,
+					  float vol_flo = str_to_int(e.volt),
+				      IF vol_flo <= 60 THEN
+			           @@count_0to60kV += 1
+		              ELSE IF vol_flo <= 115 THEN
+			           @@count_110kV += 1
+		              ELSE IF vol_flo <= 230 THEN
+			           @@count_220kV += 1
+		              ELSE
+			           @@count_500kV += 1
+		              END
+					END
+				  END;
+  END;
+  
+  IF devtype=="Load" THEN
+	T_load(ANY) = SELECT t FROM equips:s - (topo_load:e) - TopoND:t
+			 WHERE t.island == 1; 
+	T_load = SELECT s from T_load: s -(topo_connect:e)->TopoND:t 
+	         where s.island == 1 and t.island == 1;
+	T_load = SELECT t FROM T_load:s - (topo_load:e) - l_oad:t
+			 WHERE s.island == 1
+	         ACCUM 
+			   @@count_all+=1,
+			   IF t.volt <= 60 THEN
+			     @@count_0to60kV += 1
+		       ELSE IF t.volt <= 115 THEN
+			     @@count_110kV += 1
+		       ELSE IF t.volt <= 230 THEN
+			     @@count_220kV += 1
+		       ELSE
+			     @@count_500kV += 1
+		       END;	 
+  END;
+  
+  print @@count_0to60kV;
+  print @@count_110kV;
+  print @@count_220kV;
+  print @@count_500kV;
+  print @@count_all;
+}

@@ -1,0 +1,125 @@
+CREATE QUERY BD_connectingtype_load(/* Parameters here */) FOR GRAPH gsql_EMS syntax v2{ 
+  SumAccum<string> @devname;
+  SumAccum<string> @cntype;
+  SumAccum<int> @updateflag = 0;
+
+  loadSet ={l_oad.*};
+  unitSet = {unit.*};
+  sub ={Substation.*};
+  breakerSet = {Breaker.*};
+  disconnectorSet = {Disconnector.*};
+  
+  trans2Set ={two_port_transformer.*};
+  trans3Set ={three_port_transformer.*};
+  
+  aclinedotSet = {ACline_dot.*};
+  
+  busSet = {BUS.*};
+  
+  loadSet0 = select t from sub:s-(connected_Sub_Load>:e)-:t;
+ 
+  // mode one : the path of cp to bus has disconnector ,breaker,disconnector   D-B-D
+
+  T1load = select s from loadSet0:s -(connected_Load_CN:e1)-CN:t1-(connected_Disconnector_CN:e2)-Disconnector:t2-(connected_Disconnector_CN:e3)-CN:t3-(connected_Breaker_CN:e4)-Breaker:t4-(connected_Breaker_CN:e5)-CN:t5-(connected_Disconnector_CN:e6)-Disconnector:t6-(connected_Disconnector_CN:e7)-CN:t7-((connected_Bus_CN|CN_tx_two):e8)-:t8
+      ACCUM         
+          t2.@updateflag = 1,
+          t4.@updateflag = 1,
+          t6.@updateflag = 1,
+          t2.@devname = s.name,          
+          t4.@devname = s.name,          
+          t6.@devname = s.name,
+          t2.@cntype ="load_Switching",
+          t4.@cntype ="load_Switching",
+          t6.@cntype = "load_Switching";
+
+ 
+   //mode two: the path of cp to bus has breaker ,disconnector  B-D
+  loadSet1 = loadSet0 MINUS T1load;
+  T2load = select s from loadSet1:s -(connected_Load_CN:e1)-CN:t1-(connected_Breaker_CN:e2)-Breaker:t2-(connected_Breaker_CN:e3)- CN:t3 -(connected_Disconnector_CN:e4)-Disconnector:t4-(connected_Disconnector_CN:e5)-CN:t5-((connected_Bus_CN|CN_tx_two):e8)-:t6
+           ACCUM
+                 t2.@updateflag = 1,
+                 t4.@updateflag = 1,
+                 t2.@devname = s.name,
+                 t4.@devname = s.name,
+                 t2.@cntype ="load_Switching",
+                 t4.@cntype ="load_Switching";
+
+  // mode three: the path of cp to bus only has one breaker  B
+  loadSet2 = loadSet1 MINUS T2load;
+  T3load = select s from loadSet2:s -(connected_Load_CN:e1)-CN:t1-(connected_Breaker_CN:e2)-Breaker:t2-(connected_Breaker_CN:e3)- CN:t3-((connected_Bus_CN|CN_tx_two):e4)-:t4
+            ACCUM
+                t2.@updateflag = 1,
+                t2.@devname = s.name,
+                t2.@cntype = "load_Switching";
+
+  // mode four: the path of cp to bus has, disconnector, disconnector and breaker  D-D-B
+  loadSet3 = loadSet2 MINUS T3load;
+   T4load = select s from loadSet3:s -(connected_Load_CN:e1)-CN:t1-(connected_Disconnector_CN:e2)-Disconnector:t2-(connected_Disconnector_CN:e3)-CN:t3-(connected_Disconnector_CN:e4)-Disconnector:t4-(connected_Disconnector_CN:e5)-CN:t5-(connected_Breaker_CN:e6)-Breaker:t6-(connected_Breaker_CN:e7)-CN:t7-((connected_Bus_CN|CN_tx_two):e8)-:t8
+      ACCUM
+          t2.@updateflag = 1,
+          t4.@updateflag = 1,
+          t6.@updateflag = 1,
+          t2.@devname = s.name,
+          t4.@devname = s.name,
+          t6.@devname = s.name,
+          t2.@cntype ="load_Switching",
+          t4.@cntype ="load_Switching",
+          t6.@cntype = "load_Switching";
+
+  // mode five: the path of cp to bus has, disconnector, disconnector, breaker and disconnector  D-D-B-D
+  loadSet4 = loadSet3 MINUS T4load;
+   T5load = select s from loadSet4:s -(connected_Load_CN:e1)-CN:t1-(connected_Disconnector_CN:e2)-Disconnector:t2-(connected_Disconnector_CN:e3)-CN:t3-(connected_Disconnector_CN:e4)-Disconnector:t4-(connected_Disconnector_CN:e5)-CN:t5-(connected_Breaker_CN:e6)-Breaker:t6-(connected_Breaker_CN:e7)-CN:t7-(connected_Disconnector_CN:e8)-Disconnector:t8-(connected_Disconnector_CN:e9)-CN:t9-((connected_Bus_CN|CN_tx_two):e10)-:t10
+      ACCUM
+          t2.@updateflag = 1,
+          t4.@updateflag = 1,
+          t6.@updateflag = 1,
+          t8.@updateflag = 1,
+          t2.@devname = s.name,
+          t4.@devname = s.name,
+          t6.@devname = s.name,
+          t8.@devname = s.name,
+          t2.@cntype ="load_Switching",
+          t4.@cntype ="load_Switching",
+          t6.@cntype = "load_Switching",
+          t8.@cntype = "load_Switching";
+
+    //mode six: the path of cp to bus has breaker ,disconnector, disconnector B-D-D
+  loadSet5 = loadSet4 MINUS T5load;
+  T6load = select s from loadSet5:s -(connected_Load_CN:e1)-CN:t1-(connected_Breaker_CN:e2)-Breaker:t2-(connected_Breaker_CN:e3)- CN:t3 -(connected_Disconnector_CN:e4)-Disconnector:t4-(connected_Disconnector_CN:e5)-CN:t5-(connected_Disconnector_CN:e6)-Disconnector:t6-(connected_Disconnector_CN:e7)-CN:t7-((connected_Bus_CN|CN_tx_two):e8)-:t8
+           ACCUM
+                 t2.@updateflag = 1,
+                 t4.@updateflag = 1,
+                 t6.@updateflag = 1,
+                 t2.@devname = s.name,
+                 t4.@devname = s.name,
+                 t6.@devname = s.name,
+                 t2.@cntype ="load_Switching",
+                 t4.@cntype ="load_Switching",
+                 t6.@cntype = "load_Switching";
+
+
+ 
+T8 = loadSet0 MINUS T1load MINUS T2load MINUS T3load MINUS T4load MINUS T5load MINUS T6load;
+
+
+  breakerAndDisconnectorSet = breakerSet UNION disconnectorSet;
+  T_result =  select s from breakerAndDisconnectorSet:s
+                where s.@updateflag == 1
+                POST-ACCUM
+                     s.connecting_type = s.@cntype,
+                     s.connecting_dev = s.@devname;
+
+
+  T0 = select t from T8:s -(connected_Load_Sub>:e)-:t;
+
+//  print T0[T0.id,T0.name];            
+  print T0.size();
+  print loadSet0.size();
+  print T1load.size();
+  print T2load.size();
+  print T3load.size();
+  print T4load.size();
+  print T5load.size(); 
+  print T6load.size(); 
+  print T8.size();
+}

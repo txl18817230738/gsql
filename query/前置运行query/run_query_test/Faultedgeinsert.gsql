@@ -1,0 +1,69 @@
+CREATE QUERY Faultedgeinsert() FOR GRAPH gsql_EMS{
+
+  SumAccum<string> @faultname;
+  SumAccum<string> @faulttype;
+  SumAccum<string> @linename;
+  SumAccum<double> @SI = 0;
+  SumAccum<int> @decesion_flag = 1;
+  SumAccum<int> @fastscreen_flag = 0;
+  SumAccum<int> @detailedanalysis_flag = 0;
+  SumAccum<int> @FaultGroup_select_flag = 0;
+  ListAccum<int> @devid;
+
+  Tfault = {Fault.*};
+  Tunit = {unit.*};
+  Tacline = {ACline_dot.*};
+  Ttwoport = {two_port_transformer.*};
+  Tthreeport = {three_port_transformer.*};
+  Tbus = {BUS.*};
+  Tsub = {Substation.*};
+  
+DELETE e from Tfault:s-((fault_aclinedot_select|fault_twoport_select|fault_threeport_select|fault_unit_select):e)-:t; 
+//insert edge from Fault to devices for N-1
+
+  Tfault_acline = select s from Tfault:s
+        where s.faultdevtype.get(0) == "AClinedot" and s.faulttype == "N-1"
+        accum
+          insert into fault_aclinedot_select values(s.id, s.id);
+
+  Tfault_twoport = select s from Tfault:s
+        where s.faultdevtype.get(0) == "two_port_transformer" and s.faulttype == "N-1"
+        accum
+          insert into fault_twoport_select values(s.id, s.id);
+
+  Tfault_threeport = select s from Tfault:s
+        where s.faultdevtype.get(0) == "three_port_transformer" and s.faulttype == "N-1"
+        accum
+          insert into fault_threeport_select values(s.id, s.id);
+
+  Tfault_unit = select s from Tfault:s
+        where s.faultdevtype.get(0) == "Unit" and s.faulttype == "N-1"
+        accum
+          insert into fault_unit_select values(s.id, s.id);
+
+//insert edge from Fault to devices for complex fault
+/*
+  Tfault_complex = select s from Tfault:s
+         where s.faulttype == "复杂故障"
+         accum
+           foreach i in range [0, s.faultdevtype.size() - 1] do
+             if s.faultdevtype.get(i) == "AClinedot" then
+               insert into fault_aclinedot_select values(s.id, s.devid.get(i)) 
+             else if s.faultdevtype.get(i) == "two_port_transformer" then
+               insert into fault_twoport_select values(s.id, s.devid.get(i))
+             else if s.faultdevtype.get(i) == "three_port_transformer" then
+               insert into fault_threeport_select values(s.id, s.devid.get(i))
+             else if s.faultdevtype.get(i) == "Unit" then
+               insert into fault_unit_select values(s.id, s.devid.get(i))
+             end
+           end;
+*/
+
+ Tfault_complex = select s from Tfault:s
+         where s.faulttype == "复杂故障"
+         accum
+             if s.faultdevtype.get(0) == "AClinedot" then
+               insert into fault_aclinedot_select values(s.id, s.devid.get(0))
+             end;
+
+}

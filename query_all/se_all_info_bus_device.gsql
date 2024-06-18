@@ -1,0 +1,287 @@
+CREATE QUERY se_all_info_bus_device(string companyID="113715890758877224", bool return_all=true) FOR GRAPH gsql_EMS { 
+  TYPEDEF TUPLE <string bus_name, string sub, string sub_id, double volt, string volt_mark, double volt_meas_pu, double volt_meas_real, double volt_est_pu, double volt_est_real, double volt_residual_pu_abs, double volt_residual_real_abs, double volt_residual_pct, double ang> bus_list;
+	
+
+  SumAccum<double> @volt_residual_pct;
+	//ListAccum<bus_list> @@bus_list;
+
+	SumAccum<INT> @@count_all;
+  HeapAccum<bus_list>(10000000, volt DESC, bus_name DESC) @@bus_all;
+  HeapAccum<bus_list>(50, volt DESC, bus_name DESC) @@bus_part;
+  SumAccum<string> @sub_id;
+  SumAccum<int> @island;
+  SumAccum<double> @base_value;
+
+  SetAccum<string> @@Comp_ID;
+  
+  SumAccum<INT> @@count_V_abovelimit;
+  SumAccum<INT> @@count_V_belowlimit;
+  
+  SumAccum<INT> @@count_V_220above_abovelimit;
+  SumAccum<INT> @@count_V_220above_belowlimit;
+  SumAccum<INT> @@count_V_220below_abovelimit;
+  SumAccum<INT> @@count_V_220below_belowlimit;
+ 
+
+  SumAccum<INT> @@count_500;
+  SumAccum<INT> @@count_500_V_abovelimit;
+  SumAccum<INT> @@count_500_V_belowlimit;
+ 
+
+  SumAccum<INT> @@count_220;
+  SumAccum<INT> @@count_220_V_abovelimit;
+  SumAccum<INT> @@count_220_V_belowlimit;
+ 
+
+  SumAccum<INT> @@count_110;
+  SumAccum<INT> @@count_110_V_abovelimit;
+  SumAccum<INT> @@count_110_V_belowlimit;
+ 
+
+  SumAccum<INT> @@count_35;
+  SumAccum<INT> @@count_35_V_abovelimit;
+  SumAccum<INT> @@count_35_V_belowlimit;
+
+
+  SumAccum<INT> @@count_10;
+  SumAccum<INT> @@count_10_V_abovelimit;
+  SumAccum<INT> @@count_10_V_belowlimit;
+  
+
+  SumAccum<INT> @@count_other;
+  SumAccum<INT> @@count_other_V_abovelimit;
+  SumAccum<INT> @@count_other_V_belowlimit;
+  
+  
+  SumAccum<double> @volt_est_pu;
+  SumAccum<double> @volt_meas_pu;
+  SumAccum<double> @volt_residual_pu_abs;
+  
+  SumAccum<double> @@error_limit_P;
+  SumAccum<double> @@error_limit_Q;
+  SumAccum<double> @@error_limit_v_220above;
+  SumAccum<double> @@error_limit_v_220below;
+  SumAccum<double> @@error_limit_v_baddata;
+  
+  SumAccum<int> @p_meas_flag;
+  SumAccum<int> @q_meas_flag;
+
+
+  comp = {gridcom.*};
+  Tparameter = {parameters.*};
+  
+  //parameter setting
+  Tparameter = select s from Tparameter:s
+     post-accum
+     @@error_limit_P += s.error_limit_P,
+     @@error_limit_Q += s.error_limit_Q,
+     @@error_limit_v_220above += s.backup4,
+     @@error_limit_v_220below += s.backup5,
+     @@error_limit_v_baddata +=s.backup3;
+  
+  start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID;
+
+  busSet = select t from sub:s -(connected_Sub_Bus:e)-:t
+              accum
+                t.@sub_id = s.strid;
+  
+  busSet = select s from busSet:s -(Meas_Bus:e)-:t 
+               ACCUM
+                  s.@p_meas_flag = t.P_PseudoFlag,
+                  s.@q_meas_flag = t.Q_PseudoFlag;
+  
+//=========== set base value for each bus=========================
+
+ busSet = select s from busSet:s
+         post-accum
+         if (s.base_value > 0.001) then
+          /*
+            if s.Pimeas/s.base_value >= 1.049 or (s.Pimeas-s.V)/s.base_value >= 0.035 then
+               if s.base_value == 500 then
+                  s.@base_value = 525
+               else if s.base_value == 220 then
+                  s.@base_value = 230
+               else if s.base_value == 110 then
+                  s.@base_value = 115
+               else if s.base_value == 35 then
+                  s.@base_value = 37.5
+               else if s.base_value == 10 then
+                  s.@base_value = 10.5
+               else
+                  s.@base_value = s.base_value 
+               end
+            else
+               s.@base_value = s.base_value
+            end
+           */
+               s.@base_value = s.base_value
+          end;   
+
+
+  busSet = SELECT s FROM busSet:s - (topo_bus:e) - TopoND:t where t.island==1 and s.off==0
+              accum
+              s.@island = t.island,
+            if (abs(s.@base_value) > 0.001) then 
+                s.@volt_est_pu = s.V/s.base_value, //电压估计标幺值
+                s.@volt_meas_pu = s.Pimeas/s.@base_value, //电压量测标幺值
+                s.@volt_residual_pu_abs = abs(s.Pimeas/s.@base_value-s.V/s.base_value)
+            end,
+            if (s.base_value >= 500) then
+                s.@volt_residual_pct = abs(s.Pimeas-s.V/s.base_value*s.@base_value)/600*100
+            else if (s.base_value >= 330 and s.base_value < 500) then
+                s.@volt_residual_pct = abs(s.Pimeas-s.V/s.base_value*s.@base_value)/396*100
+            else if (s.base_value >= 220 and s.base_value < 330) then
+                s.@volt_residual_pct = abs(s.Pimeas-s.V/s.base_value*s.@base_value)/264*100
+            else if (s.base_value >= 110 and s.base_value < 220) then
+                s.@volt_residual_pct = abs(s.Pimeas-s.V/s.base_value*s.@base_value)/132*100
+            else if (s.base_value >= 66 and s.base_value < 110) then
+                s.@volt_residual_pct = abs(s.Pimeas-s.V/s.base_value*s.@base_value)/79.2*100
+            else 
+                s.@volt_residual_pct = abs(s.Pimeas-s.V/s.base_value*s.@base_value)/42*100
+            end;
+  
+  busSet = SELECT s FROM busSet:s  where s.@island == 1 and s.off ==0 and s.@volt_residual_pct < @@error_limit_v_baddata and ((s.volt >= 220  and s.@volt_residual_pct < 0.52) or (s.volt < 220 and s.@volt_residual_pct < 2.2)) // and s.@volt_residual_pct < 2
+        accum
+            IF (s.Pimeas != 0) THEN
+			        @@bus_all += bus_list(s.name, s.Substation, s.@sub_id, s.@base_value, "实测", s.@volt_meas_pu, s.Pimeas, s.@volt_est_pu, s.V/s.base_value*s.@base_value, s.@volt_residual_pu_abs, abs(s.Pimeas-s.V/s.base_value*s.@base_value), s.@volt_residual_pct, s.Ang),
+              @@bus_part += bus_list(s.name, s.Substation, s.@sub_id, s.@base_value, "实测", s.@volt_meas_pu, s.Pimeas, s.@volt_est_pu, s.V/s.base_value*s.@base_value, s.@volt_residual_pu_abs, abs(s.Pimeas-s.V/s.base_value*s.@base_value), s.@volt_residual_pct, s.Ang),
+			        @@count_all += 1
+		        ELSE
+			        @@bus_all += bus_list(s.name, s.Substation, s.@sub_id, s.@base_value, "无实测", s.@volt_meas_pu, s.Pimeas, s.@volt_est_pu, s.V/s.base_value*s.@base_value, s.@volt_residual_pu_abs, abs(s.Pimeas-s.V/s.base_value*s.@base_value), s.@volt_residual_pct, s.Ang),
+             @@bus_part += bus_list(s.name, s.Substation, s.@sub_id, s.@base_value, "无实测", s.@volt_meas_pu, s.Pimeas, s.@volt_est_pu, s.V/s.base_value*s.@base_value, s.@volt_residual_pu_abs, abs(s.Pimeas-s.V/s.base_value*s.@base_value), s.@volt_residual_pct, s.Ang),
+			      @@count_all += 1
+		         END,
+             double volt = s.base_value,
+                 if s.volt >= 500 then
+                  @@count_500 += 1,
+                 IF (s.@p_meas_flag == 0) THEN
+                  if s.@volt_residual_pct <= @@error_limit_v_220above then
+                    @@count_500_V_belowlimit +=1,
+                    @@count_V_220above_belowlimit +=1,
+                    @@count_V_belowlimit +=1                            
+                  else //if s.@volt_residual_pct > 2 then
+                    @@count_500_V_abovelimit +=1, 
+                    @@count_V_220above_abovelimit +=1,
+                    @@count_V_abovelimit +=1
+                  end
+                end
+                else IF (s.volt >= 220 and s.volt < 500) then
+                  @@count_220+=1,
+                  IF (s.@p_meas_flag == 0) THEN
+                  if s.@volt_residual_pct <= @@error_limit_v_220above then
+                    @@count_220_V_belowlimit +=1,
+                    @@count_V_220above_belowlimit +=1,
+                    @@count_V_belowlimit +=1
+                  else //if s.@volt_residual_pct > 2 then
+                    @@count_220_V_abovelimit +=1,
+                    @@count_V_220above_abovelimit +=1,
+                    @@count_V_abovelimit +=1
+                  end
+                end
+                else IF (s.volt >= 110 and s.volt < 220) then
+                  @@count_110+=1,
+                  IF (s.@p_meas_flag == 0) THEN
+                  if s.@volt_residual_pct <= @@error_limit_v_220below then
+                    @@count_110_V_belowlimit +=1,
+                    @@count_V_220below_belowlimit +=1,
+                    @@count_V_belowlimit +=1
+                  else //if s.@volt_residual_pct > 2 then
+                    @@count_110_V_abovelimit +=1,
+                    @@count_V_220below_abovelimit +=1,
+                    @@count_V_abovelimit +=1
+                  end
+                end
+                else if (s.volt >= 34.5 and s.volt < 110) then
+                  @@count_35+=1,
+                  IF (s.@p_meas_flag == 0) THEN
+                  if s.@volt_residual_pct <= @@error_limit_v_220below then
+                    @@count_35_V_belowlimit +=1,
+                    @@count_V_220below_belowlimit +=1,
+                    @@count_V_belowlimit +=1
+                  else //if s.@volt_residual_pct > 2 then
+                    @@count_35_V_abovelimit +=1,
+                    @@count_V_220below_abovelimit +=1,
+                    @@count_V_abovelimit +=1
+                  end
+                end
+                else if (s.volt >= 10 and s.volt < 34.5) then
+                  @@count_10+=1,
+                  IF (s.@p_meas_flag == 0) THEN
+                  if s.@volt_residual_pct <= @@error_limit_v_220below then
+                    @@count_10_V_belowlimit +=1,
+                    @@count_V_220below_belowlimit +=1,
+                    @@count_V_belowlimit +=1
+                  else //if s.@volt_residual_pct > 2 then
+                    @@count_10_V_abovelimit +=1,
+                    @@count_V_220below_abovelimit +=1,
+                    @@count_V_abovelimit +=1
+                  end
+                end
+                else
+                  @@count_other+=1,
+                  IF (s.@p_meas_flag == 0) THEN
+                  if s.@volt_residual_pct <= @@error_limit_v_220below then
+                    @@count_other_V_belowlimit +=1,
+                    @@count_V_220below_belowlimit +=1,
+                    @@count_V_belowlimit +=1
+                  else //if s.@volt_residual_pct > 2 then
+                    @@count_other_V_abovelimit +=1,
+                    @@count_V_220below_abovelimit +=1,
+                    @@count_V_abovelimit +=1
+                  end
+                end
+                end;
+	
+  if return_all then
+    print @@bus_all;
+  else
+    print @@bus_part;
+  end;
+
+  print @@count_V_abovelimit;
+  print @@count_V_belowlimit;
+ 
+
+  print @@count_500;
+  print @@count_500_V_abovelimit;
+  print @@count_500_V_belowlimit;
+  
+
+  print @@count_220;
+  print @@count_220_V_abovelimit;
+  print @@count_220_V_belowlimit;
+  
+
+  print @@count_110;
+  print @@count_110_V_abovelimit;
+  print @@count_110_V_belowlimit;
+  
+
+  print @@count_35;
+  print @@count_35_V_abovelimit;
+  print @@count_35_V_belowlimit;
+  
+
+  print @@count_10;
+  print @@count_10_V_abovelimit;
+  print @@count_10_V_belowlimit;
+ 
+
+  print @@count_other;
+  print @@count_other_V_abovelimit;
+  print @@count_other_V_belowlimit;
+  
+
+  print @@count_all;  
+  
+  //print @@count_V_220above_abovelimit;
+  //print @@count_V_220above_belowlimit;
+  //print @@count_V_220below_abovelimit;
+  //print @@count_V_220below_belowlimit;
+}

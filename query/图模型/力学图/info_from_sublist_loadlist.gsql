@@ -1,0 +1,21 @@
+CREATE QUERY info_from_sublist_loadlist(SET<string> S, SET<string> l, SET<string> u) FOR GRAPH gsql_EMS{
+  TYPEDEF TUPLE <string id, string name, string devtype, double volt, double load, double gen> info;
+  ListAccum<info> @@result;
+
+  sub = {Substation.*};
+  targetSubList = select s from sub:s where s.strid in S
+                  accum 
+                  @@result+=info(s.strid, s.name, s.subtype, s.volt, s.total_load, s.total_gen);
+				  
+  load = {l_oad.*};
+  targetLoadList = select s from load:s where s.strid in l
+                  accum 
+                  @@result+=info(s.strid, s.name, "负荷", s.volt, s.P, 0); 
+
+  units = {unit.*};
+  targetUnitList = select s from units:s where s.strid in u
+                  accum
+                  @@result+=info(s.strid, s.name, "机组", s.volt, 0, s.P);
+				  
+  print @@result;    
+}

@@ -1,0 +1,214 @@
+CREATE QUERY pf_comparison_analyses_load(string companyID="113715890758877224", bool return_all=true) FOR GRAPH gsql_EMS { 
+  
+	TYPEDEF TUPLE<string load_name, string region_name, string sub_name, string sub_id, double sub_volt, double volt, 
+double P, double P_pf, double p_change, double Q, double Q_pf, double q_change> load_list;
+	SetAccum<string> @@Comp_ID;
+	SumAccum<string> @sub_name;
+  SumAccum<string> @region_name;
+  SumAccum<DOUBLE> @sub_volt;
+	
+	HeapAccum<load_list>(10000000, p_change DESC, load_name DESC) @@result_all;
+  HeapAccum<load_list>(50, p_change DESC, load_name DESC) @@result_part;
+	SumAccum<string> @sub_id;
+  
+  SumAccum<INT> @@count_all;
+  SumAccum<INT> @@count_all_5;
+  SumAccum<INT> @@count_all_5_10;
+  SumAccum<INT> @@count_all_10;
+  
+  SumAccum<INT> @@count_500;
+  SumAccum<INT> @@count_500_5;
+  SumAccum<INT> @@count_500_5_10;
+  SumAccum<INT> @@count_500_10;
+  
+  SumAccum<INT> @@count_220;
+  SumAccum<INT> @@count_220_5;
+  SumAccum<INT> @@count_220_5_10;
+  SumAccum<INT> @@count_220_10;
+  
+  SumAccum<INT> @@count_110;
+  SumAccum<INT> @@count_110_5;
+  SumAccum<INT> @@count_110_5_10;
+  SumAccum<INT> @@count_110_10;
+  
+  SumAccum<INT> @@count_35;
+  SumAccum<INT> @@count_35_5;
+  SumAccum<INT> @@count_35_5_10;
+  SumAccum<INT> @@count_35_10;
+  
+  SumAccum<INT> @@count_10;
+  SumAccum<INT> @@count_10_5;
+  SumAccum<INT> @@count_10_5_10;
+  SumAccum<INT> @@count_10_10;
+  
+  SumAccum<INT> @@count_other;
+  SumAccum<INT> @@count_other_5;
+  SumAccum<INT> @@count_other_5_10;
+  SumAccum<INT> @@count_other_10;
+   
+
+	T0 = {TopoND.*};
+	sub = {Substation.*};
+	comp = {gridcom.*};
+	
+	start_comp = select s from comp:s where s.id == companyID accum @@Comp_ID+= s.id;
+
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)->:t where t.id != s.parent_id accum @@Comp_ID+= t.id;
+  END;
+
+  sub = select t from comp:s-(connected_grid_sub:e)->:t where s.id in @@Comp_ID
+    accum t.@region_name = s.name; 
+        
+  loadSet = SELECT t FROM sub:s - (connected_Sub_Load:e) ->:t
+                accum
+                t.@sub_name = s.name,
+                t.@sub_id = s.strid,
+                t.@region_name = s.@region_name,
+                t.@sub_volt = s.volt;
+	
+	
+	T_load = SELECT s FROM loadSet:s - (topo_load:e) - TopoND:t
+			WHERE t.island == 1;
+	
+			
+	T_load = SELECT s FROM T_load:s		
+			POST-ACCUM
+      	double p_change = 0,
+        IF (s.P != 0) THEN
+          p_change = (abs(s.P_pf)-abs(s.P))/abs(s.P)*100
+        END,
+        double q_change = 0,
+        IF (s.Q != 0) THEN
+          q_change = (abs(s.Q_pf)-abs(s.Q))/abs(s.Q)*100
+        END,
+      IF p_change > 2 THEN
+  
+			@@result_all += load_list(s.name, s.@region_name, s.@sub_name, s.@sub_id, s.@sub_volt, s.volt, s.P, s.P_pf, p_change, s.Q, s.Q_pf, q_change),
+  		@@result_part += load_list(s.name, s.@region_name, s.@sub_name, s.@sub_id, s.@sub_volt, s.volt, s.P, s.P_pf, p_change, s.Q, s.Q_pf, q_change),
+			@@count_all += 1,
+			double volt = s.volt,
+			if volt >= 500 then
+        @@count_500 += 1,
+        IF p_change <= 5 THEN
+          @@count_all_5 +=1,
+          @@count_500_5 +=1
+        else if p_change <=10 then 
+          @@count_500_5_10 +=1,
+          @@count_all_5_10 +=1
+        else 
+          @@count_500_10 +=1,
+          @@count_all_10 +=1
+        END          
+
+      else if volt >= 220 then
+        @@count_220+=1,
+         if p_change <=5 then 
+            @@count_all_5 +=1,
+            @@count_220_5 +=1 
+         else if p_change <=10  then 
+            @@count_220_5_10 +=1,
+            @@count_all_5_10 +=1
+         else 
+            @@count_220_10 +=1,
+            @@count_all_10 +=1
+          end
+
+      else if volt >= 110 then
+        @@count_110+=1,
+         if p_change <=5 then 
+            @@count_all_5 +=1,
+            @@count_110_5 +=1 
+         else if p_change <=10  then 
+            @@count_110_5_10 +=1,
+            @@count_all_5_10 +=1
+         else 
+            @@count_110_10 +=1,
+            @@count_all_10 +=1
+          end
+
+      else if volt >= 34.5 then
+        @@count_35+=1,
+         if p_change <=5 then 
+            @@count_all_5 +=1,
+            @@count_35_5 +=1 
+          else if p_change <=10  then 
+            @@count_35_5_10 +=1,
+            @@count_all_5_10 +=1
+         else 
+           @@count_35_10 +=1,
+            @@count_all_10 +=1
+         end  
+
+      else if volt >= 10 then
+        @@count_10+=1,
+         if p_change <=5 then 
+            @@count_all_5 +=1,
+            @@count_10_5 +=1 
+         else if p_change <=10  then 
+            @@count_10_5_10 +=1,
+            @@count_all_5_10 +=1
+         else 
+            @@count_10_10 +=1,
+            @@count_all_10 +=1
+         end
+
+      else
+        @@count_other+=1,
+         if p_change <=5 then 
+            @@count_all_5 +=1,
+            @@count_other_5 +=1 
+         else if p_change <=10  then 
+            @@count_other_5_10 +=1,
+            @@count_all_5_10 +=1
+         else 
+          @@count_other_10 +=1,
+          @@count_all_10 +=1
+         end
+        end
+      end
+    END;	  
+				  
+	
+						
+	if return_all then
+    print @@result_all;
+  else
+    print @@result_part;
+  end;
+  
+  print @@count_all;
+  print @@count_all_5;
+  print @@count_all_5_10;
+  print @@count_all_10;
+  
+  print @@count_500;
+  print @@count_500_5;
+  print @@count_500_5_10;
+  print @@count_500_10;
+  
+  print @@count_220;
+  print @@count_220_5;
+  print @@count_220_5_10;
+  print @@count_220_10;
+  
+  print @@count_110;
+  print @@count_110_5;
+  print @@count_110_5_10;
+  print @@count_110_10;
+  
+  print @@count_35;
+  print @@count_35_5;
+  print @@count_35_5_10;
+  print @@count_35_10;
+  
+  print @@count_10;
+  print @@count_10_5;
+  print @@count_10_5_10;
+  print @@count_10_10;
+  
+  print @@count_other;
+  print @@count_other_5;
+  print @@count_other_5_10;
+  print @@count_other_10;
+}

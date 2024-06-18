@@ -1,0 +1,160 @@
+CREATE QUERY Faultdatainit_update_loadfactor(double load_factor) FOR GRAPH gsql_EMS { 
+  typedef tuple<int id, string name, string faulttype, string devname, string devtype, string Substation, double volt, string groupname, double SI, int decesion_flag, int fastscreen_flag, int detailedanalysis_flag, int FaultGroup_select_flag> complexfault;
+  HeapAccum<complexfault>(1000000, devname asc) @@fault_result;
+  //SumAccum<string> @faultname;
+  //SumAccum<string> @faulttype;
+  //SumAccum<string> @linename;
+  //SumAccum<string> @groupname;
+  //SumAccum<double> @SI = 0;
+  //SumAccum<int> @decesion_flag = 1;
+  //SumAccum<int> @fastscreen_flag = 0;
+  //SumAccum<int> @detailedanalysis_flag = 0;
+  SumAccum<int> @Fault_activation_flag = 0;
+  
+  SumAccum<double> @load_ratio;
+
+  //FILE file1 ("/home/tigergraph/ems-query/guangdong_newdata_cn/Faultdata_new.csv");
+  //FILE file2 ("/home/tigergraph/ems-query/guangdong_newdata_cn/FaultGroupdata_new.csv");
+
+  Tfault = {Fault.*};
+  Tunit = {unit.*};
+  Tacline = {ACline_dot.*};
+  Ttwoport = {two_port_transformer.*};
+  Tthreeport = {three_port_transformer.*};
+  //Tbus = {BUS.*};
+  Tsub = {Substation.*};
+  
+  
+//Generate N-1 faults 
+  Taclinedot = select s from Tacline:s-(aclinedot_aclinedot:e)-:t
+        accum
+        //s.@linename = e.name,
+        double pf_p = s.Pimeas,
+        double pf_q = s.Qimeas,
+        double pf_overload = 0,
+        double total_pf = sqrt(pf_p*pf_p+pf_q*pf_q),
+        double p_rate =sqrt(3)*e.volt*e.Ih/1000,
+        if abs(p_rate) >= 0.5 then
+            pf_overload = abs(total_pf*100/p_rate)
+        end,
+        s.@load_ratio=pf_overload;
+
+  aclineSet = select s from Taclinedot:s-(topo_aclinedot:e)-:t 
+        where s.volt >= 220 and t.island == 1
+        //accum
+        //s.@faultname = s.@linename + ".故障",    
+        //s.@faulttype = "N-1"
+        post-accum
+        //s.@groupname = "线路N-1智能故障组",
+        //s.@fastscreen_flag = 1,
+        //s.@detailedanalysis_flag = 0,
+        //s.Decision = 1,
+        if(s.@load_ratio > load_factor) then 
+            s.@Fault_activation_flag =1 
+        end;
+
+
+  Ttwoporthigh = select s from Ttwoport:s-(txI_txJ_transformerline:e) -> :t
+                  accum 
+                     double cur_p_rate =s.S,
+                     double p_pf = sqrt(s.P_pf*s.P_pf + s.Q_pf*s.Q_pf),
+                     double pf_overload = 0,
+                     if abs(cur_p_rate) >= 0.5 then
+                      pf_overload = p_pf * 100 / cur_p_rate
+                     end,
+                     s.@load_ratio=pf_overload;
+
+  twoportSet = select s from Ttwoporthigh:s-(topo_Tx_Two:e)-:t
+        where s.volt >= 220 and t.island == 1
+        //accum
+        //s.@faultname = s.name + ".故障",
+        //s.@faulttype = "N-1"
+        post-accum
+        //s.@groupname = "两卷变N-1智能故障组",
+        //s.@fastscreen_flag = 1,
+        //s.@detailedanalysis_flag = 0,
+        //s.Decision = 1,
+        if(s.@load_ratio > load_factor) then 
+            s.@Fault_activation_flag =1 
+        end;
+
+  threeportSet = select s from Tthreeport:s-(topo_Tx_Three:e)-:t
+        where s.volt >= 220 and t.island == 1
+        accum
+        //s.@faultname = s.name + ".故障",
+        //s.@faulttype = "N-1",
+        double cur_p_rate = s.S,
+        double p = s.P_pf,
+        double q = s.Q_pf,
+        double p_pf = 0,
+        double pf_overload = 0,          
+        p_pf = sqrt(p*p + q*q),
+        if abs(cur_p_rate) >= 0.5 then
+            pf_overload = p_pf * 100 / cur_p_rate
+        end,
+        s.@load_ratio=pf_overload
+        post-accum
+        //s.@groupname = "三卷变N-1智能故障组",
+        //s.@fastscreen_flag = 1,
+        //s.@detailedanalysis_flag = 0,
+        //s.Decision = 1,
+        if(s.@load_ratio > load_factor) then 
+            s.@Fault_activation_flag =1 
+        end;
+
+  unitSet = select s from Tunit:s-(topo_unit:e)-:t
+        where s.Gentype == "火电机组" and t.island == 1
+        accum
+        //s.@faultname = s.name + ".故障",
+        //s.@faulttype = "N-1",
+        double pf_overload = 0,
+        if abs(s.P_rate) >= 0.005 then
+            pf_overload = abs(s.P_pf * 100 / s.P_rate)
+        end,
+        s.@load_ratio=pf_overload
+        post-accum
+        //s.@groupname = "机组N-1智能故障组",
+        //s.@fastscreen_flag = 1,
+        //s.@detailedanalysis_flag = 0,
+        //s.Decision = 1,
+        if(s.@load_ratio > load_factor) then 
+            s.@Fault_activation_flag =1 
+        end;
+  
+  T_result = select s from Tfault:s -((fault_aclinedot_select|fault_unit_select|fault_twoport_select|fault_threeport_select):e)-:t where t.@Fault_activation_flag==1
+                POST-ACCUM
+                    s.Fault_activation_flag= 1;
+                   
+ /** 
+//Generate Fault Group
+  complexSet = select s from Tfault:s
+            where s.faulttype == "复杂故障"
+            post-accum
+              FOREACH i in range [0, s.faultdevname.size() - 1] DO
+                @@fault_result += complexfault(s.id, s.name, s.faulttype, s.faultdevname.get(i), s.faultdevtype.get(i), s.faultdevSub.get(i), s.volt.get(i), s.groupname, s.SI, s.decesion_flag, s.fastscreen_flag, s.detailedanalysis_flag, s.FaultGroup_select_flag)
+              END;
+ 
+
+//print @@fault_result;
+
+//print fault
+  print "faultid, faultname, faulttype, faultdevname, faultdevtype, faultdevSub, volt, groupname, SI, decesion_flag, fastscreen_flag, detailedanalysis_flag, FaultGroup_select_flag" TO_CSV file1;
+  print aclineSet.id, aclineSet.@faultname, aclineSet.@faulttype, aclineSet.name, aclineSet.typename, aclineSet.Subname, aclineSet.volt, aclineSet.@groupname, aclineSet.@SI, aclineSet.@decesion_flag, aclineSet.@fastscreen_flag, aclineSet.@detailedanalysis_flag, aclineSet.@FaultGroup_select_flag TO_CSV file1;
+  print twoportSet.id, twoportSet.@faultname, twoportSet.@faulttype, twoportSet.name, twoportSet.typename, twoportSet.Substation, twoportSet.volt, twoportSet.@groupname, twoportSet.@SI, twoportSet.@decesion_flag, twoportSet.@fastscreen_flag, twoportSet.@detailedanalysis_flag, twoportSet.@FaultGroup_select_flag TO_CSV file1;
+  print threeportSet.id, threeportSet.@faultname, threeportSet.@faulttype, threeportSet.name, threeportSet.typename, threeportSet.Substation, threeportSet.volt, threeportSet.@groupname, threeportSet.@SI, threeportSet.@decesion_flag, threeportSet.@fastscreen_flag, threeportSet.@detailedanalysis_flag, threeportSet.@FaultGroup_select_flag TO_CSV file1;
+  print unitSet.id, unitSet.@faultname, unitSet.@faulttype, unitSet.name, unitSet.typename, unitSet.Substation, unitSet.volt, unitSet.@groupname, unitSet.@SI, unitSet.@decesion_flag, unitSet.@fastscreen_flag, unitSet.@detailedanalysis_flag, unitSet.@FaultGroup_select_flag TO_CSV file1;
+
+FOREACH x in @@fault_result DO
+  print x.id, x.name, x.faulttype, x.devname, x.devtype, x.Substation, x.volt, x.groupname, x.SI, x.decesion_flag, x.fastscreen_flag, x.detailedanalysis_flag, x.FaultGroup_select_flag TO_CSV file1;
+END;
+
+//print faultgroup
+  print "faultgroupid,groupname,describe,faultnumber,screen_flag,analysis_flag" TO_CSV file2;
+  print "1,线路N-1智能故障组,线路N-1智能故障集合,0,1,0" TO_CSV file2;
+  print "2,两卷变N-1智能故障组,两卷变N-1智能故障集合,0,1,0" TO_CSV file2;
+  print "3,三卷变N-1智能故障组,三卷变N-1智能故障集合,0,1,0" TO_CSV file2;
+  print "4,机组N-1智能故障组,机组N-1智能故障集合,0,0,0" TO_CSV file2;
+  print "5,复杂故障,自定义复杂故障集合,0,0,0" TO_CSV file2; 
+  
+  **/
+}

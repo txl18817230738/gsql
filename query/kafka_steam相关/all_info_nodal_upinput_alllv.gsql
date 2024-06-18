@@ -1,0 +1,768 @@
+CREATE QUERY all_info_nodal_upinput_alllv(string timestamp="", int time_interval=900000) FOR GRAPH gsql_EMS syntax v2{ 
+  SumAccum<double> @carbon_int;
+  SumAccum<double> @carbon_intensity = 1;
+  OrAccum @inputxu = FALSE;
+  OrAccum @flag = FALSE;
+  SetAccum<INT> @topoid;
+  SetAccum<STRING> @@dispsub;
+  SumAccum<double> @carbon_p;
+  SumAccum<double> @sum_p;
+  SumAccum<double> @Pxt;
+  SumAccum<double> @PL;
+  SumAccum<double> @Node_CI_Cost;
+  SumAccum<double> @Node_CI_Gen;
+  SumAccum<double> @Input_carbon;
+  SumAccum<double> @Output_carbon;
+  SumAccum<double> @Loss_carbon;
+  SumAccum<double> @TransLoss;
+  SumAccum<double> @Input_P;
+  SumAccum<double> @Output_P;
+
+  SumAccum<double> @area_gen;
+  SumAccum<double> @area_load_p;
+  SumAccum<double> @area_Pimeas_gen;
+  SumAccum<double> @area_Pimeas_load;
+  SumAccum<double> @area_load_carbon;
+  SumAccum<double> @area_gen_carbon;
+  SumAccum<double> @areaInput_carbon;
+  SumAccum<double> @areaOutput_carbon;
+  SumAccum<double> @areaLoss_carbon;
+  SumAccum<double> @areaInput_P;
+  SumAccum<double> @areaOutput_P;
+  SumAccum<double> @areaCI;
+  SumAccum<double> @arealoss;
+  SumAccum<double> @areaCI_gen;
+  SumAccum<double> @arealoss_gen;
+  
+  SumAccum<double> @@Output_xizang;
+  SumAccum<double> @@Output_chongqing;
+  SumAccum<double> @@Output_shanghai;
+  SumAccum<double> @@Input_chongqing;
+  SumAccum<double> @@Output_xizang_loss;
+  SumAccum<double> @@Output_shanghai_loss;
+  SumAccum<double> @@Output_chongqing_loss;
+  SumAccum<double> @@Input_chongqing_loss;
+  SumAccum<double> @@Output_Load;
+  SumAccum<double> @@Input_Load;
+
+  SetAccum<string> @@AllComp_ID;
+  SetAccum<string> @@SubComp_ID; 
+  SetAccum<string> @Comp_ID;
+  SetAccum<string> @@SCComp_ID;
+  SumAccum<double> @@SCLoad;
+  SumAccum<double> @@SCUnit;
+  SumAccum<double> @@SCarea_load_carbon;
+  SumAccum<double> @@SCarea_gen_carbon;
+  SumAccum<double> @fire_p;
+  SumAccum<double> @water_p;
+  SumAccum<double> @wind_p;
+  SumAccum<double> @load_p;
+  SumAccum<double> @other_p;
+  SumAccum<double> @@sichuan_fire_p;
+  SumAccum<double> @@sichuan_water_p;
+  SumAccum<double> @@sichuan_wind_p;
+  SumAccum<double> @@sichuan_load_p;
+  SumAccum<double> @@sichuan_other_p;
+  
+  SetAccum<string> @@Comp_ID0;
+  SumAccum<double> @Input_P0;
+  SumAccum<double> @Input_Carbon0;
+  SumAccum<double> @Output_P0;
+  SumAccum<double> @Output_Carbon0;
+  SumAccum<double> @@mianyangin;
+  SumAccum<double> @@deyangin;
+  SumAccum<double> @@chengduin;
+  SumAccum<double> @@ganziin;
+  SumAccum<double> @@yaanin;
+  SumAccum<double> @@mianyangout;
+  SumAccum<double> @@deyangout;
+  SumAccum<double> @@chengduout;
+  SumAccum<double> @@ganziout;
+  SumAccum<double> @@yaanout;
+  SumAccum<double> @@carbon_credit;
+  SumAccum<double> @@carbon_consume;
+  SumAccum<double> @@DIFF;
+
+  SumAccum<double> @@total_loadP;
+  SumAccum<double> @@total_loadPest;
+  SumAccum<double> @@total_unitP;
+  SumAccum<double> @@total_unitPest;
+  SumAccum<double> @total_load_p;
+  SumAccum<double> @total_load_pest;
+  SumAccum<double> @total_unit_p;
+  SumAccum<double> @total_unit_pest;
+  SumAccum<double> @cal_P = 0;
+  SumAccum<double> @cal_Q = 0;
+  SumAccum<double> @sumG  = 0; // store for each node the total G on all of its edges
+  SumAccum<double> @sumB  = 0; //similar...
+  SumAccum<double> @island;
+ 
+  ListAccum<carbon_hist_info> @tempListAccum;
+  string last_history_time;
+  
+  StartSUB= {Substation.*};
+  
+  Sub_CI = SELECT s FROM Substation:s ACCUM s.@carbon_intensity = s.ci;
+  
+  //-----------------------------------------判断厂站为主岛厂站-----------------------------------------------
+  StartSUB = SELECT s FROM StartSUB:s -((connected_Sub_Aclinedot>|connected_Aclinedot_Sub>):e1)-ACline_dot:x -(topo_aclinedot:e)-TopoND:t where t.island == 1;
+  
+  //------------------------------------------发电厂赋值------------------------------------------------------
+  //输入虚拟站
+  input_xusub = select s from StartSUB:s -((connected_Sub_Aclinedot>|connected_Aclinedot_Sub>):e1)-ACline_dot:t where s.subtype == "虚拟站" and t.P < 0
+  ACCUM s.@inputxu += true;
+  
+  gensub = select s from StartSUB:s where s.subtype != "变电站" and s.@inputxu == FALSE
+  ACCUM
+    if s.subtype == "火电厂" then s.@carbon_intensity = 875, s.@flag += true
+    else if s.subtype == "水电厂" then s.@carbon_intensity = 1, s.@flag += true
+    else if s.subtype == "风电场" then s.@carbon_intensity = 1, s.@flag += true
+    else if s.subtype == "储能站" then s.@carbon_intensity = 1, s.@flag += true
+    else if s.subtype == "换流站" and s.strid != "113997366322791675" and s.strid != "113997365584592897" and s.strid != "113997365584592906" 
+  then s.@carbon_intensity = 200, s.@flag += true
+    else if s.strid == "113997366322791675" or s.strid == "113997365584592897" or s.strid == "113997365584592906" then s.@carbon_intensity = 1, s.@flag += true
+    else if s.subtype == "虚拟站" then s.@carbon_intensity = 180, s.@flag += true
+    else if s.subtype == "线端连接站" then s.@carbon_intensity = 1
+    else s.@carbon_intensity = 100, s.@flag += true
+  end;
+
+  //普提站以及直流换流部分初始化定值
+  puti = SELECT s from StartSUB:s where s.strid == "113997366322790502" or s.strid == "113997365584592899" ACCUM 
+  s.@carbon_intensity = 1, s.@flag += TRUE;
+  
+  huagongyuan = select s from StartSUB:s where s.strid == "113997366322791608" ACCUM
+  s.@carbon_intensity = 875, s.@flag += TRUE;
+
+  lancangjiang_jiangcheng = select s from StartSUB:s where s.strid == "113997366322791815" or s.strid == "113997366909992964" ACCUM
+  s.@carbon_intensity = 1, s.@flag += TRUE;
+  
+  //-------------------------------------------迭代计算节点碳强度--------------------------------------------------
+ inputsub = select s from StartSUB:s where s.@flag == FALSE;
+  
+  WHILE(inputsub.size() > 0) limit 100 DO
+  inputsub = SELECT a FROM inputsub:a-((connected_Sub_Aclinedot>|connected_Aclinedot_Sub>):e1)-ACline_dot:t-((aclinedot_aclinedot>|aclinedot_aclinedot_reverse>):e)-ACline_dot:b-((connected_Sub_Aclinedot>|connected_Aclinedot_Sub>):e2)-Substation:p
+  where a.@flag == false and t.P < 0
+  ACCUM
+    a.@carbon_int = a.@carbon_intensity,
+    a.@carbon_p += abs(t.P * p.@carbon_intensity),
+    a.@sum_p += abs(t.P)
+  POST-ACCUM
+   a.@carbon_intensity = (a.@carbon_p)/(a.@sum_p + 0.05),
+   IF abs(a.@carbon_intensity - a.@carbon_int) <= 0.0000001 THEN
+    a.@flag += TRUE
+  END; 
+  inputsub = select s from StartSUB:s where s.@flag == FALSE
+  ACCUM
+    s.@sum_p = 0,
+    s.@carbon_p = 0;
+  end;  
+  
+  ///////////////////////// Total Generation, Load, Carbon Amount /////////////////////////
+
+  //T_gen1 = select s from StartSUB:s - (connected_Sub_Trans_two>:e) -:t where t.WindingType == "高" and s.subtype != "变电站" 
+  //ACCUM
+  //  s.@Pxt += abs(t.P)
+  //POST-ACCUM
+  //  s.@Node_CI_Gen = s.@Pxt * round(s.ci);
+  
+  T_gen2 = select s from StartSUB:s-(connected_Sub_Unit>:e2) - unit:b - (topo_unit:e1)-TopoND:t where b.P > 0 and t.island == 1
+    ACCUM
+    s.@Pxt += abs(b.P)
+  POST-ACCUM
+    s.@Node_CI_Gen = s.@Pxt * round(s.@carbon_intensity);
+  
+  T_load = SELECT a FROM StartSUB:a -(connected_Sub_Load>:e)-l_oad:b -(topo_load:e1)-TopoND:t WHERE b.P > 0 and t.island == 1
+  ACCUM
+    a.@PL += b.P
+  POST-ACCUM
+    a.@Node_CI_Cost = a.@PL * round(a.@carbon_intensity);
+
+   T_load2 = select s from StartSUB:s -((connected_Sub_Aclinedot>|connected_Aclinedot_Sub>):e)-ACline_dot:t where t.P > 0 and s.volt >= 500 and s.subtype == "变电站"
+  ACCUM
+    s.@PL += t.P;
+  
+  Trans_Loss = select s from StartSUB:s -((connected_Sub_Trans_three>|connected_Sub_Trans_two>):e)-:t
+  ACCUM
+    s.@TransLoss += t.P
+  POST-ACCUM
+    s.@Loss_carbon += abs(s.@TransLoss) * round(s.@carbon_intensity);
+  
+  Sub_Carbon = select s from StartSUB:s -((connected_Sub_Aclinedot>|connected_Aclinedot_Sub>):e)-ACline_dot:t -((aclinedot_aclinedot>|aclinedot_aclinedot_reverse>):e2)-ACline_dot:b-(connected_Aclinedot_Sub>:e3)-Substation:p
+  ACCUM
+    IF t.P < 0 THEN
+    s.@Loss_carbon += abs(abs(t.P) - abs(b.P)) * round(p.@carbon_intensity),
+    s.@Input_carbon += abs(b.P) * round(p.@carbon_intensity),
+    s.@Input_P += abs(t.P)
+    ELSE IF t.P > 0 THEN
+    s.@Loss_carbon += abs(abs(t.P) - abs(b.P)) * round(s.@carbon_intensity),
+    s.@Output_carbon += abs(t.P) * round(s.@carbon_intensity),
+    s.@Output_P += t.P
+    end
+    POST-ACCUM
+    IF s.@areaInput_carbon < s.@areaOutput_carbon THEN
+    s.@areaInput_carbon = s.@areaOutput_carbon + s.@Loss_carbon
+    END;
+  
+  //----------------------------------------------------------------------------------  
+  //----------------------Carbon intensity < 0.9 --> 1 -----------------------------
+  StartSUB_0 = SELECT a FROM StartSUB:a WHERE a.@carbon_intensity < 0.95
+  ACCUM a.@carbon_intensity = 1;
+  
+  Sub_CI = SELECT s FROM StartSUB:s 
+  POST-ACCUM 
+  s.ci = s.@carbon_intensity,
+  s.total_gen = s.@Pxt,
+  s.total_load = s.@PL,
+  s.gen_carbon = s.@Node_CI_Gen,
+  s.load_carbon = s.@Node_CI_Cost,
+  s.input_carbon = s.@Input_carbon,
+  s.output_carbon = s.@Output_carbon,
+  s.input_carbon_loss = s.@Loss_carbon,
+  s.output_carbon_loss = s.@Loss_carbon,
+  s.input_p = s.@Input_P,
+  s.output_p = s.@Output_P;
+
+
+  //==========================================================================================================================
+  //-------------------------------------------区域属性更新---------------------------------------------------------------------
+  //==========================================================================================================================
+  
+  comp = {gridcom.*};
+  
+  s_comp = select s from comp:s where s.level == "1004" accum s.@Comp_ID+= s.id; 
+  s_comp = select s from s_comp:s-(gridcom_gridcom:e)-:t where s.id == t.parent_id accum s.@Comp_ID+= t.id;
+  
+  //---------------------------------------市级公司厂站负载碳量--------------------------------------------------------------------
+  comp_load(ANY) = select b from s_comp:s - (connected_grid_sub:e1)- Substation:t-(connected_Sub_Load>:e2) - l_oad:b -(topo_load:e3)-TopoND:c
+  where c.island == 1 and t.gridcom_id_in_path in s.@Comp_ID
+  ACCUM
+  IF b.P > 0 THEN
+    s.@area_load_carbon += b.P * t.@carbon_intensity,
+    s.@area_Pimeas_load += b.Pimeas,
+    s.@area_load_p += b.P
+  ELSE
+    s.@areaInput_P += abs(b.P),
+    s.@areaInput_carbon += abs(b.P) * t.@carbon_intensity
+  END;
+  
+  comp_gen(ANY) = select b from s_comp:s - (connected_grid_sub:e1)- Substation:t-(connected_Sub_Unit>:e2) - unit:b -(topo_unit:e3)-TopoND:c
+  where c.island == 1 and t.gridcom_id_in_path in s.@Comp_ID//and (t.subtype=="风电场" or t.subtype=="火电厂" or t.subtype=="小水电" or t.subtype=="储能站" or t.subtype=="水电厂")
+  ACCUM
+  IF b.P > 0 THEN  
+    s.@area_gen_carbon += b.P * t.@carbon_intensity,
+    s.@area_Pimeas_gen += b.Pimeas,
+    s.@area_gen += b.P
+  ELSE
+    s.@areaOutput_P += abs(b.P),
+    s.@areaOutput_carbon += abs(b.P) * t.@carbon_intensity
+  END;
+  
+  comp_loss(ANY) = select s from s_comp:s - (connected_grid_sub:e1)- Substation:x -((connected_Sub_Aclinedot>|connected_Aclinedot_Sub>):e2)-ACline_dot:t -((aclinedot_aclinedot>|aclinedot_aclinedot_reverse>):e3)-ACline_dot:b-(connected_Aclinedot_Sub>:e4)-Substation:p - (connected_grid_sub:e5)- comp:z 
+  WHERE z.id == s.id and x.gridcom_id_in_path in s.@Comp_ID
+  ACCUM
+    s.@areaLoss_carbon += abs(x.@TransLoss) * round(x.@carbon_intensity),
+    IF t.P < 0 THEN
+    s.@areaLoss_carbon += abs(abs(t.P) - abs(b.P)) * round(p.@carbon_intensity)
+    ELSE IF t.P > 0 THEN
+    s.@areaLoss_carbon += abs(abs(t.P) - abs(b.P)) * round(x.@carbon_intensity)
+   end;
+  
+  leaf_sub(ANY) = select s from comp:s - (connected_grid_sub:e1)- Substation:x -((connected_Sub_Aclinedot>|connected_Aclinedot_Sub>):e4)-ACline_dot:t -((aclinedot_aclinedot>|aclinedot_aclinedot_reverse>):e2)-ACline_dot:b-(connected_Aclinedot_Sub>:e3)-Substation:p - (connected_grid_sub:e5)- comp:z 
+  WHERE z.id != s.id and z.parent_id != s.id and x.gridcom_id_in_path in s.@Comp_ID
+  ACCUM
+    IF t.P < 0 THEN
+    s.@areaInput_P += abs(b.P),
+    s.@areaInput_carbon += abs(b.P) * round(p.@carbon_intensity)
+    ELSE IF t.P > 0 THEN
+    s.@areaOutput_P += t.P,
+    s.@areaOutput_carbon += abs(t.P) * round(x.@carbon_intensity)
+    end;
+  
+  //--------------------------------------------县级公司厂站负载碳量--------------------------------------------------------------------
+  comp_load1(ANY) = select b from comp:s - (connected_grid_sub:e1)- Substation:t-(connected_Sub_Load>:e2) - l_oad:b -(topo_load:e3)-TopoND:c
+  where s.level == "1005" and c.island == 1
+  ACCUM
+  IF b.P > 0 THEN
+    s.@area_load_carbon += b.P * t.@carbon_intensity,
+    s.@area_Pimeas_load += b.Pimeas,
+    s.@area_load_p += b.P
+  ELSE
+    s.@areaInput_P += abs(b.P),
+    s.@areaInput_carbon += abs(b.P) * t.@carbon_intensity
+  END;  
+  
+  comp_gen1(ANY) = select s from comp:s - (connected_grid_sub:e1)- Substation:t-(connected_Sub_Unit>:e2) - unit:b -(topo_unit:e3)-TopoND:c
+  where s.level == "1005" and c.island == 1 //and (t.subtype=="风电场" or t.subtype=="火电厂" or t.subtype=="小水电" or t.subtype=="储能站" or t.subtype=="水电厂")
+  ACCUM
+  IF b.P > 0 THEN  
+    s.@area_gen_carbon += b.P * t.@carbon_intensity,
+    s.@area_Pimeas_gen += b.Pimeas,
+    s.@area_gen += b.P
+  ELSE
+    s.@areaOutput_P += abs(b.P),
+    s.@areaOutput_carbon += abs(b.P) * t.@carbon_intensity
+  END;
+  
+  comp_loss1(ANY) = select s from comp:s - (connected_grid_sub:e1)- Substation:x -((connected_Sub_Aclinedot>|connected_Aclinedot_Sub>):e2)-ACline_dot:t -((aclinedot_aclinedot>|aclinedot_aclinedot_reverse>):e3)-ACline_dot:b-(connected_Aclinedot_Sub>:e4)-Substation:p - (connected_grid_sub:e5)- comp:z 
+  WHERE s.level == "1005" and z.id == s.id
+  ACCUM
+    s.@areaLoss_carbon += abs(x.@TransLoss) * round(x.@carbon_intensity),
+    IF t.P < 0 THEN
+    s.@areaLoss_carbon += abs(abs(t.P) - abs(b.P)) * round(p.@carbon_intensity)
+    ELSE IF t.P > 0 THEN
+    s.@areaLoss_carbon += abs(abs(t.P) - abs(b.P)) * round(x.@carbon_intensity)
+    end;
+  
+  leaf_sub1(ANY) = select s from comp:s - (connected_grid_sub:e1)- Substation:x -((connected_Sub_Aclinedot>|connected_Aclinedot_Sub>):e4)-ACline_dot:t -((aclinedot_aclinedot>|aclinedot_aclinedot_reverse>):e2)-ACline_dot:b-(connected_Aclinedot_Sub>:e3)-Substation:p - (connected_grid_sub:e5)- comp:z 
+  WHERE s.level == "1005" and z.id != s.id and z.parent_id != s.parent_id and z.id != s.parent_id
+  ACCUM
+    IF t.P < 0 THEN
+    s.@areaInput_P += abs(t.P),
+    s.@areaInput_carbon += abs(t.P) * round(p.@carbon_intensity)
+    ELSE IF t.P > 0 THEN
+    s.@areaOutput_P += t.P,
+    s.@areaOutput_carbon += abs(t.P) * round(x.@carbon_intensity)
+    end;
+  
+   //----------------------四川省公司关联厂站负载----------------------------------------------------------------------
+  sc_comp = select s from comp:s where s.id == "113715890758877224" accum @@SCComp_ID+= s.id;
+
+  WHILE(sc_comp.size()>0) DO
+    sc_comp = select t from sc_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@SCComp_ID+= t.id;
+  END;
+  
+  SC_Load = select c from comp:s-(connected_grid_sub:e1)-Substation:b-(connected_Sub_Load>:e2)-l_oad:c-(topo_load:e3)-TopoND:t 
+  where t.island == 1 and b.gridcom_id_in_path in @@SCComp_ID
+  ACCUM
+    @@SCLoad += c.P,
+    @@SCarea_load_carbon += c.P * b.@carbon_intensity;
+  
+  SC_Unit = select c from comp:s-(connected_grid_sub:e1)-Substation:b-(connected_Sub_Unit>:e2)-unit:c-(topo_unit:e3)-TopoND:t 
+  where t.island == 1 and b.gridcom_id_in_path in @@SCComp_ID //and (b.subtype=="风电场" or b.subtype=="火电厂" or b.subtype=="小水电" or b.subtype=="储能站" or b.subtype=="水电厂")
+  ACCUM
+    @@SCUnit += c.P,
+    @@SCarea_gen_carbon += c.P * b.@carbon_intensity;
+
+  //----------------------上海、西藏和重庆的输入输出碳量计算------------------------
+  provincal_carbon = SELECT x from Substation:x-(connected_Sub_Load>:e2)-l_oad:c-(connected_Load_Sub>:e1)-Substation:p 
+  where (x.strid == "113997366306013189" or x.strid == "113997366306013185" or x.strid == "113997366306013190" //重庆
+    or x.strid == "113997366909992969"  //西藏
+    or (x.strid == "113997365584592899" or x.strid == "113997366322791675" or x.strid == "113997365584592906")) //上海
+  ACCUM
+    IF (x.strid == "113997366306013189" or x.strid == "113997366306013185" or x.strid == "113997366306013190") and c.P < 0 THEN
+      @@Input_Load += abs(c.P),
+      @@Input_chongqing += abs(c.P) * round(p.@carbon_intensity)
+    ELSE IF (x.strid == "113997366306013189" or x.strid == "113997366306013185" or x.strid == "113997366306013190") and c.P > 0 THEN
+      @@Output_Load += abs(c.P),
+      @@Output_chongqing += abs(c.P) * round(x.@carbon_intensity)
+    ELSE IF x.strid == "113997366909992969" and c.P > 0 THEN
+      @@Output_Load += abs(c.P),
+      @@Output_xizang += abs(c.P) * round(x.@carbon_intensity)
+    ELSE IF (x.strid == "113997365584592899" or x.strid == "113997366322791675" or x.strid == "113997365584592906") and c.P > 0 THEN
+      @@Output_Load += abs(c.P),
+      @@Output_shanghai += abs(c.P) * round(x.@carbon_intensity)
+    END; 
+  
+  sichuan_inout = SELECT s from comp:s where s.id == "113715890758877224"
+  ACCUM
+    s.@areaInput_carbon += @@Input_chongqing,
+    s.@areaOutput_carbon += @@Output_chongqing,
+    s.@areaOutput_carbon += @@Output_xizang,
+    s.@areaOutput_carbon += @@Output_shanghai,
+    s.@area_load_carbon = @@SCarea_load_carbon,
+    s.@area_load_p = @@SCLoad - @@Output_Load + @@Input_Load,
+    s.@area_gen_carbon = @@SCarea_gen_carbon,
+    s.@area_gen = @@SCUnit,
+    s.@areaLoss_carbon = (@@SCarea_gen_carbon * 0.996) - @@SCarea_load_carbon - @@Output_shanghai - @@Output_xizang - @@Output_chongqing + @@Input_chongqing,
+    s.@areaInput_P = @@Input_Load,
+    s.@areaOutput_P = @@Output_Load;
+  
+  sichuan_loss = SELECT s FROM comp:s-(gridcom_gridcom:e)-:t where s.id == "113715890758877224" and t.id in @@SCComp_ID
+  ACCUM
+    s.@areaLoss_carbon += t.@areaLoss_carbon;
+  
+  areaCI = SELECT s FROM gridcom:s where s.id != "113715890758877224"
+  ACCUM
+     IF s.@area_load_p != 0 THEN
+     s.@areaCI = s.@area_load_carbon/s.@area_load_p
+     ELSE
+     s.@areaCI = 1
+     END;
+  areaCI_sichuan = SELECT s FROM gridcom:s where s.id == "113715890758877224"
+  ACCUM
+     s.@areaCI = (s.@area_load_carbon-@@Output_chongqing-@@Output_xizang-@@Output_shanghai)/(s.@area_load_p - @@Output_Load);
+  
+    areaCI_gen = SELECT s FROM gridcom:s
+  ACCUM
+     IF s.@area_gen != 0 THEN
+     s.@areaCI_gen = s.@area_gen_carbon/s.@area_gen
+     ELSE
+     s.@areaCI_gen = 1
+     END;
+  
+  //----------------------------------------------------------------------------------  
+  //----------------------Carbon intensity < 0.9 --> 1 -----------------------------
+  T0 = SELECT a FROM gridcom:a
+  ACCUM 
+    IF a.@areaCI < 0.98 THEN
+    a.@areaCI = 1
+    ELSE IF a.@areaCI_gen < 0.98 THEN
+    a.@areaCI_gen = 1
+    END
+  POST-ACCUM
+    a.ci = a.@areaCI,
+    a.gen_ci = a.@areaCI_gen,
+   // a.total_gen = a.@area_gen,
+   // a.total_load = a.@area_load_p,
+   // a.parameter1 = a.@area_Pimeas_gen,
+   // a.parameter2 = a.@area_Pimeas_load,
+    a.gen_carbon = a.@area_gen_carbon,
+    a.load_carbon = a.@area_load_carbon,
+    a.input_carbon = a.@areaInput_carbon,
+    a.output_carbon = a.@areaOutput_carbon,
+    a.input_carbon_loss = a.@areaLoss_carbon,
+    a.output_carbon_loss = a.@areaLoss_carbon;
+    //a.parameter1 = a.@arealoss;
+  
+ //======================================================================================================= 
+//--------------------------------公司发电类型分布----------------------------------------------------------
+//========================================================================================================
+  
+  S_unit(ANY) = select c from comp:s-(connected_grid_sub:e1)-Substation:b-(connected_Sub_Unit>:e2)-unit:c-(topo_unit:e3)-TopoND:t 
+  WHERE t.island == 1 and b.gridcom_id_in_path in @@SCComp_ID //and (b.subtype=="风电场" or b.subtype=="火电厂" or b.subtype=="小水电" or b.subtype=="储能站" or b.subtype=="水电厂")
+                ACCUM
+                if b.subtype=="风电场" then
+                  @@sichuan_wind_p+=c.P
+                else if b.subtype=="火电厂" then
+                  @@sichuan_fire_p+=c.P
+                else if (b.subtype=="水电厂" or b.subtype=="小水电") then
+                  @@sichuan_water_p+=c.P       
+                else if b.subtype == "储能站" and c.P > 0 then
+                  @@sichuan_load_p+=c.P
+                else if (b.subtype!="风电场" or b.subtype!="火电厂" or b.subtype!="小水电" or b.subtype!="储能站" or b.subtype!="水电厂") THEN
+                  @@sichuan_other_p+=c.P
+                end;
+  sichuan_comp = select s from comp:s where s.id == "113715890758877224" 
+                ACCUM
+                  s.@wind_p = @@sichuan_wind_p,
+                  s.@fire_p = @@sichuan_fire_p,
+                  s.@water_p = @@sichuan_water_p,       
+                  s.@load_p = @@sichuan_load_p,
+                  s.@other_p = @@sichuan_other_p;
+  
+//--------------------------------市级公司发电类型分布统计---------------------------------------------------
+  T_unit(ANY) = SELECT t FROM comp:s-(connected_grid_sub:e)-StartSUB:a - (connected_Sub_Unit>:e1) -unit:t-(topo_unit:e3)-TopoND:c
+  where c.island == 1 and a.gridcom_id_in_path in s.@Comp_ID //and (a.subtype=="风电场" or a.subtype=="火电厂" or a.subtype=="小水电" or a.subtype=="储能站" or a.subtype=="水电厂")
+                ACCUM
+                if a.subtype=="风电场" then
+                  s.@wind_p+=t.P
+                else if a.subtype=="火电厂" then
+                  s.@fire_p+=t.P
+                else if (a.subtype=="水电厂" or a.subtype=="小水电") then
+                  s.@water_p+=t.P       
+                else if a.subtype == "储能站" and t.P > 0 then
+                  s.@load_p+=t.P
+                 else if (a.subtype!="风电场" or a.subtype!="火电厂" or a.subtype!="小水电" or a.subtype!="储能站" or a.subtype!="水电厂") THEN
+                  s.@other_p+=t.P
+                end;
+  
+//--------------------------------县级公司发电类型分布统计---------------------------------------------------
+  X_unit(ANY) = SELECT t FROM comp:s-(connected_grid_sub:e)-StartSUB:a - (connected_Sub_Unit>:e1) -unit:t-(topo_unit:e3)-TopoND:c
+  where c.island == 1 and s.level == "1005" //and (a.subtype=="风电场" or a.subtype=="火电厂" or a.subtype=="小水电" or a.subtype=="储能站" or a.subtype=="水电厂")
+                ACCUM
+                if a.subtype=="风电场" then
+                  s.@wind_p+=t.P
+                else if a.subtype=="火电厂" then
+                  s.@fire_p+=t.P
+                else if (a.subtype=="水电厂" or a.subtype=="小水电") then
+                  s.@water_p+=t.P       
+                else if a.subtype == "储能站" and t.P > 0 then
+                  s.@load_p+=t.P  
+                end;
+  
+  //===========================================================================
+  //============================零碳园区========================================
+  //===========================================================================
+  start_comp0 = select s from comp:s where s.id == "0010513200" accum @@Comp_ID0+= s.id;
+  WHILE(start_comp0.size()>0) DO
+    start_comp0 = select t from start_comp0:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@Comp_ID0+= t.id;
+  END;
+  
+  areaSub0 = select s from comp:a-(connected_grid_sub:e1)-Substation:s-((connected_Sub_Aclinedot>|connected_Aclinedot_Sub>):e2)-ACline_dot:b -((aclinedot_aclinedot>|aclinedot_aclinedot_reverse>):e3)- ACline_dot:c-(connected_Aclinedot_Sub>:e4)-Substation:p-(connected_grid_sub:e5)-comp:d where s.gridcom_id_in_path in @@Comp_ID0 and s.subtype == "变电站" and p.gridcom_id_in_path not in @@Comp_ID0
+  ACCUM
+  IF b.P < 0 THEN
+  a.@Input_P0 += abs(b.P),
+  a.@Input_Carbon0 += abs(b.P) * round(p.@carbon_intensity),
+  d.@Output_P0 += abs(c.P),
+  d.@Output_Carbon0 += abs(c.P)* round(p.@carbon_intensity)
+  ELSE IF b.P > 0 THEN
+  a.@Output_P0 += abs(b.P),
+  a.@Output_Carbon0 += abs(b.P) * round(p.@carbon_intensity),
+  d.@Input_P0 += abs(c.P),
+  d.@Input_Carbon0 += abs(c.P) * round(p.@carbon_intensity)
+  END
+  POST-ACCUM
+  @@carbon_credit += d.@Input_Carbon0,
+  @@carbon_consume += d.@Output_Carbon0,
+  IF d.id == "0010510700" and d.@Output_Carbon0 > 0 THEN 
+  @@mianyangin += d.@Output_Carbon0
+  ELSE IF d.id == "0010510600" and d.@Output_Carbon0 > 0 THEN
+  @@deyangin += d.@Output_Carbon0
+  ELSE IF d.id == "0010510100" and d.@Output_Carbon0 > 0 THEN
+  @@chengduin += d.@Output_Carbon0
+  ELSE IF d.id == "0010513300" and d.@Output_Carbon0 > 0 THEN
+  @@ganziin += d.@Output_Carbon0
+  ELSE IF d.id == "0010511800" and d.@Output_Carbon0 > 0 THEN
+  @@yaanin += d.@Output_Carbon0
+  ELSE IF d.id == "0010510700" and d.@Input_Carbon0 >0 THEN 
+  @@mianyangout += d.@Input_Carbon0
+  ELSE IF d.id == "0010510600" and d.@Input_Carbon0 >0 THEN
+  @@deyangout += d.@Input_Carbon0
+  ELSE IF d.id == "0010510100" and d.@Input_Carbon0 >0 THEN
+  @@chengduout += d.@Input_Carbon0
+  ELSE IF d.id == "0010513300" and d.@Input_Carbon0 >0 THEN
+  @@ganziout += d.@Input_Carbon0
+  ELSE IF d.id == "0010511800" and d.@Input_Carbon0 >0 THEN
+  @@yaanout += d.@Input_Carbon0
+  END; 
+  @@DIFF =  @@carbon_credit - @@carbon_consume;
+
+  //==============================================================================
+  ////////////// update carbon history ///////////////////////////////////////
+  //==============================================================================
+  IF timestamp != "" THEN
+    statusSet = {status.*};
+    statusSet = select s from statusSet:s ACCUM last_history_time = s.last_history_time;
+    IF last_history_time == "" OR isMoreThanInterval(timestamp, last_history_time, time_interval) THEN
+      print "update history data";
+      StartSUB = select s from StartSUB:s - ((sub_carbonhistory|sub_history_gen_ci|sub_history_local_ci|sub_history_total_gen|sub_history_total_load|sub_history_gen_carbon|sub_history_load_carbon|sub_history_input_carbon|sub_history_output_carbon|sub_history_input_carbon_loss|sub_history_output_carbon_loss):e) - :t
+              accum
+              FOREACH x in t.today DO
+                IF isOneDay(timestamp, x.t) THEN
+                  t.@tempListAccum+=x
+                END
+              END,
+              IF e.type=="sub_carbonhistory" or e.type=="sub_history_gen_ci" or e.type=="sub_history_local_ci" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@carbon_intensity, timestamp)
+              ELSE IF e.type=="sub_history_total_gen" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@Pxt, timestamp)
+              ELSE IF e.type=="sub_history_total_load" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@PL, timestamp)
+              ELSE IF e.type=="sub_history_gen_carbon" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@Node_CI_Gen, timestamp)
+              ELSE IF e.type=="sub_history_load_carbon" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@Node_CI_Cost, timestamp)
+              ELSE IF e.type=="sub_history_input_carbon" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@Input_carbon, timestamp)
+              ELSE IF e.type=="sub_history_output_carbon" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@Output_carbon, timestamp)
+              ELSE IF e.type=="sub_history_input_carbon_loss" THEN
+                t.@tempListAccum+=carbon_hist_info(s.@Loss_carbon, timestamp)
+              ELSE
+                t.@tempListAccum+=carbon_hist_info(s.@Loss_carbon, timestamp)
+              END
+              post-accum
+              t.today = t.@tempListAccum;
+
+//update area load and generation history
+  Tsub = {Substation.*};
+  TopoSet = {TopoND.*};
+  TGen = {unit.*};
+  TLoad = {l_oad.*};
+  //get Pest and Qest for Gen and Load
+  T1 = select s from TopoSet: s -(topo_connect>:e)-:t
+          where s.island == 1 and t.island == 1
+          accum
+        double newG = 0,
+        double newB = 0,
+                double tap_ratio = abs(e.transformer_final_turns_ratio),
+                double tap_ratio_square = abs((e.transformer_final_turns_ratio)*(e.transformer_final_turns_ratio)),
+
+                case when e.transformer_final_turns_ratio == 0 then
+                        //compute contribution of each branch to the diagonal terms
+                    s.@sumG += e.G,
+            s.@sumB += -1*e.B + e.hB,
+                        s.@cal_P += s.SE_Vm*t.SE_Vm * (-1*e.G*cos(s.SE_Va-t.SE_Va) + e.B * sin((s.SE_Va-t.SE_Va))),
+                        s.@cal_Q += s.SE_Vm*t.SE_Vm * (-1*e.G*sin(s.SE_Va-t.SE_Va) - e.B * cos(s.SE_Va-t.SE_Va))
+                        //log(false, "e.B and e.G", s.exId, t.exId, e.G, e.B)
+
+                when e.transformer_final_turns_ratio > 0 then
+                        s.@sumG += e.G,
+            s.@sumB += -1*e.B + e.hB, // sqrt
+                        //double tap_ratio = e.transformer_final_turns_ratio/e.kcount,
+                        newG = e.G*abs(tap_ratio),
+                        newB = e.B*abs(tap_ratio),
+                        s.@cal_P += s.SE_Vm*t.SE_Vm * (-1*newG*cos(s.SE_Va-t.SE_Va) + newB * sin(s.SE_Va-t.SE_Va)),
+                        s.@cal_Q += s.SE_Vm*t.SE_Vm * (-1*newG*sin(s.SE_Va-t.SE_Va) - newB * cos(s.SE_Va-t.SE_Va))
+                else
+                        //compute contribution of each branch to the diagonal terms
+            s.@sumG += e.G*tap_ratio_square,
+            s.@sumB += -1*e.B*tap_ratio_square + e.hB,
+                        newG = e.G*abs(tap_ratio),
+                        newB = e.B*abs(tap_ratio),
+                        s.@cal_P += s.SE_Vm*t.SE_Vm * (-1*newG*cos(s.SE_Va-t.SE_Va) + newB * sin(s.SE_Va-t.SE_Va)),
+                        s.@cal_Q += s.SE_Vm*t.SE_Vm * (-1*newG*sin(s.SE_Va-t.SE_Va) - newB * cos(s.SE_Va-t.SE_Va))
+        end
+                post-accum
+                       s.@cal_P += s.SE_Vm*s.SE_Vm*s.@sumG,
+                       s.@cal_Q += (-1) * s.SE_Vm*s.SE_Vm*s.@sumB;
+
+TopoSet = select t from Tsub:s - (topoid_subid:e) -:t
+         where t.island == 1
+         accum
+             if (t.@cal_P > 0) then
+                 s.@total_unit_pest += t.@cal_P*100
+             else
+                 s.@total_load_pest += t.@cal_P*(-100)
+             end;
+
+TGen = SELECT s FROM TGen:s - (topo_unit:e) -:t
+       accum
+       s.@island = t.island;
+
+TLoad = select s from TLoad:s - (topo_load:e) -:t
+       accum
+       s.@island = t.island;
+
+TLoadSet = select t from Tsub:s - (connected_Sub_Load>:e) -:t
+         where t.@island == 1
+         accum
+             s.@total_load_p += t.Pimeas;
+         //    s.@total_load_pest += t.P;
+
+TGenSet = select t from Tsub:s - (connected_Sub_Unit>:e) -:t
+         where t.@island == 1
+         accum
+             s.@total_unit_p += t.Pimeas;
+        //     s.@total_unit_pest += t.P;
+
+comp = select s from comp:s 
+           accum @@AllComp_ID+= s.id;
+
+foreach compID in @@AllComp_ID do
+  start_comp = select s from comp:s where s.id == compID
+        accum @@SubComp_ID += s.id;
+  WHILE(start_comp.size()>0) DO
+    start_comp = select t from start_comp:s-(gridcom_gridcom:e)-:t where t.id != s.parent_id accum @@SubComp_ID+= t.id;
+  END;
+
+// sub
+  Tsub = select t from comp:s-(connected_grid_sub:e)-:t
+        where s.id in @@SubComp_ID
+        post-accum
+          @@total_loadP += t.@total_load_p,
+          @@total_loadPest += t.@total_load_pest,
+          @@total_unitP += t.@total_unit_p,
+          @@total_unitPest += t.@total_unit_pest;
+
+  // start_comp = select s from comp:s where s.id == compID
+  //       post-accum
+  //         s.@total_load_p += @@total_loadP,
+  //         s.@total_load_pest += @@total_loadPest,
+  //         s.@total_unit_p += @@total_unitP,
+  //         s.@total_unit_pest += @@total_unitPest,
+  //         s.total_gen = s.@total_unit_pest,   
+  //         s.total_load = s.@total_load_pest,
+  //         s.total_gen_meas = s.@total_unit_p,
+  //         s.total_load_meas = s.@total_load_p;
+
+  //         @@total_loadP = 0;
+  //         @@total_loadPest = 0;
+  //         @@total_unitP = 0;
+  //         @@total_unitPest = 0;
+  //         @@SubComp_ID.clear();
+end;
+//end updating area unit and load
+
+      // comp = select s from gridcom:s - ((comp_history_load_ci|comp_history_gen_ci|comp_history_local_ci|comp_history_total_gen|comp_history_total_load|comp_history_gen_carbon|comp_history_load_carbon|comp_history_input_carbon|comp_history_output_carbon|comp_history_input_carbon_loss|comp_history_output_carbon_loss|comp_history_inputcom_carbon|comp_history_outputcom_carbon|com_fire_history_p|com_wind_history_p|com_water_history_p|com_load_history_p|com_history_gen_p_meas|com_history_load_p_meas|com_history_add3|com_other_history_p|comp_history_input_p|comp_history_output_p):e) - :t
+      //         accum
+      //         FOREACH x in t.today DO
+      //           IF isOneDay(timestamp, x.t) THEN
+      //             t.@tempListAccum+=x
+      //           END
+      //         END,
+      //         IF e.type=="comp_history_load_ci" or e.type=="comp_history_local_ci" THEN
+      //           t.@tempListAccum+=carbon_hist_info(s.@areaCI, timestamp)
+      //         ELSE IF e.type=="comp_history_gen_ci" THEN
+      //           t.@tempListAccum+=carbon_hist_info(s.@areaCI_gen, timestamp)
+      //         ELSE IF e.type=="comp_history_total_gen" THEN
+      //           log(true,"SE_gen",s.name,s.id,s.@total_unit_pest,timestamp),
+      //           t.@tempListAccum+=carbon_hist_info(s.@total_unit_pest, timestamp)
+      //         ELSE IF e.type=="comp_history_total_load" THEN
+      //           t.@tempListAccum+=carbon_hist_info(s.@total_load_pest, timestamp)
+      //         ELSE IF e.type=="com_history_gen_p_meas" THEN
+      //           log(true,"Pimeas_gen",s.name,s.id,s.@total_unit_p,timestamp),
+      //           t.@tempListAccum+=carbon_hist_info(s.@total_unit_p, timestamp)
+      //         ELSE IF e.type=="com_history_load_p_meas" THEN
+      //           t.@tempListAccum+=carbon_hist_info(s.@total_load_p, timestamp)
+      //         ELSE IF e.type=="comp_history_gen_carbon" THEN
+      //           t.@tempListAccum+=carbon_hist_info(s.@area_gen_carbon, timestamp)
+      //         ELSE IF e.type=="comp_history_load_carbon" THEN
+      //           t.@tempListAccum+=carbon_hist_info(s.@area_load_carbon, timestamp)
+      //         ELSE IF e.type=="comp_history_input_carbon" THEN
+      //           t.@tempListAccum+=carbon_hist_info(s.@areaInput_carbon, timestamp)
+      //         ELSE IF e.type=="comp_history_output_carbon" THEN
+      //           t.@tempListAccum+=carbon_hist_info(s.@areaOutput_carbon, timestamp)
+      //         ELSE IF e.type=="comp_history_input_carbon_loss" THEN
+      //           t.@tempListAccum+=carbon_hist_info(s.@areaLoss_carbon, timestamp)
+      //         ELSE IF e.type=="comp_history_output_carbon_loss" THEN
+      //           t.@tempListAccum+=carbon_hist_info(s.@areaLoss_carbon, timestamp)
+      //         ELSE IF e.type=="com_fire_history_p" THEN
+      //           t.@tempListAccum+=carbon_hist_info(s.@fire_p, timestamp)
+      //         ELSE IF e.type=="com_wind_history_p" THEN
+      //           t.@tempListAccum+=carbon_hist_info(s.@wind_p, timestamp)
+      //         ELSE IF e.type=="com_water_history_p" THEN
+      //           t.@tempListAccum+=carbon_hist_info(s.@water_p, timestamp)
+      //         ELSE IF e.type=="com_load_history_p" THEN
+      //           t.@tempListAccum+=carbon_hist_info(s.@load_p, timestamp)
+      //         ELSE IF e.type=="com_other_history_p" THEN
+      //           t.@tempListAccum+=carbon_hist_info(s.@other_p, timestamp)
+      //         ELSE IF e.type=="comp_history_input_p" THEN
+      //           t.@tempListAccum+=carbon_hist_info(s.@areaInput_P, timestamp)
+      //         ELSE IF e.type=="comp_history_output_p" THEN
+      //           t.@tempListAccum+=carbon_hist_info(s.@areaOutput_P, timestamp)
+      //         //ELSE IF  e.type=="com_history_gen_p_meas" and s.id == "0010513200" THEN
+      //         //  t.@tempListAccum+=carbon_hist_info(@@carbon_credit, timestamp)
+      //         //ELSE IF e.type=="com_history_load_p_meas" and s.id == "0010513200"THEN
+      //         //  t.@tempListAccum+=carbon_hist_info(@@carbon_consume, timestamp)
+      //         ELSE IF e.type=="com_history_add3" and s.id == "0010513200" THEN
+      //           t.@tempListAccum+=carbon_hist_info(@@DIFF, timestamp)
+      //         ELSE IF e.type=="comp_history_inputcom_carbon" THEN
+      //             IF s.id == "0010510700" THEN
+      //                t.@tempListAccum +=carbon_hist_info(@@mianyangin, timestamp)
+      //             ELSE IF s.id == "0010510600" THEN
+      //                t.@tempListAccum +=carbon_hist_info(@@deyangin, timestamp)
+      //             ELSE IF s.id == "0010510100" THEN
+      //                t.@tempListAccum +=carbon_hist_info(@@chengduin, timestamp)
+      //             ELSE IF s.id == "0010513300" THEN
+      //                t.@tempListAccum +=carbon_hist_info(@@ganziin, timestamp)
+      //             ELSE IF s.id == "0010511800" THEN
+      //                t.@tempListAccum +=carbon_hist_info(@@yaanin, timestamp)
+      //             ELSE IF s.id == "0010500000" THEN
+      //                t.@tempListAccum +=carbon_hist_info(@@Input_chongqing, timestamp)
+      //             END
+      //         ELSE IF e.type=="comp_history_outputcom_carbon" THEN
+      //             IF s.id == "0010510700" THEN
+      //                t.@tempListAccum +=carbon_hist_info(@@mianyangout, timestamp)
+      //             ELSE IF s.id =="0010500000" THEN
+      //                t.@tempListAccum +=carbon_hist_info(@@Output_chongqing, timestamp)
+      //             ELSE IF s.id =="0010540000" THEN
+      //                t.@tempListAccum +=carbon_hist_info(@@Output_xizang, timestamp)
+      //             ELSE IF s.id =="0010310000" THEN
+      //                t.@tempListAccum +=carbon_hist_info(@@Output_shanghai, timestamp)
+      //             ELSE IF s.id == "0010510600" THEN
+      //                t.@tempListAccum +=carbon_hist_info(@@deyangout, timestamp)
+      //             ELSE IF s.id == "0010510100" THEN
+      //                t.@tempListAccum +=carbon_hist_info(@@chengduout, timestamp)
+      //             ELSE IF s.id == "0010513300" THEN
+      //                t.@tempListAccum +=carbon_hist_info(@@ganziout, timestamp)
+      //             ELSE IF s.id == "0010511800" THEN
+      //                t.@tempListAccum +=carbon_hist_info(@@yaanout, timestamp)
+      //             END
+      //         END
+      //         post-accum
+      //         t.today = t.@tempListAccum;
+    END;
+  END;
+  
+}

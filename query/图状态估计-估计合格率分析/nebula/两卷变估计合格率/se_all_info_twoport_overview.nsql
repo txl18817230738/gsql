@@ -1,0 +1,52 @@
+se_all_info_twoport_overview
+'''
+use ems_v1 
+match (p:parameters)
+let
+error_limit_P = case when p.error_limit_P is not NULL then p.error_limit_P else 0.0 end,
+error_limit_Q = case when p.error_limit_Q is not NULL then p.error_limit_Q else 0.0 end,
+error_p_baddata = case when p.backup1 is not NULL then p.backup1 else 0.0 end,
+error_q_baddata = case when p.backup2 is not NULL then p.backup2 else 0.0 end
+match (startid:gridcom)-[:gridcom_gridcom]->{0,}(:gridcom)-[:connected_grid_sub]->(s:Substation)-[:connected_Sub_Trans_two]->(t:`two_port_transformer`)<-[topo_Tx_Two]-(td:TopoND) filter where startid.id = "113715890758877224"
+let
+island = td.island,
+bus_name = td.bus_name,
+device_type = "twoport_transformer",
+Pimeas = case when t.Pimeas is not NULL then t.Pimeas else 0.0 end,
+P = case when t.P is not NULL then t.P else 0.0 end,
+Qimeas = case when t.Qimeas is not NULL then t.Qimeas else 0.0 end,
+Q = case when t.Q is not NULL then t.Q else 0.0 end,
+S = case when t.S is not NULL then t.S else 0.0 end
+let
+P_error = case when abs(Pimeas) > 0 then P - Pimeas else 0.0 end,
+P_error_abs = case when abs(Pimeas) > 0 then abs(P - Pimeas) else 0.0 end,
+Q_error = case when abs(Qimeas) > 0 then Q - Qimeas else 0.0 end,
+P_error_abs = case when abs(Qimeas) > 0 then abs(Q - Qimeas) else 0.0 end,
+
+P_error_pct = case when S > 0.1 then abs(P - Pimeas)/S*100 else 0 end,
+Q_error_pct = case when S > 0.1 and abs(Qimeas) > 0.0001 then abs(Q - Qimeas)/S*100 else 0 end
+match (twoport:`two_port_transformer`)<-[Meas_trans2]-(m:meas)
+let
+p_meas_flag = m.P_PseudoFlag,
+q_meas_flag = m.Q_PseudoFlag
+match (srctrans:`two_port_transformer`)<-[txI_txJ_transformerline] - (tartrans:`two_port_transformer`)
+let
+src_Pimeas = case when srctrans.Pimeas is not NULL then srctrans.Pimeas else 0.0 end,
+src_Qimeas = case when srctrans.Qimeas is not NULL then srctrans.Qimeas else 0.0 end,
+tar_Pimeas = case when tartrans.Pimeas is not NULL then tartrans.Pimeas else 0.0 end,
+tar_Qimeas = case when tartrans.Qimeas is not NULL then tartrans.Qimeas else 0.0 end
+let
+P_mark = case when src_Pimeas <> 0 then "实测" else "无实测" end,
+Q_mark = case when src_Qimeas <> 0 then "实测" else "无实测" end,
+
+P_mark_reverse = case when tar_Pimeas <> 0 then "实测" else "无实测" end,
+Q_mark_reverse = case when tar_Qimeas <> 0 then "实测" else "无实测" end
+
+count_from_belowlimit = case when p_meas_flag = 0 and P_error_pct <= error_limit_P then 1 else 0 end,
+count_from_abovelimit = case when p_meas_flag = 0 and P_error_pct > error_limit_P then 1 else 0 end,
+
+count_to_belowlimit = case when q_meas_flag = 0 and Q_error_pct <= error_limit_Q then 1 else 0 end,
+count_to_abovelimit = case when q_meas_flag = 0 and Q_error_pct > error_limit_Q then 1 else 0 end
+
+return case when srctrans.volt >= 500.0 then "500kV" when srctrans.volt >= 220.0 then "220kV"  when srctrans.volt >= 110.0 then "110kV" when srctrans.volt >= 34.5 then "35kV" when srctrans.volt >= 10.0 then "10kV" else "other" end as voltageLevel, count(*) as total, sum(count_from_belowlimit) as count_from_belowlimit_total, sum(count_from_abovelimit) as count_from_abovelimit_total, sum(count_to_belowlimit) as count_to_belowlimit_total, sum(count_to_abovelimit) as count_to_abovelimit_total group by voltageLevel Next return voltageLevel, total, count_from_belowlimit_total, count_from_abovelimit_total, count_to_belowlimit_total, count_to_abovelimit_total
+'''
